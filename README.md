@@ -4,4 +4,4 @@ R package for EEG analysis and visualization. This is project in R, creating fun
 
 Author: Christos Dalamarinis
 
-Contact: [dalamarinischristos\@gmail.com](mailto:dalamarinischristos@gmail.com){.email}
+Contact: [[dalmarinischristos\@gmail.com](mailto:dalmarinischristos@gmail.com){.email}]

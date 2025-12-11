@@ -6,4 +6,4 @@ Author: Christos Dalamarinis
 
 Contact: [[dalmarinischristos\@gmail.com](mailto:dalmarinischristos@gmail.com)]
 
-\# Version: 0.1.0
+| Version: 0.1.0

@@ -1,6 +1,6 @@
 # eeganalysis - Package under construction
 
-*eeganalysis* is R package for EEG analysis and visualization. This is project in R, creating functions to analyze and visualize EEG data.
+*eeganalysis* is R package for EEG analysis and visualization. This is project in R, creates functions to preprocesses, analyze and visualize EEG data.
 
 Author: Christos Dalamarinis
 

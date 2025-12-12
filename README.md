@@ -4,7 +4,7 @@
 
 Author: Christos Dalamarinis
 
-Contact: [[dalmarinischristos\@gmail.com](mailto:dalmarinischristos@gmail.com)]
+Contact: [[dalamarinischristos\@gmail.com](mailto:dalamarinischristos@gmail.com)]
 
 | Version: 0.0.1
 

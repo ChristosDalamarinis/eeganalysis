@@ -30,5 +30,5 @@ devtools::install_github("dalmarinischristos/eeganalysis")
 ```
 
 ## Contributing
-
 Contributions to the *eeganalysis* package are welcome! If you would like to contribute, please fork the repository and submit a pull request with your changes. Please ensure that your code follows the existing style and includes appropriate documentation and tests.
+Note: currently focusing on Biosemi files, other formats will be added in future releases.

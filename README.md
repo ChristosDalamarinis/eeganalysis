@@ -36,7 +36,7 @@ Contributions to the *eeganalysis* package are welcome! If you would like to con
 ## Folder structure
 
 ``` r
-eeganalysis/
+eeganalysis
 │
 ├── R                              ← Your R functions live here
 │   ├── 01_eeg_class.R             ← EEG data structure & creation

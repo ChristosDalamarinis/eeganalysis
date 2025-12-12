@@ -30,7 +30,28 @@ devtools::install_github("dalmarinischristos/eeganalysis")
 ```
 
 ## Contributing
-Contributions to the *eeganalysis* package are welcome! If you would like to contribute, please fork the repository and submit a pull request with your changes. Please ensure that your code follows the existing style and includes appropriate documentation and tests.
-Note: currently focusing on Biosemi files, other formats will be added in future releases.
+
+Contributions to the *eeganalysis* package are welcome! If you would like to contribute, please fork the repository and submit a pull request with your changes. Please ensure that your code follows the existing style and includes appropriate documentation and tests. Note: currently focusing on Biosemi files, other formats will be added in future releases.
 
 ## Folder structure
+│
+├── R/ ← Your functions live here
+│ ├── eeg_class.R ← Defines eeg data structure
+│ │ ├── new_eeg() ← Create EEG object 
+│ │ └── print.eeg() ← Display EEG object 
+│ │
+│ └── read_biosemi.R ← Read BioSemi BDF files
+│ ├── read_biosemi() ← Main function to import .bdf files 
+│ ├── extract_biosemi_events() ← Parse event triggers 
+│ └── summarize_biosemi_import() ← Quality report 
+│ 
+├── man/ ← Auto-generated help documentation
+│ ├── new_eeg.Rd 
+│ ├── print.eeg.Rd 
+│ ├── read_biosemi.Rd
+│ └── ... (more coming)
+│ 
+├── NAMESPACE ← What functions are exported 
+├── DESCRIPTION ← Package metadata 
+├── LICENSE ← License information 
+└── README.md ← This file

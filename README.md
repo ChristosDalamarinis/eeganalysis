@@ -1,9 +1,3 @@
----
-editor_options: 
-  markdown: 
-    wrap: sentence
----
-
 # eeganalysis - Package under construction
 
 *eeganalysis* is an (under constraction) R package for analyzing EEG data.

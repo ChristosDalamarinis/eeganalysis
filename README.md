@@ -48,23 +48,23 @@ eeganalysis
 │   │   ├── extract_biosemi_events() ← Parse trigger codes from status channel
 │   │   └── summarize_biosemi_import() ← Generate quality report
 │   │
-│   ├── 03_preprocessing.R         ← (Future) Data cleaning & preprocessing
+│   ├── preprocessing.R            ← (Future) Data cleaning & preprocessing
 │   │   ├── filter_eeg()           ← Apply filters
 │   │   ├── rereference_eeg()      ← Change reference scheme
-│   │   └── ...
+│   │   └── ...                    ← Additional functions
 │   │
-│   └── 04_feature_extraction.R    ← (Future) Feature computation
+│   └── feature_extraction.R       ← (Future) Feature computation
 │       ├── compute_erp()          ← Calculate ERPs
 │       ├── compute_power()        ← Band power analysis
-│       └── ...
+│       └── ...                    ← Additional functions
 │
-├── man                           ← Auto-generated help files
-│   ├── new_eeg.Rd                ← Help for new_eeg()
-│   ├── print.eeg.Rd              ← Help for print.eeg()
-│   ├── read_biosemi.Rd           ← Help for read_biosemi()
-│   ├── extract_biosemi_events.Rd ← Help for extract_biosemi_events()
+├── man                            ← Auto-generated help files
+│   ├── new_eeg.Rd                 ← Help for new_eeg()
+│   ├── print.eeg.Rd               ← Help for print.eeg()
+│   ├── read_biosemi.Rd            ← Help for read_biosemi()
+│   ├── extract_biosemi_events.Rd  ← Help for extract_biosemi_events()
 │   ├── summarize_biosemi_import.Rd ← Help for summarize_biosemi_import()
-│   └── ...
+│   └── ...Rd                       ← Additional help files
 |
 ├── data                          ← Example datasets
 │   └── example_eeg.RData         ← Example eeg object for testing (coming)

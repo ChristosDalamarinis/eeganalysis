@@ -39,11 +39,11 @@ Contributions to the *eeganalysis* package are welcome! If you would like to con
 eeganalysis
 │
 ├── R                              ← Your R functions live here
-│   ├── 01_eeg_class.R             ← EEG data structure & creation
+│   ├── eeg_class.R                ← EEG data structure & creation
 │   │   ├── new_eeg()              ← Create an eeg object
 │   │   └── print.eeg()            ← Display eeg object nicely
 │   │
-│   ├── 02_read_biosemi.R          ← BioSemi file import
+│   ├── read_biosemi.R          ← BioSemi file import
 │   │   ├── read_biosemi()         ← Import .bdf files (main function)
 │   │   ├── extract_biosemi_events() ← Parse trigger codes from status channel
 │   │   └── summarize_biosemi_import() ← Generate quality report

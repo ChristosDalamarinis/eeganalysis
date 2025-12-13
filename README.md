@@ -66,16 +66,16 @@ eeganalysis
 │   ├── summarize_biosemi_import.Rd ← Help for summarize_biosemi_import()
 │   └── ...Rd                       ← Additional help files
 |
-├── data                          ← Example datasets
-│   └── example_eeg.RData         ← Example eeg object for testing (coming)
+├── data                           ← Example datasets
+│   └── example_eeg.RData          ← Example eeg object for testing (coming)
 │
-├── NAMESPACE                     ← Exported functions (auto-generated)
-├── DESCRIPTION                   ← Package metadata
-├── LICENSE                       ← License information
-├── README.md                     ← Package overview
-├── .gitignore                    ← Git ignore rules
-├── .Rbuildignore                 ← Build ignore rules
-└── eeganalysis.Rproj             ← RStudio project file
+├── NAMESPACE                      ← Exported functions (auto-generated)
+├── DESCRIPTION                    ← Package metadata
+├── LICENSE                        ← License information
+├── README.md                      ← Package overview
+├── .gitignore                     ← Git ignore rules
+├── .Rbuildignore                  ← Build ignore rules
+└── eeganalysis.Rproj              ← RStudio project file
 ```
 
 Note: This is a simplified structure and can be expanded with additional folders/files as needed.

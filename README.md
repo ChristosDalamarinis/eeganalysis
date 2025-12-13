@@ -6,7 +6,7 @@ Author: Christos Dalamarinis
 
 Contact: [[dalamarinischristos\@gmail.com](mailto:dalamarinischristos@gmail.com)]
 
-| Version: 0.0.1
+| Version: 0.1.0
 
 ## Analysis Pipeline
 

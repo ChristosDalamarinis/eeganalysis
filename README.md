@@ -6,7 +6,7 @@ Author: Christos Dalamarinis
 
 Contact: [[dalamarinischristos\@gmail.com](mailto:dalamarinischristos@gmail.com)]
 
-##Version: 0.0.0.9000 (under construction) 
+## Version: 0.0.0.9000 (under construction)
 
 Currently focusing on setting up functions reading Biosemi files (.bdf). Other formats will be added in future releases.
 

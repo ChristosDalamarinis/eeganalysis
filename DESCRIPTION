@@ -1,6 +1,6 @@
 Package: eeganalysis
 Title: What the Package Does (One Line, Title Case)
-Version: 0.1.0
+Version: 0.0.0.9000
 Authors@R: 
     person("Christos", "Dalamarinis", , "dalamarinischristos@gmail.com", role = c("aut", "cre"))
 Description: Tools for reading, preprocessing, and analyzing EEG data from

@@ -214,15 +214,20 @@ print.eeg <- function(x, ...) {
     for (key in names(x$metadata)) {
       val <- x$metadata[[key]]
       
-      # Truncate long values
-      if (is.character(val) && length(val) > 1) {
+      # Ensure val is always coercible to character
+      if (!is.atomic(val)) {
+        val <- paste0("[", class(val)[1], " object]")
+      } else if (is.character(val) && length(val) > 1) {
         val <- paste(val[1:min(3, length(val))], collapse = ", ")
+      } else {
+        val <- as.character(val)
       }
-      if (is.character(val) && nchar(val) > 40) {
+      
+      if (nchar(val) > 40) {
         val <- paste0(substr(val, 1, 37), "...")
       }
       
-      cat("    ", key, ": ", val, "\n", sep = "")
+      cat(" ", key, ": ", val, "\n", sep = "")
     }
   }
   

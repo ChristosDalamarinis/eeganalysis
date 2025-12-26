@@ -24,7 +24,9 @@ The analysis pipeline implemented in the package includes the following steps:
 
 -   5.Visualization: Functions to create visualizations of the EEG data and analysis results (e.g., topographic maps, time-frequency plots).
 
-## Installation You can install the *eeganalysis* package from GitHub using the following command:
+## Installation
+
+You can install the *eeganalysis* package from GitHub using the following command:
 
 ``` r
 # install.packages("devtools") # Uncomment if devtools is not installed

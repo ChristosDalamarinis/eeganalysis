@@ -30,7 +30,7 @@ You can install the *eeganalysis* package from GitHub using the following comman
 
 ``` r
 # install.packages("devtools") # Uncomment if devtools is not installed
-devtools::install_github("dalmarinischristos/eeganalysis")
+devtools::install_github("dalamarinischristos/eeganalysis")
 ```
 
 ## Contributing

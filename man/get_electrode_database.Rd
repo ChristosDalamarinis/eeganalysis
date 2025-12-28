@@ -7,8 +7,18 @@
 get_electrode_database()
 }
 \value{
-Named list where names are electrode names and values are
-position information lists with: position_name, position_type, region
+Named list where names are electrode names (BOTH standard AND BioSemi)
+and values are position information lists with:
+\itemize{
+\item position_name: Full descriptive name
+\item position_type: Category (Frontal, Central, Parietal, etc.)
+\item region: Brain region
+\item standard_system: "10-20" or "10-10"
+\item biosemi_name: BioSemi A/B equivalent (if applicable)
+\item standard_name: 10-20/10-10 equivalent (if BioSemi naming)
+\item cartesian_coords: List with x, y, z in mm
+\item spherical_coords: List with theta, phi in degrees, radius in mm
+}
 }
 \description{
 This module provides functions to inspect and analyze BioSemi BDF files
@@ -17,25 +27,49 @@ Useful for quick file preview, metadata extraction, and electrode layout verific
 }
 \section{Author: Christos Dalamarinis
 Date: 2025}{
-Get Standard Electrode Position Database
+============================================================================
+Get Comprehensive Electrode Position Database (BioSemi 64-Channel)
 
-Returns a comprehensive lookup table of standard electrode positions
-used in EEG research (10-20, 10-10 systems) and common external channels
-(EOG, ECG, EMG, GSR).
+Returns a comprehensive lookup table of electrode positions including:
+\itemize{
+\item Standard 10-20/10-10 system naming
+\item BioSemi internal naming (A1-A32, B1-B32)
+\item Both Cartesian AND Spherical coordinate systems
+\item Case-insensitive lookup
+}
 
 This database includes:
 \itemize{
-\item Standard 10-20 system: Fp, F, C, P, O, T positions
-\item Extended 10-10 system: Additional positions for higher density
-\item External channels: EOG (eyes), ECG (heart), EMG (muscle), GSR (skin)
-\item Reference electrodes: Cz, CPz, M1/M2 (mastoids)
+\item All 64 BioSemi electrodes with FULL metadata
+\item Both naming conventions (10-20/10-10 AND BioSemi A/B)
+\item Both coordinate systems (Cartesian AND Spherical)
+\item External channels: EOG, ECG, EMG, GSR
+\item Case-insensitive matching (Cz = CZ = cz)
+}
+
+\strong{NEW FEATURES:}
+\itemize{
+\item Dual naming: Access by "Cz" OR "B16"
+\item Dual coordinates: Cartesian (x,y,z) AND Spherical (θ,φ,r)
+\item Case-insensitive: get_electrode_position("CZ") works!
 }
 }
 
 \examples{
 \dontrun{
 electrode_db <- get_electrode_database()
-electrode_db$Cz  # Get info about Cz electrode
+
+# Access by standard name
+electrode_db$Cz
+
+# Access by BioSemi name
+electrode_db$B16  # Same as Cz!
+
+# Get Cartesian coordinates
+electrode_db$Cz$cartesian_coords  # x, y, z
+
+# Get Spherical coordinates
+electrode_db$Cz$spherical_coords  # theta, phi, radius
 }
 
 }

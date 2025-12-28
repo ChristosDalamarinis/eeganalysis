@@ -10,544 +10,349 @@
 #' Date: 2025
 #' ============================================================================
 
-#' Get Standard Electrode Position Database
+#' ============================================================================
+#' Get Comprehensive Electrode Position Database (BioSemi 64-Channel)
 #'
-#' Returns a comprehensive lookup table of standard electrode positions
-#' used in EEG research (10-20, 10-10 systems) and common external channels
-#' (EOG, ECG, EMG, GSR).
+#' Returns a comprehensive lookup table of electrode positions including:
+#' - Standard 10-20/10-10 system naming
+#' - BioSemi internal naming (A1-A32, B1-B32)
+#' - Both Cartesian AND Spherical coordinate systems
+#' - Case-insensitive lookup
 #'
-#' @return Named list where names are electrode names and values are
-#' position information lists with: position_name, position_type, region
+#' @return Named list where names are electrode names (BOTH standard AND BioSemi)
+#' and values are position information lists with:
+#'   - position_name: Full descriptive name
+#'   - position_type: Category (Frontal, Central, Parietal, etc.)
+#'   - region: Brain region
+#'   - standard_system: "10-20" or "10-10"
+#'   - biosemi_name: BioSemi A/B equivalent (if applicable)
+#'   - standard_name: 10-20/10-10 equivalent (if BioSemi naming)
+#'   - cartesian_coords: List with x, y, z in mm
+#'   - spherical_coords: List with theta, phi in degrees, radius in mm
 #'
 #' @details
 #' This database includes:
-#' - Standard 10-20 system: Fp, F, C, P, O, T positions
-#' - Extended 10-10 system: Additional positions for higher density
-#' - External channels: EOG (eyes), ECG (heart), EMG (muscle), GSR (skin)
-#' - Reference electrodes: Cz, CPz, M1/M2 (mastoids)
+#' - All 64 BioSemi electrodes with FULL metadata
+#' - Both naming conventions (10-20/10-10 AND BioSemi A/B)
+#' - Both coordinate systems (Cartesian AND Spherical)
+#' - External channels: EOG, ECG, EMG, GSR
+#' - Case-insensitive matching (Cz = CZ = cz)
+#'
+#' **NEW FEATURES:**
+#' - Dual naming: Access by "Cz" OR "B16"
+#' - Dual coordinates: Cartesian (x,y,z) AND Spherical (θ,φ,r)
+#' - Case-insensitive: get_electrode_position("CZ") works!
 #'
 #' @keywords internal
 #'
 #' @examples
 #' \dontrun{
 #' electrode_db <- get_electrode_database()
-#' electrode_db$Cz  # Get info about Cz electrode
+#' 
+#' # Access by standard name
+#' electrode_db$Cz
+#' 
+#' # Access by BioSemi name
+#' electrode_db$B16  # Same as Cz!
+#' 
+#' # Get Cartesian coordinates
+#' electrode_db$Cz$cartesian_coords  # x, y, z
+#' 
+#' # Get Spherical coordinates
+#' electrode_db$Cz$spherical_coords  # theta, phi, radius
 #' }
 #'
 #' @export
 get_electrode_database <- function() {
   
-  # ========== STANDARD 10-20 ELECTRODE SYSTEM ==========
-  # Primary electrode positions
+  # ========================================================================
+  # BIOSEMI 64-CHANNEL: COMPLETE ELECTRODE SPECIFICATIONS
+  # ========================================================================
+  # From official BioSemi Cap_coords_all.xls
+  # Head circumference = 55 cm → radius = 87.54 mm
   
-  electrode_db <- list(
-    # ===== PREFRONTAL (Fp) =====
-    "Fp1" = list(
-      position_name = "Prefrontal left",
-      position_type = "Prefrontal",
-      region = "Frontal",
-      standard_system = "10-20"
+  electrode_specs <- data.frame(
+    standard_name = c(
+      "Fp1", "AF7", "AF3", "F1", "F3", "F5", "F7", "FT7", "FC5", "FC3",
+      "FC1", "C1", "C3", "C5", "T7", "TP7", "CP5", "CP3", "CP1", "P1",
+      "P3", "P5", "P7", "P9", "PO7", "PO3", "O1", "Iz", "Oz", "POz",
+      "Pz", "CPz", "Fpz", "Fp2", "AF8", "AF4", "AFz", "Fz", "F2", "F4",
+      "F6", "F8", "FT8", "FC6", "FC4", "FC2", "FCz", "Cz", "C2", "C4",
+      "C6", "T8", "TP8", "CP6", "CP4", "CP2", "P2", "P4", "P6", "P8",
+      "P10", "PO8", "PO4", "O2"
     ),
-    "Fpz" = list(
-      position_name = "Prefrontal midline",
-      position_type = "Prefrontal",
-      region = "Frontal",
-      standard_system = "10-20"
+    biosemi_name = c(
+      "A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9", "A10",
+      "A11", "A12", "A13", "A14", "A15", "A16", "A17", "A18", "A19", "A20",
+      "A21", "A22", "A23", "A24", "A25", "A26", "A27", "A28", "A29", "A30",
+      "A31", "A32", "B1", "B2", "B3", "B4", "B5", "B6", "B7", "B8",
+      "B9", "B10", "B11", "B12", "B13", "B14", "B15", "B16", "B17", "B18",
+      "B19", "B20", "B21", "B22", "B23", "B24", "B25", "B26", "B27", "B28",
+      "B29", "B30", "B31", "B32"
     ),
-    "Fp2" = list(
-      position_name = "Prefrontal right",
-      position_type = "Prefrontal",
-      region = "Frontal",
-      standard_system = "10-20"
+    position_name = c(
+      "Prefrontal left", "Anterior frontal left", "Anterior frontal left-center", 
+      "Frontal left-midline", "Frontal left", "Frontal left-center", 
+      "Frontal left temporal", "Fronto-temporal left", "Fronto-central left", 
+      "Fronto-central left-center", "Fronto-central left-midline", 
+      "Central left-midline", "Central left", "Central left", "Temporal left", 
+      "Centro-temporal left", "Centro-parietal left", "Centro-parietal left-center", 
+      "Centro-parietal left-midline", "Parietal left-midline", "Parietal left", 
+      "Parietal left-center", "Parietal left temporal", "Parietal left ear", 
+      "Parieto-occipital left", "Parieto-occipital left-center", "Occipital left", 
+      "Inion", "Occipital midline", "Parieto-occipital midline", "Parietal midline", 
+      "Centro-parietal midline", "Prefrontal midline", "Prefrontal right", 
+      "Anterior frontal right", "Anterior frontal right-center", 
+      "Anterior frontal midline", "Frontal midline", "Frontal right-midline", 
+      "Frontal right", "Frontal right-center", "Frontal right temporal", 
+      "Fronto-temporal right", "Fronto-central right", "Fronto-central right-center", 
+      "Fronto-central right-midline", "Fronto-central midline", "Central midline", 
+      "Central right-midline", "Central right", "Central right", "Temporal right", 
+      "Centro-temporal right", "Centro-parietal right", "Centro-parietal right-center", 
+      "Centro-parietal right-midline", "Parietal right-midline", "Parietal right", 
+      "Parietal right-center", "Parietal right temporal", "Parietal right ear", 
+      "Parieto-occipital right", "Parieto-occipital right-center", "Occipital right"
     ),
+    position_type = c(
+      "Prefrontal", "Anterior Frontal", "Anterior Frontal", "Frontal", "Frontal", 
+      "Frontal", "Frontal", "Fronto-Temporal", "Fronto-Central", "Fronto-Central", 
+      "Fronto-Central", "Central", "Central", "Central", "Temporal", 
+      "Centro-Temporal", "Centro-Parietal", "Centro-Parietal", "Centro-Parietal", 
+      "Parietal", "Parietal", "Parietal", "Parietal", "Parietal", 
+      "Parieto-Occipital", "Parieto-Occipital", "Occipital", "Occipital", 
+      "Occipital", "Parieto-Occipital", "Parietal", "Centro-Parietal", 
+      "Prefrontal", "Prefrontal", "Anterior Frontal", "Anterior Frontal", 
+      "Anterior Frontal", "Frontal", "Frontal", "Frontal", "Frontal", "Frontal", 
+      "Fronto-Temporal", "Fronto-Central", "Fronto-Central", "Fronto-Central", 
+      "Fronto-Central", "Central", "Central", "Central", "Central", "Temporal", 
+      "Centro-Temporal", "Centro-Parietal", "Centro-Parietal", "Centro-Parietal", 
+      "Parietal", "Parietal", "Parietal", "Parietal", "Parietal", 
+      "Parieto-Occipital", "Parieto-Occipital", "Occipital"
+    ),
+    region = c(
+      "Frontal", "Frontal", "Frontal", "Frontal", "Frontal", "Frontal", "Frontal", 
+      "Temporal", "Central", "Central", "Central", "Central", "Central", "Central", 
+      "Temporal", "Temporal", "Parietal", "Parietal", "Parietal", "Parietal", 
+      "Parietal", "Parietal", "Parietal", "Parietal", "Occipital", "Occipital", 
+      "Occipital", "Occipital", "Occipital", "Occipital", "Parietal", "Parietal", 
+      "Frontal", "Frontal", "Frontal", "Frontal", "Frontal", "Frontal", "Frontal", 
+      "Frontal", "Frontal", "Frontal", "Temporal", "Central", "Central", "Central", 
+      "Central", "Central", "Central", "Central", "Central", "Temporal", "Temporal", 
+      "Parietal", "Parietal", "Parietal", "Parietal", "Parietal", "Parietal", 
+      "Parietal", "Parietal", "Occipital", "Occipital", "Occipital"
+    ),
+    standard_system = c(
+      "10-20", "10-10", "10-10", "10-10", "10-20", "10-10", "10-20", "10-10", 
+      "10-10", "10-10", "10-10", "10-10", "10-20", "10-10", "10-20", "10-10", 
+      "10-10", "10-10", "10-10", "10-10", "10-20", "10-10", "10-20", "10-10", 
+      "10-10", "10-10", "10-20", "10-10", "10-20", "10-10", "10-20", "10-10", 
+      "10-20", "10-20", "10-10", "10-10", "10-10", "10-20", "10-10", "10-20", 
+      "10-10", "10-20", "10-10", "10-10", "10-10", "10-10", "10-10", "10-20", 
+      "10-10", "10-20", "10-10", "10-20", "10-10", "10-10", "10-10", "10-10", 
+      "10-10", "10-20", "10-10", "10-20", "10-10", "10-10", "10-10", "10-20"
+    ),
+    # Cartesian coordinates (x, y, z) in mm
+    x = c(
+      -27, -51, -36, -25, -48, -64, -71, -83, -78, -59,
+      -33, -34, -63, -82, -87, -83, -78, -59, -33, -25,
+      -48, -64, -71, -64, -51, -36, -27, 0, 0, 0,
+      0, 0, 0, 27, 51, 36, 0, 0, 25, 48,
+      64, 71, 83, 78, 59, 33, 0, 0, 34, 63,
+      82, 87, 83, 78, 59, 33, 25, 48, 64, 71,
+      64, 51, 36, 27
+    ),
+    y = c(
+      83, 71, 76, 62, 59, 55, 51, 27, 30, 31,
+      33, 0, 0, 0, 0, -27, -30, -31, -33, -62,
+      -59, -55, -51, -47, -71, -76, -83, -79, -87, -82,
+      -63, -34, 87, 83, 71, 76, 82, 63, 62, 59,
+      55, 51, 27, 30, 31, 33, 34, 0, 0, 0,
+      0, 0, -27, -30, -31, -33, -62, -59, -55, -51,
+      -47, -71, -76, -83
+    ),
+    z = c(
+      -3, -3, 24, 56, 44, 23, -3, -3, 27, 56,
+      74, 81, 61, 31, -3, -3, 27, 56, 74, 56,
+      44, 23, -3, -37, -3, 24, -3, -37, -3, 31,
+      61, 81, -3, -3, -3, 24, 31, 61, 56, 44,
+      23, -3, -3, 27, 56, 74, 81, 88, 81, 61,
+      31, -3, -3, 27, 56, 74, 56, 44, 23, -3,
+      -37, -3, 24, -3
+    ),
+    # Spherical coordinates (theta, phi) in degrees
+    theta = c(
+      -92, -92, -74, -50, -60, -75, -92, -92, -72, -50,
+      -32, -23, -46, -69, -92, -92, -72, -50, -32, -50,
+      -60, -75, -92, -115, -92, -74, -92, 115, 92, 69,
+      46, 23, 92, 92, 92, 74, 69, 46, 50, 60,
+      75, 92, 92, 72, 50, 32, 23, 0, 23, 46,
+      69, 92, 92, 72, 50, 32, 50, 60, 75, 92,
+      115, 92, 74, 92
+    ),
+    phi = c(
+      -72, -54, -65, -68, -51, -41, -36, -18, -21, -28,
+      -45, 0, 0, 0, 0, 18, 21, 28, 45, 68,
+      51, 41, 36, 36, 54, 65, 72, -90, -90, -90,
+      -90, -90, 90, 72, 54, 65, 90, 90, 68, 51,
+      41, 36, 18, 21, 28, 45, 90, 0, 0, 0,
+      0, 0, -18, -21, -28, -45, -68, -51, -41, -36,
+      -36, -54, -65, -72
+    ),
+    stringsAsFactors = FALSE
+  )
+  
+  # ========================================================================
+  # BUILD DATABASE WITH DUAL NAMING
+  # ========================================================================
+  
+  electrode_db <- list()
+  
+  for (i in 1:nrow(electrode_specs)) {
+    # Create electrode entry
+    entry <- list(
+      position_name = electrode_specs$position_name[i],
+      position_type = electrode_specs$position_type[i],
+      region = electrode_specs$region[i],
+      standard_system = electrode_specs$standard_system[i],
+      biosemi_name = electrode_specs$biosemi_name[i],
+      standard_name = electrode_specs$standard_name[i],
+      cartesian_coords = list(
+        x = electrode_specs$x[i],
+        y = electrode_specs$y[i],
+        z = electrode_specs$z[i]
+      ),
+      spherical_coords = list(
+        theta = electrode_specs$theta[i],
+        phi = electrode_specs$phi[i],
+        radius = 87.54
+      )
+    )
     
-    # ===== ANTERIOR FRONTAL (AF) - 10-10 System =====
-    "AF7" = list(
-      position_name = "Anterior frontal left",
-      position_type = "Anterior Frontal",
-      region = "Frontal",
-      standard_system = "10-10"
-    ),
-    "AF3" = list(
-      position_name = "Anterior frontal left-center",
-      position_type = "Anterior Frontal",
-      region = "Frontal",
-      standard_system = "10-10"
-    ),
-    "AFz" = list(
-      position_name = "Anterior frontal midline",
-      position_type = "Anterior Frontal",
-      region = "Frontal",
-      standard_system = "10-10"
-    ),
-    "AF4" = list(
-      position_name = "Anterior frontal right-center",
-      position_type = "Anterior Frontal",
-      region = "Frontal",
-      standard_system = "10-10"
-    ),
-    "AF8" = list(
-      position_name = "Anterior frontal right",
-      position_type = "Anterior Frontal",
-      region = "Frontal",
-      standard_system = "10-10"
-    ),
+    # Add entry under BOTH names (standard AND BioSemi)
+    standard_name <- electrode_specs$standard_name[i]
+    biosemi_name <- electrode_specs$biosemi_name[i]
     
-    # ===== FRONTAL (F) =====
-    "F7" = list(
-      position_name = "Frontal left temporal",
-      position_type = "Frontal",
-      region = "Frontal",
-      standard_system = "10-20"
-    ),
-    "F5" = list(
-      position_name = "Frontal left-center",
-      position_type = "Frontal",
-      region = "Frontal",
-      standard_system = "10-10"
-    ),
-    "F3" = list(
-      position_name = "Frontal left",
-      position_type = "Frontal",
-      region = "Frontal",
-      standard_system = "10-20"
-    ),
-    "F1" = list(
-      position_name = "Frontal left-midline",
-      position_type = "Frontal",
-      region = "Frontal",
-      standard_system = "10-10"
-    ),
-    "Fz" = list(
-      position_name = "Frontal midline",
-      position_type = "Frontal",
-      region = "Frontal",
-      standard_system = "10-20"
-    ),
-    "F2" = list(
-      position_name = "Frontal right-midline",
-      position_type = "Frontal",
-      region = "Frontal",
-      standard_system = "10-10"
-    ),
-    "F4" = list(
-      position_name = "Frontal right",
-      position_type = "Frontal",
-      region = "Frontal",
-      standard_system = "10-20"
-    ),
-    "F6" = list(
-      position_name = "Frontal right-center",
-      position_type = "Frontal",
-      region = "Frontal",
-      standard_system = "10-10"
-    ),
-    "F8" = list(
-      position_name = "Frontal right temporal",
-      position_type = "Frontal",
-      region = "Frontal",
-      standard_system = "10-20"
-    ),
+    electrode_db[[standard_name]] <- entry
+    electrode_db[[biosemi_name]] <- entry
     
-    # ===== FRONTO-TEMPORAL (FT) - 10-10 System =====
-    "FT7" = list(
-      position_name = "Fronto-temporal left",
-      position_type = "Fronto-Temporal",
-      region = "Temporal",
-      standard_system = "10-10"
-    ),
-    "FT8" = list(
-      position_name = "Fronto-temporal right",
-      position_type = "Fronto-Temporal",
-      region = "Temporal",
-      standard_system = "10-10"
-    ),
-    
-    # ===== FRONTO-CENTRAL (FC) - 10-10 System =====
-    "FC5" = list(
-      position_name = "Fronto-central left",
-      position_type = "Fronto-Central",
-      region = "Central",
-      standard_system = "10-10"
-    ),
-    "FC3" = list(
-      position_name = "Fronto-central left-center",
-      position_type = "Fronto-Central",
-      region = "Central",
-      standard_system = "10-10"
-    ),
-    "FC1" = list(
-      position_name = "Fronto-central left-midline",
-      position_type = "Fronto-Central",
-      region = "Central",
-      standard_system = "10-10"
-    ),
-    "FCz" = list(
-      position_name = "Fronto-central midline",
-      position_type = "Fronto-Central",
-      region = "Central",
-      standard_system = "10-10"
-    ),
-    "FC2" = list(
-      position_name = "Fronto-central right-midline",
-      position_type = "Fronto-Central",
-      region = "Central",
-      standard_system = "10-10"
-    ),
-    "FC4" = list(
-      position_name = "Fronto-central right-center",
-      position_type = "Fronto-Central",
-      region = "Central",
-      standard_system = "10-10"
-    ),
-    "FC6" = list(
-      position_name = "Fronto-central right",
-      position_type = "Fronto-Central",
-      region = "Central",
-      standard_system = "10-10"
-    ),
-    
-    # ===== TEMPORAL (T) =====
-    "T7" = list(
-      position_name = "Temporal left",
-      position_type = "Temporal",
-      region = "Temporal",
-      standard_system = "10-20"
-    ),
-    "T8" = list(
-      position_name = "Temporal right",
-      position_type = "Temporal",
-      region = "Temporal",
-      standard_system = "10-20"
-    ),
-    
-    # ===== CENTRAL (C) =====
-    "C5" = list(
-      position_name = "Central left",
-      position_type = "Central",
-      region = "Central",
-      standard_system = "10-10"
-    ),
-    "C3" = list(
-      position_name = "Central left",
-      position_type = "Central",
-      region = "Central",
-      standard_system = "10-20"
-    ),
-    "C1" = list(
-      position_name = "Central left-midline",
-      position_type = "Central",
-      region = "Central",
-      standard_system = "10-10"
-    ),
-    "Cz" = list(
-      position_name = "Central midline",
-      position_type = "Central",
-      region = "Central",
-      standard_system = "10-20"
-    ),
-    "C2" = list(
-      position_name = "Central right-midline",
-      position_type = "Central",
-      region = "Central",
-      standard_system = "10-10"
-    ),
-    "C4" = list(
-      position_name = "Central right",
-      position_type = "Central",
-      region = "Central",
-      standard_system = "10-20"
-    ),
-    "C6" = list(
-      position_name = "Central right",
-      position_type = "Central",
-      region = "Central",
-      standard_system = "10-10"
-    ),
-    
-    # ===== CENTRO-TEMPORAL (CT/TP) - 10-10 System =====
-    "TP7" = list(
-      position_name = "Centro-temporal left",
-      position_type = "Centro-Temporal",
-      region = "Temporal",
-      standard_system = "10-10"
-    ),
-    "TP8" = list(
-      position_name = "Centro-temporal right",
-      position_type = "Centro-Temporal",
-      region = "Temporal",
-      standard_system = "10-10"
-    ),
-    
-    # ===== CENTRO-PARIETAL (CP) - 10-10 System =====
-    "CP5" = list(
-      position_name = "Centro-parietal left",
-      position_type = "Centro-Parietal",
-      region = "Parietal",
-      standard_system = "10-10"
-    ),
-    "CP3" = list(
-      position_name = "Centro-parietal left-center",
-      position_type = "Centro-Parietal",
-      region = "Parietal",
-      standard_system = "10-10"
-    ),
-    "CP1" = list(
-      position_name = "Centro-parietal left-midline",
-      position_type = "Centro-Parietal",
-      region = "Parietal",
-      standard_system = "10-10"
-    ),
-    "CPz" = list(
-      position_name = "Centro-parietal midline",
-      position_type = "Centro-Parietal",
-      region = "Parietal",
-      standard_system = "10-10"
-    ),
-    "CP2" = list(
-      position_name = "Centro-parietal right-midline",
-      position_type = "Centro-Parietal",
-      region = "Parietal",
-      standard_system = "10-10"
-    ),
-    "CP4" = list(
-      position_name = "Centro-parietal right-center",
-      position_type = "Centro-Parietal",
-      region = "Parietal",
-      standard_system = "10-10"
-    ),
-    "CP6" = list(
-      position_name = "Centro-parietal right",
-      position_type = "Centro-Parietal",
-      region = "Parietal",
-      standard_system = "10-10"
-    ),
-    
-    # ===== PARIETAL (P) =====
-    "P7" = list(
-      position_name = "Parietal left temporal",
-      position_type = "Parietal",
-      region = "Parietal",
-      standard_system = "10-20"
-    ),
-    "P5" = list(
-      position_name = "Parietal left-center",
-      position_type = "Parietal",
-      region = "Parietal",
-      standard_system = "10-10"
-    ),
-    "P3" = list(
-      position_name = "Parietal left",
-      position_type = "Parietal",
-      region = "Parietal",
-      standard_system = "10-20"
-    ),
-    "P1" = list(
-      position_name = "Parietal left-midline",
-      position_type = "Parietal",
-      region = "Parietal",
-      standard_system = "10-10"
-    ),
-    "Pz" = list(
-      position_name = "Parietal midline",
-      position_type = "Parietal",
-      region = "Parietal",
-      standard_system = "10-20"
-    ),
-    "P2" = list(
-      position_name = "Parietal right-midline",
-      position_type = "Parietal",
-      region = "Parietal",
-      standard_system = "10-10"
-    ),
-    "P4" = list(
-      position_name = "Parietal right",
-      position_type = "Parietal",
-      region = "Parietal",
-      standard_system = "10-20"
-    ),
-    "P6" = list(
-      position_name = "Parietal right-center",
-      position_type = "Parietal",
-      region = "Parietal",
-      standard_system = "10-10"
-    ),
-    "P8" = list(
-      position_name = "Parietal right temporal",
-      position_type = "Parietal",
-      region = "Parietal",
-      standard_system = "10-20"
-    ),
-    
-    # ===== PARIETO-OCCIPITAL (PO) - 10-10 System =====
-    "PO7" = list(
-      position_name = "Parieto-occipital left",
-      position_type = "Parieto-Occipital",
-      region = "Occipital",
-      standard_system = "10-10"
-    ),
-    "PO3" = list(
-      position_name = "Parieto-occipital left-center",
-      position_type = "Parieto-Occipital",
-      region = "Occipital",
-      standard_system = "10-10"
-    ),
-    "POz" = list(
-      position_name = "Parieto-occipital midline",
-      position_type = "Parieto-Occipital",
-      region = "Occipital",
-      standard_system = "10-10"
-    ),
-    "PO4" = list(
-      position_name = "Parieto-occipital right-center",
-      position_type = "Parieto-Occipital",
-      region = "Occipital",
-      standard_system = "10-10"
-    ),
-    "PO8" = list(
-      position_name = "Parieto-occipital right",
-      position_type = "Parieto-Occipital",
-      region = "Occipital",
-      standard_system = "10-10"
-    ),
-    
-    # ===== OCCIPITAL (O) =====
-    "O1" = list(
-      position_name = "Occipital left",
-      position_type = "Occipital",
-      region = "Occipital",
-      standard_system = "10-20"
-    ),
-    "Oz" = list(
-      position_name = "Occipital midline",
-      position_type = "Occipital",
-      region = "Occipital",
-      standard_system = "10-20"
-    ),
-    "O2" = list(
-      position_name = "Occipital right",
-      position_type = "Occipital",
-      region = "Occipital",
-      standard_system = "10-20"
-    ),
-    
-    # ===== MASTOID REFERENCE (M) =====
-    "M1" = list(
-      position_name = "Mastoid left",
-      position_type = "Mastoid Reference",
-      region = "Reference",
-      standard_system = "Reference"
-    ),
-    "M2" = list(
-      position_name = "Mastoid right",
-      position_type = "Mastoid Reference",
-      region = "Reference",
-      standard_system = "Reference"
-    ),
-    
-    # ===== EXTERNAL CHANNELS - EOG (Electrooculogram) =====
+    # Also add lowercase versions for case-insensitive matching
+    electrode_db[[tolower(standard_name)]] <- entry
+    electrode_db[[tolower(biosemi_name)]] <- entry
+  }
+  
+  # ========================================================================
+  # ADD EXTERNAL CHANNELS (EOG, ECG, EMG, GSR, etc.)
+  # ========================================================================
+  
+  external_channels <- list(
+    # ===== EOG =====
     "EOG_L" = list(
       position_name = "Electrooculogram left",
       position_type = "EOG",
       region = "External",
-      standard_system = "EOG"
+      standard_system = "EOG",
+      biosemi_name = NA,
+      standard_name = "EOG_L",
+      cartesian_coords = list(x = NA, y = NA, z = NA),
+      spherical_coords = list(theta = NA, phi = NA, radius = NA)
     ),
     "EOG_R" = list(
       position_name = "Electrooculogram right",
       position_type = "EOG",
       region = "External",
-      standard_system = "EOG"
+      standard_system = "EOG",
+      biosemi_name = NA,
+      standard_name = "EOG_R",
+      cartesian_coords = list(x = NA, y = NA, z = NA),
+      spherical_coords = list(theta = NA, phi = NA, radius = NA)
     ),
     "HEOG_L" = list(
       position_name = "Horizontal EOG left",
       position_type = "EOG",
       region = "External",
-      standard_system = "EOG"
+      standard_system = "EOG",
+      biosemi_name = NA,
+      standard_name = "HEOG_L",
+      cartesian_coords = list(x = NA, y = NA, z = NA),
+      spherical_coords = list(theta = NA, phi = NA, radius = NA)
     ),
     "HEOG_R" = list(
       position_name = "Horizontal EOG right",
       position_type = "EOG",
       region = "External",
-      standard_system = "EOG"
+      standard_system = "EOG",
+      biosemi_name = NA,
+      standard_name = "HEOG_R",
+      cartesian_coords = list(x = NA, y = NA, z = NA),
+      spherical_coords = list(theta = NA, phi = NA, radius = NA)
     ),
     "VEOG" = list(
       position_name = "Vertical EOG",
       position_type = "EOG",
       region = "External",
-      standard_system = "EOG"
+      standard_system = "EOG",
+      biosemi_name = NA,
+      standard_name = "VEOG",
+      cartesian_coords = list(x = NA, y = NA, z = NA),
+      spherical_coords = list(theta = NA, phi = NA, radius = NA)
     ),
-    
-    # ===== EXTERNAL CHANNELS - ECG (Electrocardiogram) =====
+    # ===== ECG =====
     "ECG" = list(
       position_name = "Electrocardiogram (heart rate)",
       position_type = "ECG",
       region = "External",
-      standard_system = "ECG"
+      standard_system = "ECG",
+      biosemi_name = NA,
+      standard_name = "ECG",
+      cartesian_coords = list(x = NA, y = NA, z = NA),
+      spherical_coords = list(theta = NA, phi = NA, radius = NA)
     ),
-    "ECG1" = list(
-      position_name = "Electrocardiogram channel 1",
-      position_type = "ECG",
-      region = "External",
-      standard_system = "ECG"
-    ),
-    "ECG2" = list(
-      position_name = "Electrocardiogram channel 2",
-      position_type = "ECG",
-      region = "External",
-      standard_system = "ECG"
-    ),
-    
-    # ===== EXTERNAL CHANNELS - EMG (Electromyogram) =====
+    # ===== EMG =====
     "EMG" = list(
       position_name = "Electromyogram (muscle activity)",
       position_type = "EMG",
       region = "External",
-      standard_system = "EMG"
+      standard_system = "EMG",
+      biosemi_name = NA,
+      standard_name = "EMG",
+      cartesian_coords = list(x = NA, y = NA, z = NA),
+      spherical_coords = list(theta = NA, phi = NA, radius = NA)
     ),
-    "EMG_Jaw" = list(
-      position_name = "Electromyogram jaw",
-      position_type = "EMG",
-      region = "External",
-      standard_system = "EMG"
-    ),
-    "EMG_Chin" = list(
-      position_name = "Electromyogram chin",
-      position_type = "EMG",
-      region = "External",
-      standard_system = "EMG"
-    ),
-    
-    # ===== EXTERNAL CHANNELS - GSR (Galvanic Skin Response) =====
+    # ===== GSR =====
     "GSR" = list(
       position_name = "Galvanic skin response (skin conductance)",
       position_type = "GSR",
       region = "External",
-      standard_system = "GSR"
+      standard_system = "GSR",
+      biosemi_name = NA,
+      standard_name = "GSR",
+      cartesian_coords = list(x = NA, y = NA, z = NA),
+      spherical_coords = list(theta = NA, phi = NA, radius = NA)
     ),
-    "GSR1" = list(
-      position_name = "Galvanic skin response channel 1",
-      position_type = "GSR",
-      region = "External",
-      standard_system = "GSR"
-    ),
-    "GSR2" = list(
-      position_name = "Galvanic skin response channel 2",
-      position_type = "GSR",
-      region = "External",
-      standard_system = "GSR"
-    ),
-    
-    # ===== STATUS CHANNEL =====
+    # ===== Status =====
     "Status" = list(
       position_name = "Status channel (event markers/triggers)",
       position_type = "Status",
       region = "Metadata",
-      standard_system = "BioSemi"
+      standard_system = "BioSemi",
+      biosemi_name = NA,
+      standard_name = "Status",
+      cartesian_coords = list(x = NA, y = NA, z = NA),
+      spherical_coords = list(theta = NA, phi = NA, radius = NA)
     )
   )
   
+  # Merge external channels into main database
+  electrode_db <- c(electrode_db, external_channels)
+  
+  # Add lowercase versions of external channels
+  for (name in names(external_channels)) {
+    electrode_db[[tolower(name)]] <- external_channels[[name]]
+  }
+  
   return(electrode_db)
 }
+
 
 #' Get Electrode Position Information
 #'
@@ -595,6 +400,8 @@ get_electrode_position <- function(channel_name) {
     ))
   }
 }
+
+
 
 #' Scan BioSemi BDF File for Channel Information
 #'

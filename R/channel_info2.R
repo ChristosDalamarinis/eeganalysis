@@ -1335,3 +1335,804 @@ detect_electrode_naming_system <- function(data) {
   ))
 }
 
+
+
+
+#' ============================================================================
+#' Plot 3D Electrode Layout on Scalp (BioSemi 64-Channel)
+#'
+#' Creates an interactive 3D visualization of electrode positions on a realistic
+#' head model using OFFICIAL BioSemi 64-channel electrode coordinates.
+#'
+#' @param channels Character vector - channel names to plot. If NULL, plots all
+#'   64 standard 10-20/10-10 electrodes. Can also accept BioSemi A/B naming.
+#' @param highlight_channels Character vector - specific channels to highlight
+#'   in a different color (optional)
+#' @param show_labels Logical - whether to show electrode labels on the plot.
+#'   Default is TRUE.
+#' @param color_by Character - how to color electrodes. Options:
+#'   - "region" = color by brain region (frontal, central, parietal, occipital, temporal)
+#'   - "single" = all one color (default blue)
+#'   Default is "region".
+#' @param show_head Logical - whether to show the head outline. Default is TRUE.
+#'
+#' @return Returns a plotly object (interactive 3D plot viewable in RStudio)
+#'
+#' @details
+#' This function visualizes electrode positions in 3D space using the official
+#' BioSemi 64-channel electrode cap coordinates. All positions are exact Cartesian
+#' coordinates (x, y, z) in millimeters from BioSemi's cap layout documentation.
+#'
+#' **Coordinate System:**
+#' - Origin (0, 0, 0) at center of head
+#' - X-axis: Left (-) to Right (+)
+#' - Y-axis: Back (-) to Front (+)
+#' - Z-axis: Bottom (-) to Top (+)
+#' - Nose points in +Y direction
+#'
+#' @examples
+#' \dontrun{
+#'
+#'   # Example 1: Plot all 64 electrodes
+#'   plot_electrode_3d()
+#'
+#'   # Example 2: Plot specific channels
+#'   plot_electrode_3d(channels = c("Cz", "Fz", "Pz", "Oz", "T7", "T8"))
+#'
+#'   # Example 3: Highlight midline electrodes
+#'   plot_electrode_3d(highlight_channels = c("Fpz", "Fz", "Cz", "Pz", "Oz"))
+#'
+#'   # Example 4: No head outline, just electrodes
+#'   plot_electrode_3d(show_head = FALSE)
+#' }
+#'
+#' @keywords internal
+#' @importFrom plotly plot_ly add_trace layout
+#' @export
+#'
+plot_electrode_3d <- function(channels = NULL,
+                              highlight_channels = NULL,
+                              show_labels = TRUE,
+                              color_by = "region",
+                              show_head = TRUE) {
+  
+  # ========================================================================
+  # LOAD REQUIRED PACKAGE
+  # ========================================================================
+  
+  if (!requireNamespace("plotly", quietly = TRUE)) {
+    stop("Package 'plotly' is required for interactive 3D plots.\n",
+         "Install it with: install.packages('plotly')")
+  }
+  
+  # ========================================================================
+  # OFFICIAL BIOSEMI 64-CHANNEL COORDINATES
+  # ========================================================================
+  
+  electrode_coords <- data.frame(
+    electrode = c(
+      "Fp1", "AF7", "AF3", "F1", "F3", "F5", "F7", "FT7", "FC5", "FC3",
+      "FC1", "C1", "C3", "C5", "T7", "TP7", "CP5", "CP3", "CP1", "P1",
+      "P3", "P5", "P7", "P9", "PO7", "PO3", "O1", "Iz", "Oz", "POz",
+      "Pz", "CPz", "Fpz", "Fp2", "AF8", "AF4", "AFz", "Fz", "F2", "F4",
+      "F6", "F8", "FT8", "FC6", "FC4", "FC2", "FCz", "Cz", "C2", "C4",
+      "C6", "T8", "TP8", "CP6", "CP4", "CP2", "P2", "P4", "P6", "P8",
+      "P10", "PO8", "PO4", "O2"
+    ),
+    x = c(
+      -27, -51, -36, -25, -48, -64, -71, -83, -78, -59,
+      -33, -34, -63, -82, -87, -83, -78, -59, -33, -25,
+      -48, -64, -71, -64, -51, -36, -27, 0, 0, 0,
+      0, 0, 0, 27, 51, 36, 0, 0, 25, 48,
+      64, 71, 83, 78, 59, 33, 0, 0, 34, 63,
+      82, 87, 83, 78, 59, 33, 25, 48, 64, 71,
+      64, 51, 36, 27
+    ),
+    y = c(
+      83, 71, 76, 62, 59, 55, 51, 27, 30, 31,
+      33, 0, 0, 0, 0, -27, -30, -31, -33, -62,
+      -59, -55, -51, -47, -71, -76, -83, -79, -87, -82,
+      -63, -34, 87, 83, 71, 76, 82, 63, 62, 59,
+      55, 51, 27, 30, 31, 33, 34, 0, 0, 0,
+      0, 0, -27, -30, -31, -33, -62, -59, -55, -51,
+      -47, -71, -76, -83
+    ),
+    z = c(
+      -3, -3, 24, 56, 44, 23, -3, -3, 27, 56,
+      74, 81, 61, 31, -3, -3, 27, 56, 74, 56,
+      44, 23, -3, -37, -3, 24, -3, -37, -3, 31,
+      61, 81, -3, -3, -3, 24, 31, 61, 56, 44,
+      23, -3, -3, 27, 56, 74, 81, 88, 81, 61,
+      31, -3, -3, 27, 56, 74, 56, 44, 23, -3,
+      -37, -3, 24, -3
+    ),
+    stringsAsFactors = FALSE
+  )
+  
+  # ========================================================================
+  # BIOSEMI A/B TO STANDARD MAPPING
+  # ========================================================================
+  
+  biosemi_mapping <- data.frame(
+    biosemi = c(
+      "A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9", "A10",
+      "A11", "A12", "A13", "A14", "A15", "A16", "A17", "A18", "A19", "A20",
+      "A21", "A22", "A23", "A24", "A25", "A26", "A27", "A28", "A29", "A30",
+      "A31", "A32",
+      "B1", "B2", "B3", "B4", "B5", "B6", "B7", "B8", "B9", "B10",
+      "B11", "B12", "B13", "B14", "B15", "B16", "B17", "B18", "B19", "B20",
+      "B21", "B22", "B23", "B24", "B25", "B26", "B27", "B28", "B29", "B30",
+      "B31", "B32"
+    ),
+    standard = c(
+      "Fp1", "AF7", "AF3", "F1", "F3", "F5", "F7", "FT7", "FC5", "FC3",
+      "FC1", "C1", "C3", "C5", "T7", "TP7", "CP5", "CP3", "CP1", "P1",
+      "P3", "P5", "P7", "P9", "PO7", "PO3", "O1", "Iz", "Oz", "POz",
+      "Pz", "CPz",
+      "Fpz", "Fp2", "AF8", "AF4", "AFz", "Fz", "F2", "F4", "F6", "F8",
+      "FT8", "FC6", "FC4", "FC2", "FCz", "Cz", "C2", "C4", "C6", "T8",
+      "TP8", "CP6", "CP4", "CP2", "P2", "P4", "P6", "P8", "P10", "PO8",
+      "PO4", "O2"
+    ),
+    stringsAsFactors = FALSE
+  )
+  
+  # ========================================================================
+  # DETERMINE WHICH CHANNELS TO PLOT
+  # ========================================================================
+  
+  if (is.null(channels)) {
+    channels_to_plot <- electrode_coords$electrode
+  } else {
+    channels_to_plot <- channels
+  }
+  
+  # Map BioSemi names to standard names if needed
+  plot_data <- data.frame(
+    original_name = channels_to_plot,
+    standard_name = channels_to_plot,
+    stringsAsFactors = FALSE
+  )
+  
+  for (i in 1:nrow(plot_data)) {
+    ch <- plot_data$original_name[i]
+    if (ch %in% biosemi_mapping$biosemi) {
+      plot_data$standard_name[i] <- biosemi_mapping$standard[biosemi_mapping$biosemi == ch]
+    }
+  }
+  
+  # Merge with coordinates
+  plot_data <- merge(plot_data, electrode_coords, 
+                     by.x = "standard_name", by.y = "electrode",
+                     all.x = TRUE)
+  
+  # Remove electrodes without coordinates
+  missing_coords <- plot_data$original_name[is.na(plot_data$x)]
+  if (length(missing_coords) > 0) {
+    warning("No coordinates found for: ", paste(missing_coords, collapse = ", "))
+    plot_data <- plot_data[!is.na(plot_data$x), ]
+  }
+  
+  if (nrow(plot_data) == 0) {
+    stop("No valid electrodes to plot.")
+  }
+  
+  # ========================================================================
+  # ASSIGN COLORS BY BRAIN REGION
+  # ========================================================================
+  
+  if (color_by == "region") {
+    plot_data$color_group <- "Other"
+    plot_data$color_group[grepl("^Fp|^AF|^F[^CT]", plot_data$standard_name)] <- "Frontal"
+    plot_data$color_group[grepl("^C|^FC", plot_data$standard_name)] <- "Central"
+    plot_data$color_group[grepl("^P[^O]|^CP", plot_data$standard_name)] <- "Parietal"
+    plot_data$color_group[grepl("^O|^PO|^Iz", plot_data$standard_name)] <- "Occipital"
+    plot_data$color_group[grepl("^T[0-9]|^FT|^TP", plot_data$standard_name)] <- "Temporal"
+    
+    color_palette <- c(
+      "Frontal" = "#e41a1c",
+      "Central" = "#377eb8",
+      "Parietal" = "#4daf4a",
+      "Occipital" = "#984ea3",
+      "Temporal" = "#ff7f00",
+      "Other" = "#999999"
+    )
+    
+  } else {
+    plot_data$color_group <- "Electrode"
+    color_palette <- c("Electrode" = "#377eb8")
+  }
+  
+  # Highlight specific channels if requested
+  if (!is.null(highlight_channels)) {
+    plot_data$is_highlighted <- plot_data$original_name %in% highlight_channels |
+      plot_data$standard_name %in% highlight_channels
+  } else {
+    plot_data$is_highlighted <- FALSE
+  }
+  
+  # ========================================================================
+  # CREATE REALISTIC HEAD OUTLINE (ELLIPSOID)
+  # ========================================================================
+  
+  # Create ellipsoid head shape (more realistic than sphere)
+  # Semi-axes: a (left-right), b (front-back), c (top-bottom)
+  a <- 80   # Width (left-right)
+  b <- 95   # Length (front-back)
+  c <- 95   # Height (top-bottom, slightly elongated)
+  
+  # Parametric ellipsoid surface
+  n_points <- 30
+  u <- seq(0, 2*pi, length.out = n_points)
+  v <- seq(0, pi, length.out = n_points)
+  
+  # Create wireframe circles (longitude and latitude lines)
+  head_lines <- list()
+  
+  # Longitude lines (vertical circles from front to back)
+  for (i in seq(1, length(u), by = 3)) {
+    x_line <- a * sin(v) * cos(u[i])
+    y_line <- b * sin(v) * sin(u[i])
+    z_line <- c * cos(v)
+    head_lines[[length(head_lines) + 1]] <- list(x = x_line, y = y_line, z = z_line)
+  }
+  
+  # Latitude lines (horizontal circles)
+  for (j in seq(1, length(v), by = 3)) {
+    x_line <- a * sin(v[j]) * cos(u)
+    y_line <- b * sin(v[j]) * sin(u)
+    z_line <- rep(c * cos(v[j]), length(u))
+    head_lines[[length(head_lines) + 1]] <- list(x = x_line, y = y_line, z = z_line)
+  }
+  
+  # ========================================================================
+  # CREATE NOSE INDICATOR
+  # ========================================================================
+  
+  nose_x <- c(0, 8, -8, 0, 0)
+  nose_y <- c(100, 88, 88, 100, 100)
+  nose_z <- c(20, 12, 12, 20, 20)
+  
+  # ========================================================================
+  # BUILD PLOTLY 3D FIGURE
+  # ========================================================================
+  
+  p <- plotly::plot_ly()
+  
+  # Add head wireframe (if requested)
+  if (show_head) {
+    for (line in head_lines) {
+      p <- plotly::add_trace(
+        p,
+        x = line$x, y = line$y, z = line$z,
+        type = "scatter3d",
+        mode = "lines",
+        line = list(color = "lightgray", width = 1),
+        hoverinfo = "none",
+        showlegend = FALSE
+      )
+    }
+  }
+  
+  # Add nose indicator
+  p <- plotly::add_trace(
+    p,
+    x = nose_x, y = nose_y, z = nose_z,
+    type = "scatter3d",
+    mode = "lines",
+    line = list(color = "black", width = 5),
+    hoverinfo = "none",
+    showlegend = FALSE,
+    name = "Nose"
+  )
+  
+  # Add electrodes (by color group)
+  for (group in unique(plot_data$color_group)) {
+    group_data <- plot_data[plot_data$color_group == group, ]
+    
+    marker_sizes <- ifelse(group_data$is_highlighted, 14, 10)
+    marker_borders <- ifelse(group_data$is_highlighted, "black", "white")
+    border_widths <- ifelse(group_data$is_highlighted, 3, 2)
+    
+    p <- plotly::add_trace(
+      p,
+      data = group_data,
+      x = ~x, y = ~y, z = ~z,
+      type = "scatter3d",
+      mode = ifelse(show_labels, "markers+text", "markers"),
+      marker = list(
+        size = marker_sizes,
+        color = color_palette[group],
+        line = list(color = marker_borders, width = border_widths)
+      ),
+      text = ~original_name,
+      textposition = "top center",
+      textfont = list(size = 10, color = "black", family = "Arial Black"),
+      hovertext = ~paste0("<b>", original_name, "</b><br>",
+                          "Standard: ", standard_name, "<br>",
+                          "Region: ", color_group, "<br>",
+                          "Position (mm):<br>",
+                          "  X: ", round(x, 1), " (L/R)<br>",
+                          "  Y: ", round(y, 1), " (Back/Front)<br>",
+                          "  Z: ", round(z, 1), " (Bottom/Top)"),
+      hoverinfo = "text",
+      name = group,
+      showlegend = TRUE
+    )
+  }
+  
+  # ========================================================================
+  # CONFIGURE LAYOUT
+  # ========================================================================
+  
+  p <- plotly::layout(
+    p,
+    title = list(
+      text = "BioSemi 64-Channel Electrode Layout (3D)",
+      font = list(size = 20, family = "Arial", color = "black")
+    ),
+    scene = list(
+      xaxis = list(
+        title = "← Left | Right →",
+        showgrid = FALSE,
+        zeroline = FALSE,
+        showticklabels = FALSE,
+        range = c(-110, 110)
+      ),
+      yaxis = list(
+        title = "← Back | Front (Nose) →",
+        showgrid = FALSE,
+        zeroline = FALSE,
+        showticklabels = FALSE,
+        range = c(-110, 110)
+      ),
+      zaxis = list(
+        title = "← Bottom | Top →",
+        showgrid = FALSE,
+        zeroline = FALSE,
+        showticklabels = FALSE,
+        range = c(-60, 110)
+      ),
+      camera = list(
+        eye = list(x = 1.5, y = 1.5, z = 1.2)
+      ),
+      aspectmode = "cube",
+      bgcolor = "white"
+    ),
+    paper_bgcolor = "white",
+    plot_bgcolor = "white",
+    legend = list(
+      x = 0.02,
+      y = 0.98,
+      bgcolor = "rgba(255, 255, 255, 0.9)",
+      bordercolor = "black",
+      borderwidth = 1,
+      font = list(size = 12)
+    )
+  )
+  
+  return(p)
+}
+
+
+
+
+
+
+
+
+#' ============================================================================
+#' Plot 3D Electrode Layout on Scalp (BioSemi 64-Channel - Spherical)
+#'
+#' Creates an interactive 3D visualization of electrode positions on a spherical
+#' head model using OFFICIAL BioSemi 64-channel SPHERICAL coordinates.
+#'
+#' @param channels Character vector - channel names to plot. If NULL, plots all
+#'   64 standard 10-20/10-10 electrodes. Can also accept BioSemi A/B naming.
+#' @param highlight_channels Character vector - specific channels to highlight
+#'   in a different color (optional)
+#' @param show_labels Logical - whether to show electrode labels on the plot.
+#'   Default is TRUE.
+#' @param color_by Character - how to color electrodes. Options:
+#'   - "region" = color by brain region (frontal, central, parietal, occipital, temporal)
+#'   - "single" = all one color (default blue)
+#'   Default is "region".
+#' @param show_head Logical - whether to show the head outline. Default is TRUE.
+#' @param head_radius Numeric - radius of head sphere in mm. Default is 87.54 mm
+#'   (calculated from 55 cm circumference).
+#'
+#' @return Returns a plotly object (interactive 3D plot viewable in RStudio)
+#'
+#' @details
+#' This function visualizes electrode positions in 3D space using the official
+#' BioSemi 64-channel electrode cap SPHERICAL coordinates (θ, φ), which are then
+#' converted to Cartesian (x, y, z) for plotting.
+#'
+#' **Spherical Coordinate System:**
+#' - θ (inclination): range from +180° to -180° (at Cz, inclination = 0°)
+#'   - Positive inclinations = right side of head
+#'   - Negative inclinations = left side of head
+#' - φ (azimuth): range from +90° to -90°
+#'   - For positive inclinations: φ = angle from T8 (right ear)
+#'   - For negative inclinations: φ = angle from T7 (left ear)
+#'   - Positive = anti-clockwise, negative = clockwise
+#' - r (radius): 87.54 mm (from 55 cm head circumference)
+#'
+#' **Conversion to Cartesian:**
+#' - x = r * sin(θ) * cos(φ)
+#' - y = r * sin(θ) * sin(φ)
+#' - z = r * cos(θ)
+#'
+#' **Coordinate System:**
+#' - Origin (0, 0, 0) at center of head
+#' - X-axis: Left (-) to Right (+)
+#' - Y-axis: Back (-) to Front (+)
+#' - Z-axis: Bottom (-) to Top (+)
+#' - Nose points in +Y direction
+#'
+#' @examples
+#' \dontrun{
+#'
+#'   # Example 1: Plot all 64 electrodes
+#'   plot_electrode_3d_spherical()
+#'
+#'   # Example 2: Plot specific channels
+#'   plot_electrode_3d_spherical(channels = c("Cz", "Fz", "Pz", "Oz", "T7", "T8"))
+#'
+#'   # Example 3: Highlight midline electrodes
+#'   plot_electrode_3d_spherical(highlight_channels = c("Fpz", "Fz", "Cz", "Pz", "Oz"))
+#'
+#'   # Example 4: Different head size
+#'   plot_electrode_3d_spherical(head_radius = 90)
+#' }
+#'
+#' @keywords internal
+#' @importFrom plotly plot_ly add_trace layout
+#' @export
+#'
+plot_electrode_3d_spherical <- function(channels = NULL,
+                                        highlight_channels = NULL,
+                                        show_labels = TRUE,
+                                        color_by = "region",
+                                        show_head = TRUE,
+                                        head_radius = 87.54) {
+  
+  # ========================================================================
+  # LOAD REQUIRED PACKAGE
+  # ========================================================================
+  
+  if (!requireNamespace("plotly", quietly = TRUE)) {
+    stop("Package 'plotly' is required for interactive 3D plots.\n",
+         "Install it with: install.packages('plotly')")
+  }
+  
+  # ========================================================================
+  # OFFICIAL BIOSEMI 64-CHANNEL SPHERICAL COORDINATES
+  # ========================================================================
+  # From BioSemi Cap_coords_all.xls file
+  # θ (inclination) in degrees, φ (azimuth) in degrees
+  
+  electrode_coords_spherical <- data.frame(
+    electrode = c(
+      "Fp1", "AF7", "AF3", "F1", "F3", "F5", "F7", "FT7", "FC5", "FC3",
+      "FC1", "C1", "C3", "C5", "T7", "TP7", "CP5", "CP3", "CP1", "P1",
+      "P3", "P5", "P7", "P9", "PO7", "PO3", "O1", "Iz", "Oz", "POz",
+      "Pz", "CPz", "Fpz", "Fp2", "AF8", "AF4", "AFz", "Fz", "F2", "F4",
+      "F6", "F8", "FT8", "FC6", "FC4", "FC2", "FCz", "Cz", "C2", "C4",
+      "C6", "T8", "TP8", "CP6", "CP4", "CP2", "P2", "P4", "P6", "P8",
+      "P10", "PO8", "PO4", "O2"
+    ),
+    theta = c(
+      -92, -92, -74, -50, -60, -75, -92, -92, -72, -50,
+      -32, -23, -46, -69, -92, -92, -72, -50, -32, -50,
+      -60, -75, -92, -115, -92, -74, -92, 115, 92, 69,
+      46, 23, 92, 92, 92, 74, 69, 46, 50, 60,
+      75, 92, 92, 72, 50, 32, 23, 0, 23, 46,
+      69, 92, 92, 72, 50, 32, 50, 60, 75, 92,
+      115, 92, 74, 92
+    ),
+    phi = c(
+      -72, -54, -65, -68, -51, -41, -36, -18, -21, -28,
+      -45, 0, 0, 0, 0, 18, 21, 28, 45, 68,
+      51, 41, 36, 36, 54, 65, 72, -90, -90, -90,
+      -90, -90, 90, 72, 54, 65, 90, 90, 68, 51,
+      41, 36, 18, 21, 28, 45, 90, 0, 0, 0,
+      0, 0, -18, -21, -28, -45, -68, -51, -41, -36,
+      -36, -54, -65, -72
+    ),
+    stringsAsFactors = FALSE
+  )
+  
+  # ========================================================================
+  # CONVERT SPHERICAL TO CARTESIAN COORDINATES
+  # ========================================================================
+  
+  # Convert degrees to radians
+  deg_to_rad <- function(deg) {
+    return(deg * pi / 180)
+  }
+  
+  # Spherical to Cartesian conversion
+  # x = r * sin(θ) * cos(φ)
+  # y = r * sin(θ) * sin(φ)
+  # z = r * cos(θ)
+  
+  electrode_coords_spherical$theta_rad <- deg_to_rad(electrode_coords_spherical$theta)
+  electrode_coords_spherical$phi_rad <- deg_to_rad(electrode_coords_spherical$phi)
+  
+  electrode_coords_spherical$x <- head_radius * sin(electrode_coords_spherical$theta_rad) * 
+    cos(electrode_coords_spherical$phi_rad)
+  electrode_coords_spherical$y <- head_radius * sin(electrode_coords_spherical$theta_rad) * 
+    sin(electrode_coords_spherical$phi_rad)
+  electrode_coords_spherical$z <- head_radius * cos(electrode_coords_spherical$theta_rad)
+  
+  # Round to match BioSemi precision
+  electrode_coords_spherical$x <- round(electrode_coords_spherical$x, 0)
+  electrode_coords_spherical$y <- round(electrode_coords_spherical$y, 0)
+  electrode_coords_spherical$z <- round(electrode_coords_spherical$z, 0)
+  
+  # ========================================================================
+  # BIOSEMI A/B TO STANDARD MAPPING
+  # ========================================================================
+  
+  biosemi_mapping <- data.frame(
+    biosemi = c(
+      "A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9", "A10",
+      "A11", "A12", "A13", "A14", "A15", "A16", "A17", "A18", "A19", "A20",
+      "A21", "A22", "A23", "A24", "A25", "A26", "A27", "A28", "A29", "A30",
+      "A31", "A32",
+      "B1", "B2", "B3", "B4", "B5", "B6", "B7", "B8", "B9", "B10",
+      "B11", "B12", "B13", "B14", "B15", "B16", "B17", "B18", "B19", "B20",
+      "B21", "B22", "B23", "B24", "B25", "B26", "B27", "B28", "B29", "B30",
+      "B31", "B32"
+    ),
+    standard = c(
+      "Fp1", "AF7", "AF3", "F1", "F3", "F5", "F7", "FT7", "FC5", "FC3",
+      "FC1", "C1", "C3", "C5", "T7", "TP7", "CP5", "CP3", "CP1", "P1",
+      "P3", "P5", "P7", "P9", "PO7", "PO3", "O1", "Iz", "Oz", "POz",
+      "Pz", "CPz",
+      "Fpz", "Fp2", "AF8", "AF4", "AFz", "Fz", "F2", "F4", "F6", "F8",
+      "FT8", "FC6", "FC4", "FC2", "FCz", "Cz", "C2", "C4", "C6", "T8",
+      "TP8", "CP6", "CP4", "CP2", "P2", "P4", "P6", "P8", "P10", "PO8",
+      "PO4", "O2"
+    ),
+    stringsAsFactors = FALSE
+  )
+  
+  # ========================================================================
+  # DETERMINE WHICH CHANNELS TO PLOT
+  # ========================================================================
+  
+  if (is.null(channels)) {
+    channels_to_plot <- electrode_coords_spherical$electrode
+  } else {
+    channels_to_plot <- channels
+  }
+  
+  # Map BioSemi names to standard names if needed
+  plot_data <- data.frame(
+    original_name = channels_to_plot,
+    standard_name = channels_to_plot,
+    stringsAsFactors = FALSE
+  )
+  
+  for (i in 1:nrow(plot_data)) {
+    ch <- plot_data$original_name[i]
+    if (ch %in% biosemi_mapping$biosemi) {
+      plot_data$standard_name[i] <- biosemi_mapping$standard[biosemi_mapping$biosemi == ch]
+    }
+  }
+  
+  # Merge with coordinates
+  plot_data <- merge(plot_data, electrode_coords_spherical, 
+                     by.x = "standard_name", by.y = "electrode",
+                     all.x = TRUE)
+  
+  # Remove electrodes without coordinates
+  missing_coords <- plot_data$original_name[is.na(plot_data$x)]
+  if (length(missing_coords) > 0) {
+    warning("No coordinates found for: ", paste(missing_coords, collapse = ", "))
+    plot_data <- plot_data[!is.na(plot_data$x), ]
+  }
+  
+  if (nrow(plot_data) == 0) {
+    stop("No valid electrodes to plot.")
+  }
+  
+  # ========================================================================
+  # ASSIGN COLORS BY BRAIN REGION
+  # ========================================================================
+  
+  if (color_by == "region") {
+    plot_data$color_group <- "Other"
+    plot_data$color_group[grepl("^Fp|^AF|^F[^CT]", plot_data$standard_name)] <- "Frontal"
+    plot_data$color_group[grepl("^C|^FC", plot_data$standard_name)] <- "Central"
+    plot_data$color_group[grepl("^P[^O]|^CP", plot_data$standard_name)] <- "Parietal"
+    plot_data$color_group[grepl("^O|^PO|^Iz", plot_data$standard_name)] <- "Occipital"
+    plot_data$color_group[grepl("^T[0-9]|^FT|^TP", plot_data$standard_name)] <- "Temporal"
+    
+    color_palette <- c(
+      "Frontal" = "#e41a1c",
+      "Central" = "#377eb8",
+      "Parietal" = "#4daf4a",
+      "Occipital" = "#984ea3",
+      "Temporal" = "#ff7f00",
+      "Other" = "#999999"
+    )
+    
+  } else {
+    plot_data$color_group <- "Electrode"
+    color_palette <- c("Electrode" = "#377eb8")
+  }
+  
+  # Highlight specific channels if requested
+  if (!is.null(highlight_channels)) {
+    plot_data$is_highlighted <- plot_data$original_name %in% highlight_channels |
+      plot_data$standard_name %in% highlight_channels
+  } else {
+    plot_data$is_highlighted <- FALSE
+  }
+  
+  # ========================================================================
+  # CREATE PERFECT SPHERE HEAD OUTLINE (from spherical coordinates)
+  # ========================================================================
+  
+  # Create perfect sphere wireframe
+  n_points <- 30
+  u <- seq(0, 2*pi, length.out = n_points)
+  v <- seq(0, pi, length.out = n_points)
+  
+  # Create wireframe circles (longitude and latitude lines)
+  head_lines <- list()
+  
+  # Longitude lines (vertical circles from front to back)
+  for (i in seq(1, length(u), by = 3)) {
+    x_line <- head_radius * sin(v) * cos(u[i])
+    y_line <- head_radius * sin(v) * sin(u[i])
+    z_line <- head_radius * cos(v)
+    head_lines[[length(head_lines) + 1]] <- list(x = x_line, y = y_line, z = z_line)
+  }
+  
+  # Latitude lines (horizontal circles)
+  for (j in seq(1, length(v), by = 3)) {
+    x_line <- head_radius * sin(v[j]) * cos(u)
+    y_line <- head_radius * sin(v[j]) * sin(u)
+    z_line <- rep(head_radius * cos(v[j]), length(u))
+    head_lines[[length(head_lines) + 1]] <- list(x = x_line, y = y_line, z = z_line)
+  }
+  
+  # ========================================================================
+  # CREATE NOSE INDICATOR
+  # ========================================================================
+  
+  nose_length <- head_radius * 0.15  # 15% of radius
+  nose_x <- c(0, head_radius * 0.09, -head_radius * 0.09, 0, 0)
+  nose_y <- c(head_radius + nose_length, head_radius, head_radius, head_radius + nose_length, head_radius + nose_length)
+  nose_z <- c(head_radius * 0.23, head_radius * 0.14, head_radius * 0.14, head_radius * 0.23, head_radius * 0.23)
+  
+  # ========================================================================
+  # BUILD PLOTLY 3D FIGURE
+  # ========================================================================
+  
+  p <- plotly::plot_ly()
+  
+  # Add head wireframe (if requested)
+  if (show_head) {
+    for (line in head_lines) {
+      p <- plotly::add_trace(
+        p,
+        x = line$x, y = line$y, z = line$z,
+        type = "scatter3d",
+        mode = "lines",
+        line = list(color = "lightgray", width = 1),
+        hoverinfo = "none",
+        showlegend = FALSE
+      )
+    }
+  }
+  
+  # Add nose indicator
+  p <- plotly::add_trace(
+    p,
+    x = nose_x, y = nose_y, z = nose_z,
+    type = "scatter3d",
+    mode = "lines",
+    line = list(color = "black", width = 5),
+    hoverinfo = "none",
+    showlegend = FALSE,
+    name = "Nose"
+  )
+  
+  # Add electrodes (by color group)
+  for (group in unique(plot_data$color_group)) {
+    group_data <- plot_data[plot_data$color_group == group, ]
+    
+    marker_sizes <- ifelse(group_data$is_highlighted, 14, 10)
+    marker_borders <- ifelse(group_data$is_highlighted, "black", "white")
+    border_widths <- ifelse(group_data$is_highlighted, 3, 2)
+    
+    p <- plotly::add_trace(
+      p,
+      data = group_data,
+      x = ~x, y = ~y, z = ~z,
+      type = "scatter3d",
+      mode = ifelse(show_labels, "markers+text", "markers"),
+      marker = list(
+        size = marker_sizes,
+        color = color_palette[group],
+        line = list(color = marker_borders, width = border_widths)
+      ),
+      text = ~original_name,
+      textposition = "top center",
+      textfont = list(size = 10, color = "black", family = "Arial Black"),
+      hovertext = ~paste0("<b>", original_name, "</b><br>",
+                          "Standard: ", standard_name, "<br>",
+                          "Region: ", color_group, "<br>",
+                          "Spherical (degrees):<br>",
+                          "  θ (inclination): ", theta, "°<br>",
+                          "  φ (azimuth): ", phi, "°<br>",
+                          "Cartesian (mm):<br>",
+                          "  X: ", round(x, 1), " (L/R)<br>",
+                          "  Y: ", round(y, 1), " (Back/Front)<br>",
+                          "  Z: ", round(z, 1), " (Bottom/Top)"),
+      hoverinfo = "text",
+      name = group,
+      showlegend = TRUE
+    )
+  }
+  
+  # ========================================================================
+  # CONFIGURE LAYOUT
+  # ========================================================================
+  
+  axis_range <- head_radius * 1.3
+  
+  p <- plotly::layout(
+    p,
+    title = list(
+      text = "BioSemi 64-Channel Electrode Layout (3D - Spherical)",
+      font = list(size = 20, family = "Arial", color = "black")
+    ),
+    scene = list(
+      xaxis = list(
+        title = "← Left | Right →",
+        showgrid = FALSE,
+        zeroline = FALSE,
+        showticklabels = FALSE,
+        range = c(-axis_range, axis_range)
+      ),
+      yaxis = list(
+        title = "← Back | Front (Nose) →",
+        showgrid = FALSE,
+        zeroline = FALSE,
+        showticklabels = FALSE,
+        range = c(-axis_range, axis_range)
+      ),
+      zaxis = list(
+        title = "← Bottom | Top →",
+        showgrid = FALSE,
+        zeroline = FALSE,
+        showticklabels = FALSE,
+        range = c(-axis_range * 0.7, axis_range)
+      ),
+      camera = list(
+        eye = list(x = 1.5, y = 1.5, z = 1.2)
+      ),
+      aspectmode = "cube",
+      bgcolor = "white"
+    ),
+    paper_bgcolor = "white",
+    plot_bgcolor = "white",
+    legend = list(
+      x = 0.02,
+      y = 0.98,
+      bgcolor = "rgba(255, 255, 255, 0.9)",
+      bordercolor = "black",
+      borderwidth = 1,
+      font = list(size = 12)
+    )
+  )
+  
+  return(p)
+}
+

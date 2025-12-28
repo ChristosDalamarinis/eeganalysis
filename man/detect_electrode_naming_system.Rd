@@ -5,15 +5,16 @@
 \title{============================================================================
 Detect Electrode Naming System in EEG Dataset}
 \usage{
-detect_electrode_naming_system(file_path = NULL, channel_names = NULL)
+detect_electrode_naming_system(data)
 }
 \arguments{
-\item{file_path}{Character - full path to the BioSemi .bdf file, OR NULL if
-using channel_names parameter}
-
-\item{channel_names}{Character vector - channel names from already-loaded dataset.
-Use this if your data is already in R environment. If provided, file_path
-is ignored.}
+\item{data}{Either:
+\itemize{
+\item Character string: file path to BioSemi .bdf file
+\item Character vector: channel names from loaded dataset
+\item Data frame/matrix: dataset with channels as columns (uses colnames)
+\item List: dataset with $channels component (extracts channel names)
+}}
 }
 \value{
 List with the following components:
@@ -35,21 +36,8 @@ with columns:
 - system_category: Primary system category
 - standard_equivalent: 10-20/10-10 name if BioSemi detected (or NA)
 }
-\item{summary}{Character vector with human-readable summary of findings:
-- Number of channels in each system
-- Unrecognized channels (if any)
-- Recommendation for next steps
-}
-\item{detailed_breakdown}{List with counts by system type:
-\describe{
-\item{standard_10_20}{Integer. Count of recognized 10-20 electrodes}
-\item{standard_10_10}{Integer. Count of recognized 10-10 electrodes}
-\item{biosemi_a}{Integer. Count of BioSemi A1-A32 electrodes}
-\item{biosemi_b}{Integer. Count of BioSemi B1-B32 electrodes}
-\item{external}{Integer. Count of external channels (EOG, ECG, etc.)}
-\item{unrecognized}{Integer. Count of unrecognized channels}
-}
-}
+\item{summary}{Character vector with human-readable summary of findings}
+\item{detailed_breakdown}{List with counts by system type}
 }
 }
 \description{
@@ -58,112 +46,41 @@ dataset) are coded using standard international notation (10-20/10-10 system)
 or BioSemi's internal classification system (A1-A32, B1-B32).
 }
 \details{
-This function performs automatic detection of electrode naming conventions
-by analyzing channel names from either:
-\enumerate{
-\item A BDF file header (if file_path is provided)
-\item A character vector of channel names (if channel_names is provided)
-}
+This function performs automatic detection of electrode naming conventions.
+It intelligently handles multiple input types:
 
-\strong{Two Usage Modes:}
+\strong{Usage Examples:}
 
-\strong{Mode 1: File Path (reads from disk)}
+\if{html}{\out{<div class="sourceCode">}}\preformatted{# From file path
+result <- detect_electrode_naming_system("data/subject_01.bdf")
 
-\if{html}{\out{<div class="sourceCode">}}\preformatted{result <- detect_electrode_naming_system(file_path = "data/subject_01.bdf")
+# From loaded dataset (list with $channels)
+data2 <- read_biosemi("data/subject_01.bdf")
+result <- detect_electrode_naming_system(data2$channels)
+
+# From data frame/matrix (uses column names)
+result <- detect_electrode_naming_system(my_eeg_data)
+
+# From character vector of names
+ch_names <- c("A1", "A2", "A3", ...)
+result <- detect_electrode_naming_system(ch_names)
 }\if{html}{\out{</div>}}
 
-\strong{Mode 2: Loaded Dataset (from R environment)}
-
-\if{html}{\out{<div class="sourceCode">}}\preformatted{my_data <- read_biosemi("data/subject_01.bdf")
-result <- detect_electrode_naming_system(channel_names = colnames(my_data))
-# OR
-result <- detect_electrode_naming_system(channel_names = my_data$channel_names)
-}\if{html}{\out{</div>}}
-
-The function then:
-\enumerate{
-\item \strong{Classifies each channel} against known naming patterns:
-\itemize{
-\item Standard 10-20: Fp1, Fpz, Cz, Pz, O1, O2, etc.
-\item Standard 10-10: AF3, FC5, CP3, PO3, etc.
-\item BioSemi A-series: A1-A32 (64-channel cap)
-\item BioSemi B-series: B1-B32 (64-channel cap)
-\item External: EXG1-EXG8 (reference electrodes shown as green in BioSemi layout)
-\item Status: Status/trigger channel
-}
-\item \strong{Provides BioSemi-to-Standard mapping} using official BioSemi 64-electrode
-cap layout (A1-A32 + B1-B32 mapped to 10-20/10-10 positions)
-\item \strong{Calculates confidence} based on percentage of channels correctly
-classified within detected system
-\item \strong{Provides detailed breakdown} of findings with actionable recommendations
-}
-
-\strong{BioSemi 64-Channel Layout (from official documentation):}
-
-The function uses the official BioSemi mapping:
-\itemize{
-\item A1-A32: First 32 electrodes (mixed 10-20 and 10-10 positions)
-\item B1-B32: Second 32 electrodes (mixed 10-20 and 10-10 positions)
-\item External references (green circles in layout): EXG1-EXG8
-}
-
-\strong{Why This Matters:}
-
-BioSemi hardware records with internal A1-A32/B1-B32 labeling, but many
-analysis pipelines expect standard 10-20/10-10 names. This function helps you:
-\itemize{
-\item Identify if channel mapping is needed
-\item Get the exact 10-20/10-10 equivalent for each BioSemi channel
-\item Choose appropriate preprocessing pipeline
-\item Verify expected electrode layout
-\item Document your data naming convention
-}
-
-\strong{Important Notes:}
-\itemize{
-\item Matching is \strong{case-sensitive} (e.g., "Cz" recognized, "cz" is not)
-\item When using file_path, reads \strong{header only} (very fast, ~50-100 ms)
-\item Works with any BioSemi BDF file format
-\item External channels (EXG1-EXG8) are recognized as reference electrodes
-}
+\strong{BioSemi 64-Channel Layout:}
+Maps A1-A32 + B1-B32 to standard 10-20/10-10 positions using official
+BioSemi electrode cap layout.
 }
 \examples{
 \dontrun{
+  # Example 1: From file
+  result <- detect_electrode_naming_system("data/subject_01.bdf")
 
-  # Example 1: Check a BioSemi file from disk
-  result <- detect_electrode_naming_system(file_path = "data/subject_01.bdf")
-  print(result$naming_system)      # "10-20/10-10"
-  print(result$confidence)         # 1.0
+  # Example 2: From loaded dataset
+  data2 <- read_biosemi("data/subject_01.bdf")
+  result <- detect_electrode_naming_system(data2$channels)
 
-  # Example 2: Check already-loaded dataset
-  my_data <- read_biosemi("data/subject_01.bdf")
-  result <- detect_electrode_naming_system(channel_names = colnames(my_data))
-  print(result$naming_system)      # "BioSemi_AB"
-  
-  # Example 3: With eegUtils or other packages
-  library(eegUtils)
-  eeg_data <- import_raw("data/subject_01.bdf")
-  result <- detect_electrode_naming_system(channel_names = channel_names(eeg_data))
-  
-  # Example 4: See the mapping
+  # Example 3: See the mapping
   View(result$channels_detected[, c("channel_name", "standard_equivalent")])
-  
-  # Example 5: Export mapping for reference
-  write.csv(result$channels_detected, "biosemi_mapping.csv", row.names = FALSE)
-
-  # Example 6: Batch processing from files
-  files <- list.files("data/", pattern = ".bdf$", full.names = TRUE)
-  for (file in files) {
-    result <- detect_electrode_naming_system(file_path = file)
-    cat("File:", basename(file), "System:", result$naming_system, "\n")
-  }
-
-  # Example 7: Batch processing from loaded datasets
-  dataset_list <- list(data1, data2, data3)
-  for (i in seq_along(dataset_list)) {
-    result <- detect_electrode_naming_system(channel_names = colnames(dataset_list[[i]]))
-    cat("Dataset", i, "System:", result$naming_system, "\n")
-  }
 }
 
 }

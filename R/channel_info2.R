@@ -829,11 +829,15 @@ inspect_biosemi_file <- function(file_path) {
 #' ============================================================================
 #' Detect Electrode Naming System in EEG Dataset
 #'
-#' Automatically identifies whether electrodes in a BioSemi BDF file are coded
-#' using standard international notation (10-20/10-10 system) or BioSemi's
-#' internal classification system (A1-A32, B1-B32).
+#' Automatically identifies whether electrodes in a BioSemi BDF file (or loaded
+#' dataset) are coded using standard international notation (10-20/10-10 system)
+#' or BioSemi's internal classification system (A1-A32, B1-B32).
 #'
-#' @param file_path Character - full path to the BioSemi .bdf file
+#' @param file_path Character - full path to the BioSemi .bdf file, OR NULL if
+#'   using channel_names parameter
+#' @param channel_names Character vector - channel names from already-loaded dataset.
+#'   Use this if your data is already in R environment. If provided, file_path
+#'   is ignored.
 #'
 #' @return List with the following components:
 #' \describe{
@@ -873,11 +877,28 @@ inspect_biosemi_file <- function(file_path) {
 #'
 #' @details
 #' This function performs automatic detection of electrode naming conventions
-#' by analyzing channel names from the BDF file header. It:
+#' by analyzing channel names from either:
+#' 1. A BDF file header (if file_path is provided)
+#' 2. A character vector of channel names (if channel_names is provided)
 #'
-#' 1. **Extracts channel names** from the BDF file header (fast, no signal data)
+#' **Two Usage Modes:**
 #'
-#' 2. **Classifies each channel** against known naming patterns:
+#' **Mode 1: File Path (reads from disk)**
+#' ```
+#' result <- detect_electrode_naming_system(file_path = "data/subject_01.bdf")
+#' ```
+#'
+#' **Mode 2: Loaded Dataset (from R environment)**
+#' ```
+#' my_data <- read_biosemi("data/subject_01.bdf")
+#' result <- detect_electrode_naming_system(channel_names = colnames(my_data))
+#' # OR
+#' result <- detect_electrode_naming_system(channel_names = my_data$channel_names)
+#' ```
+#'
+#' The function then:
+#'
+#' 1. **Classifies each channel** against known naming patterns:
 #'    - Standard 10-20: Fp1, Fpz, Cz, Pz, O1, O2, etc.
 #'    - Standard 10-10: AF3, FC5, CP3, PO3, etc.
 #'    - BioSemi A-series: A1-A32 (64-channel cap)
@@ -885,13 +906,13 @@ inspect_biosemi_file <- function(file_path) {
 #'    - External: EXG1-EXG8 (reference electrodes shown as green in BioSemi layout)
 #'    - Status: Status/trigger channel
 #'
-#' 3. **Provides BioSemi-to-Standard mapping** using official BioSemi 64-electrode
+#' 2. **Provides BioSemi-to-Standard mapping** using official BioSemi 64-electrode
 #'    cap layout (A1-A32 + B1-B32 mapped to 10-20/10-10 positions)
 #'
-#' 4. **Calculates confidence** based on percentage of channels correctly
+#' 3. **Calculates confidence** based on percentage of channels correctly
 #'    classified within detected system
 #'
-#' 5. **Provides detailed breakdown** of findings with actionable recommendations
+#' 4. **Provides detailed breakdown** of findings with actionable recommendations
 #'
 #' **BioSemi 64-Channel Layout (from official documentation):**
 #'
@@ -914,50 +935,46 @@ inspect_biosemi_file <- function(file_path) {
 #' **Important Notes:**
 #'
 #' - Matching is **case-sensitive** (e.g., "Cz" recognized, "cz" is not)
-#' - The function reads **header only** (very fast, ~50-100 ms)
+#' - When using file_path, reads **header only** (very fast, ~50-100 ms)
 #' - Works with any BioSemi BDF file format
 #' - External channels (EXG1-EXG8) are recognized as reference electrodes
 #'
 #' @examples
 #' \dontrun{
 #'
-#'   # Example 1: Check a BioSemi file with standard naming
-#'   result <- detect_electrode_naming_system("data/subject_01.bdf")
+#'   # Example 1: Check a BioSemi file from disk
+#'   result <- detect_electrode_naming_system(file_path = "data/subject_01.bdf")
 #'   print(result$naming_system)      # "10-20/10-10"
 #'   print(result$confidence)         # 1.0
-#'   print(result$summary)            # Detailed summary
 #'
-#'   # Example 2: Check a file with BioSemi internal naming
-#'   result <- detect_electrode_naming_system("data/biosemi_subject.bdf")
+#'   # Example 2: Check already-loaded dataset
+#'   my_data <- read_biosemi("data/subject_01.bdf")
+#'   result <- detect_electrode_naming_system(channel_names = colnames(my_data))
 #'   print(result$naming_system)      # "BioSemi_AB"
-#'   print(result$confidence)         # 1.0
 #'   
-#'   # See the mapping from BioSemi to standard names
+#'   # Example 3: With eegUtils or other packages
+#'   library(eegUtils)
+#'   eeg_data <- import_raw("data/subject_01.bdf")
+#'   result <- detect_electrode_naming_system(channel_names = channel_names(eeg_data))
+#'   
+#'   # Example 4: See the mapping
 #'   View(result$channels_detected[, c("channel_name", "standard_equivalent")])
 #'   
-#'   # Export mapping for reference
+#'   # Example 5: Export mapping for reference
 #'   write.csv(result$channels_detected, "biosemi_mapping.csv", row.names = FALSE)
 #'
-#'   # Example 3: Batch processing multiple files
+#'   # Example 6: Batch processing from files
 #'   files <- list.files("data/", pattern = ".bdf$", full.names = TRUE)
-#'
 #'   for (file in files) {
-#'     result <- detect_electrode_naming_system(file)
-#'     cat("File:", basename(file), "\n")
-#'     cat("System:", result$naming_system, "\n")
-#'     cat("Confidence:", result$confidence, "\n\n")
+#'     result <- detect_electrode_naming_system(file_path = file)
+#'     cat("File:", basename(file), "System:", result$naming_system, "\n")
 #'   }
 #'
-#'   # Example 4: Using results for conditional processing
-#'   result <- detect_electrode_naming_system("data/subject_01.bdf")
-#'
-#'   if (result$naming_system == "BioSemi_AB") {
-#'     cat("BioSemi internal naming detected\n")
-#'     cat("Mapping available in result$channels_detected$standard_equivalent\n")
-#'     # Apply mapping or use standard_equivalent column
-#'   } else if (result$naming_system == "10-20/10-10") {
-#'     cat("Already in standard format, ready to process\n")
-#'     # Proceed with analysis
+#'   # Example 7: Batch processing from loaded datasets
+#'   dataset_list <- list(data1, data2, data3)
+#'   for (i in seq_along(dataset_list)) {
+#'     result <- detect_electrode_naming_system(channel_names = colnames(dataset_list[[i]]))
+#'     cat("Dataset", i, "System:", result$naming_system, "\n")
 #'   }
 #' }
 #'
@@ -966,40 +983,71 @@ inspect_biosemi_file <- function(file_path) {
 #' @importFrom edfReader readEdfHeader
 #' @export
 #'
-detect_electrode_naming_system <- function(file_path) {
+detect_electrode_naming_system <- function(file_path = NULL, channel_names = NULL) {
   
   # ========================================================================
   # INPUT VALIDATION
   # ========================================================================
   
-  # Check file exists
-  if (!file.exists(file_path)) {
-    stop("ERROR: File not found at path: ", file_path)
+  # Must provide either file_path OR channel_names (but not both or neither)
+  if (is.null(file_path) && is.null(channel_names)) {
+    stop("ERROR: Must provide either 'file_path' OR 'channel_names' parameter.\n",
+         "  Usage:\n",
+         "  - For file: detect_electrode_naming_system(file_path = 'data.bdf')\n",
+         "  - For loaded data: detect_electrode_naming_system(channel_names = colnames(my_data))")
   }
   
-  # Check file has .bdf extension
-  if (!grepl("\\.bdf$", file_path, ignore.case = TRUE)) {
-    warning("WARNING: File does not have .bdf extension. ",
-            "Expected BioSemi BDF format. Attempting to read anyway...")
+  # If both provided, use channel_names and warn
+  if (!is.null(file_path) && !is.null(channel_names)) {
+    warning("Both 'file_path' and 'channel_names' provided. Using 'channel_names' and ignoring 'file_path'.")
+    file_path <- NULL
   }
   
   # ========================================================================
-  # READ BDF HEADER
+  # GET CHANNEL NAMES (from file OR from parameter)
   # ========================================================================
   
-  header <- tryCatch({
-    edfReader::readEdfHeader(file_path)
-  }, error = function(e) {
-    stop("ERROR reading BDF file header: ", e$message,
-         "\nCheck that the file is a valid BioSemi BDF file.")
-  })
+  if (!is.null(channel_names)) {
+    # MODE 1: Channel names provided directly (loaded dataset)
+    
+    # Validate channel_names is a character vector
+    if (!is.character(channel_names)) {
+      stop("ERROR: 'channel_names' must be a character vector.\n",
+           "  Example: channel_names = c('A1', 'A2', 'A3', ...)")
+    }
+    
+    # Clean channel names
+    channels_clean <- trimws(channel_names)
+    source_info <- "from provided channel names"
+    
+  } else {
+    # MODE 2: File path provided (read from disk)
+    
+    # Check file exists
+    if (!file.exists(file_path)) {
+      stop("ERROR: File not found at path: ", file_path)
+    }
+    
+    # Check file has .bdf extension
+    if (!grepl("\\.bdf$", file_path, ignore.case = TRUE)) {
+      warning("WARNING: File does not have .bdf extension. ",
+              "Expected BioSemi BDF format. Attempting to read anyway...")
+    }
+    
+    # Read BDF header
+    header <- tryCatch({
+      edfReader::readEdfHeader(file_path)
+    }, error = function(e) {
+      stop("ERROR reading BDF file header: ", e$message,
+           "\nCheck that the file is a valid BioSemi BDF file.")
+    })
+    
+    # Extract and clean channel names
+    channels_raw <- header$sHeaders$label
+    channels_clean <- trimws(channels_raw)
+    source_info <- basename(file_path)
+  }
   
-  # ========================================================================
-  # EXTRACT AND CLEAN CHANNEL NAMES
-  # ========================================================================
-  
-  channels_raw <- header$sHeaders$label
-  channels_clean <- trimws(channels_raw)
   n_channels <- length(channels_clean)
   
   # ========================================================================
@@ -1259,7 +1307,7 @@ detect_electrode_naming_system <- function(file_path) {
   
   # Header
   summary_lines <- c(summary_lines,
-                     paste("Electrode Naming System Detection for:", basename(file_path)))
+                     paste("Electrode Naming System Detection for:", source_info))
   summary_lines <- c(summary_lines,
                      strrep("=", 70))
   summary_lines <- c(summary_lines, "")
@@ -1323,7 +1371,7 @@ detect_electrode_naming_system <- function(file_path) {
     summary_lines <- c(summary_lines, "")
     summary_lines <- c(summary_lines, "   BioSemi to Standard mapping examples:")
     summary_lines <- c(summary_lines, "   A1  -> Fp1  |  B1  -> Fpz")
-    summary_lines <- c(summary_lines, "   A16 -> Cz   |  B16 -> Cz")
+    summary_lines <- c(summary_lines, "   A16 -> TP7  |  B16 -> Cz")
     summary_lines <- c(summary_lines, "   A32 -> CPz  |  B32 -> O2")
   } else if (naming_system == "Mixed") {
     summary_lines <- c(summary_lines,

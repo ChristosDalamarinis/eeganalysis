@@ -2,7 +2,6 @@
 
 S3method(print,eeg)
 export(detect_electrode_naming_system)
-export(get_biosemi_channel_info)
 export(get_electrode_database)
 export(get_electrode_position)
 export(inspect_biosemi_file)

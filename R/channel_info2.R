@@ -241,91 +241,163 @@ get_electrode_database <- function() {
   }
   
   # ========================================================================
-  # ADD EXTERNAL CHANNELS (EOG, ECG, EMG, GSR, etc.)
+  # ADD EXTERNAL CHANNELS (CAN BE USED AS EOG, ECG, EMG, GSR, etc. IN THE INTERACTIVE CODE)
   # ========================================================================
   
   external_channels <- list(
-    # ===== EOG =====
-    "EOG_L" = list(
-      position_name = "Electrooculogram left",
-      position_type = "EOG",
+    # ===== EXG1-EXG8 - External Electrodes =====
+    "EXG1" = list(
+      position_name = "External electrode 1 (EOG/ECG/EMG/GSR)",
+      position_type = "External",
       region = "External",
-      standard_system = "EOG",
+      standard_system = "BioSemi",
       biosemi_name = NA,
-      standard_name = "EOG_L",
+      standard_name = "EXG1",
       cartesian_coords = list(x = NA, y = NA, z = NA),
       spherical_coords = list(theta = NA, phi = NA, radius = NA)
     ),
-    "EOG_R" = list(
-      position_name = "Electrooculogram right",
-      position_type = "EOG",
+    "EXG2" = list(
+      position_name = "External electrode 2 (EOG/ECG/EMG/GSR)",
+      position_type = "External",
       region = "External",
-      standard_system = "EOG",
+      standard_system = "BioSemi",
       biosemi_name = NA,
-      standard_name = "EOG_R",
+      standard_name = "EXG2",
       cartesian_coords = list(x = NA, y = NA, z = NA),
       spherical_coords = list(theta = NA, phi = NA, radius = NA)
     ),
-    "HEOG_L" = list(
-      position_name = "Horizontal EOG left",
-      position_type = "EOG",
+    "EXG3" = list(
+      position_name = "External electrode 3 (EOG/ECG/EMG/GSR)",
+      position_type = "External",
       region = "External",
-      standard_system = "EOG",
+      standard_system = "BioSemi",
       biosemi_name = NA,
-      standard_name = "HEOG_L",
+      standard_name = "EXG3",
       cartesian_coords = list(x = NA, y = NA, z = NA),
       spherical_coords = list(theta = NA, phi = NA, radius = NA)
     ),
-    "HEOG_R" = list(
-      position_name = "Horizontal EOG right",
-      position_type = "EOG",
+    "EXG4" = list(
+      position_name = "External electrode 4 (EOG/ECG/EMG/GSR)",
+      position_type = "External",
       region = "External",
-      standard_system = "EOG",
+      standard_system = "BioSemi",
       biosemi_name = NA,
-      standard_name = "HEOG_R",
+      standard_name = "EXG4",
       cartesian_coords = list(x = NA, y = NA, z = NA),
       spherical_coords = list(theta = NA, phi = NA, radius = NA)
     ),
-    "VEOG" = list(
-      position_name = "Vertical EOG",
-      position_type = "EOG",
+    "EXG5" = list(
+      position_name = "External electrode 5 (EOG/ECG/EMG/GSR)",
+      position_type = "External",
       region = "External",
-      standard_system = "EOG",
+      standard_system = "BioSemi",
       biosemi_name = NA,
-      standard_name = "VEOG",
+      standard_name = "EXG5",
       cartesian_coords = list(x = NA, y = NA, z = NA),
       spherical_coords = list(theta = NA, phi = NA, radius = NA)
     ),
-    # ===== ECG =====
-    "ECG" = list(
-      position_name = "Electrocardiogram (heart rate)",
-      position_type = "ECG",
+    "EXG6" = list(
+      position_name = "External electrode 6 (EOG/ECG/EMG/GSR)",
+      position_type = "External",
       region = "External",
-      standard_system = "ECG",
+      standard_system = "BioSemi",
       biosemi_name = NA,
-      standard_name = "ECG",
+      standard_name = "EXG6",
       cartesian_coords = list(x = NA, y = NA, z = NA),
       spherical_coords = list(theta = NA, phi = NA, radius = NA)
     ),
-    # ===== EMG =====
-    "EMG" = list(
-      position_name = "Electromyogram (muscle activity)",
-      position_type = "EMG",
+    "EXG7" = list(
+      position_name = "External electrode 7 (EOG/ECG/EMG/GSR)",
+      position_type = "External",
       region = "External",
-      standard_system = "EMG",
+      standard_system = "BioSemi",
       biosemi_name = NA,
-      standard_name = "EMG",
+      standard_name = "EXG7",
       cartesian_coords = list(x = NA, y = NA, z = NA),
       spherical_coords = list(theta = NA, phi = NA, radius = NA)
     ),
-    # ===== GSR =====
-    "GSR" = list(
-      position_name = "Galvanic skin response (skin conductance)",
+    "EXG8" = list(
+      position_name = "External electrode 8 (EOG/ECG/EMG/GSR)",
+      position_type = "External",
+      region = "External",
+      standard_system = "BioSemi",
+      biosemi_name = NA,
+      standard_name = "EXG8",
+      cartesian_coords = list(x = NA, y = NA, z = NA),
+      spherical_coords = list(theta = NA, phi = NA, radius = NA)
+    ),
+    # ===== BIOSEMI ACCESSORIES - GSR1/GSR2 =====
+    "GSR1" = list(
+      position_name = "Galvanic skin response channel 1 (electrodermal activity/arousal)",
       position_type = "GSR",
       region = "External",
-      standard_system = "GSR",
+      standard_system = "BioSemi",
       biosemi_name = NA,
-      standard_name = "GSR",
+      standard_name = "GSR1",
+      cartesian_coords = list(x = NA, y = NA, z = NA),
+      spherical_coords = list(theta = NA, phi = NA, radius = NA)
+    ),
+    "GSR2" = list(
+      position_name = "Galvanic skin response channel 2 (electrodermal activity/arousal)",
+      position_type = "GSR",
+      region = "External",
+      standard_system = "BioSemi",
+      biosemi_name = NA,
+      standard_name = "GSR2",
+      cartesian_coords = list(x = NA, y = NA, z = NA),
+      spherical_coords = list(theta = NA, phi = NA, radius = NA)
+    ),
+    # ===== BIOSEMI ACCESSORIES - Erg1/Erg2 (Ergo/AUX Input) =====
+    "Erg1" = list(
+      position_name = "Ergo/AUX input 1 (Response Switch/Photocell/Microphone)",
+      position_type = "Ergo/AUX",
+      region = "External",
+      standard_system = "BioSemi",
+      biosemi_name = NA,
+      standard_name = "Erg1",
+      cartesian_coords = list(x = NA, y = NA, z = NA),
+      spherical_coords = list(theta = NA, phi = NA, radius = NA)
+    ),
+    "Erg2" = list(
+      position_name = "Ergo/AUX input 2 (Response Switch/Photocell/Microphone)",
+      position_type = "Ergo/AUX",
+      region = "External",
+      standard_system = "BioSemi",
+      biosemi_name = NA,
+      standard_name = "Erg2",
+      cartesian_coords = list(x = NA, y = NA, z = NA),
+      spherical_coords = list(theta = NA, phi = NA, radius = NA)
+    ),
+    # ===== BIOSEMI ACCESSORIES - Resp (Respiration Belt) =====
+    "Resp" = list(
+      position_name = "Respiration belt (breathing rate/pattern measurement)",
+      position_type = "Respiration",
+      region = "External",
+      standard_system = "BioSemi",
+      biosemi_name = NA,
+      standard_name = "Resp",
+      cartesian_coords = list(x = NA, y = NA, z = NA),
+      spherical_coords = list(theta = NA, phi = NA, radius = NA)
+    ),
+    # ===== BIOSEMI ACCESSORIES - Plet (Plethysmograph) =====
+    "Plet" = list(
+      position_name = "Plethysmograph (blood volume/pulse measurement)",
+      position_type = "Plethysmograph",
+      region = "External",
+      standard_system = "BioSemi",
+      biosemi_name = NA,
+      standard_name = "Plet",
+      cartesian_coords = list(x = NA, y = NA, z = NA),
+      spherical_coords = list(theta = NA, phi = NA, radius = NA)
+    ),
+    # ===== BIOSEMI ACCESSORIES - Temp (Temperature) =====
+    "Temp" = list(
+      position_name = "Temperature sensor (body temperature measurement)",
+      position_type = "Temperature",
+      region = "External",
+      standard_system = "BioSemi",
+      biosemi_name = NA,
+      standard_name = "Temp",
       cartesian_coords = list(x = NA, y = NA, z = NA),
       spherical_coords = list(theta = NA, phi = NA, radius = NA)
     ),
@@ -924,11 +996,18 @@ detect_electrode_naming_system <- function(data) {
   
   # External channel patterns
   external_patterns <- c(
-    "^EXG[0-9]",                       # BioSemi external (EXG1-EXG8)
-    "^EOG", "^ECG", "^EMG", "^GSR",    # Standard external
-    "^HEOG", "^VEOG",                  # EOG variants
-    "Status", "Trigger", "Marker"      # Event channels
+    "^EXG[0-9]",      # BioSemi external (EXG1-EXG8)
+    "^GSR[0-9]",      # BioSemi GSR accessories (GSR1, GSR2)
+    "^Erg[0-9]",      # BioSemi Ergo/AUX (Erg1, Erg2)
+    "^Resp$",         # BioSemi Respiration
+    "^Plet$",         # BioSemi Plethysmograph
+    "^Temp$",         # BioSemi Temperature
+    "Status", "Trigger", "Marker"  # Event channels
   )
+  
+  # ========================================================================
+  # CLASSIFY EACH CHANNEL
+  # ========================================================================
   
   # ========================================================================
   # CLASSIFY EACH CHANNEL
@@ -955,55 +1034,66 @@ detect_electrode_naming_system <- function(data) {
   for (i in 1:n_channels) {
     ch_name <- channels_clean[i]
     
-    # Check if external channel
-    is_external <- any(sapply(external_patterns, function(pattern) {
-      grepl(pattern, ch_name, ignore.case = TRUE)
-    }))
+    # Get electrode info from database (case-insensitive)
+    electrode_info <- get_electrode_position(ch_name)
     
-    if (is_external) {
-      channel_classification$naming_type[i] <- "External"
-      channel_classification$system_category[i] <- "External"
-      channel_classification$standard_equivalent[i] <- NA
-      count_external <- count_external + 1
-    }
-    # Check if standard 10-20
-    else if (ch_name %in% standard_10_20) {
-      channel_classification$naming_type[i] <- "Standard 10-20"
-      channel_classification$system_category[i] <- "10-20/10-10"
-      channel_classification$standard_equivalent[i] <- ch_name
-      count_standard_10_20 <- count_standard_10_20 + 1
-    }
-    # Check if standard 10-10
-    else if (ch_name %in% standard_10_10) {
-      channel_classification$naming_type[i] <- "Standard 10-10"
-      channel_classification$system_category[i] <- "10-20/10-10"
-      channel_classification$standard_equivalent[i] <- ch_name
-      count_standard_10_10 <- count_standard_10_10 + 1
-    }
-    # Check if BioSemi A-series
-    else if (grepl(biosemi_a_pattern, ch_name)) {
-      channel_classification$naming_type[i] <- "BioSemi A-series"
-      channel_classification$system_category[i] <- "BioSemi_AB"
-      if (ch_name %in% names(biosemi_to_standard)) {
-        channel_classification$standard_equivalent[i] <- biosemi_to_standard[[ch_name]]
-      } else {
+    # Check if it's a recognized electrode from database
+    if (electrode_info$position_type != "Unknown") {
+      
+      # === SET NAMING TYPE ===
+      channel_classification$naming_type[i] <- electrode_info$position_type
+      
+      # === DETERMINE SYSTEM CATEGORY ===
+      
+      # Check if it's Standard 10-20 or 10-10
+      if (electrode_info$standard_system %in% c("10-20", "10-10")) {
+        
+        # Check if the input was BioSemi naming (A1-A32, B1-B32)
+        if (grepl("^[AB][0-9]+$", ch_name, ignore.case = FALSE)) {
+          # User used BioSemi naming -> this is BioSemi_AB system
+          channel_classification$system_category[i] <- "BioSemi_AB"
+          # Show the standard equivalent (Fp1, AF7, etc.)
+          channel_classification$standard_equivalent[i] <- electrode_info$standard_name
+          
+          # Count as BioSemi
+          if (grepl("^A[0-9]+$", ch_name)) {
+            count_biosemi_a <- count_biosemi_a + 1
+          } else {
+            count_biosemi_b <- count_biosemi_b + 1
+          }
+          
+        } else {
+          # User used standard naming (Fp1, Cz, etc.) -> this is 10-20/10-10 system
+          channel_classification$system_category[i] <- "10-20/10-10"
+          # Show the same name
+          channel_classification$standard_equivalent[i] <- ch_name
+          
+          # Count as standard
+          if (electrode_info$standard_system == "10-20") {
+            count_standard_10_20 <- count_standard_10_20 + 1
+          } else {
+            count_standard_10_10 <- count_standard_10_10 + 1
+          }
+        }
+        
+      } else if (electrode_info$standard_system == "BioSemi" || 
+                 electrode_info$region == "External" || 
+                 electrode_info$region == "Metadata") {
+        # External/BioSemi accessories (EXG1-8, GSR1/2, Erg1/2, Resp, Plet, Temp, Status)
+        channel_classification$system_category[i] <- "External"
         channel_classification$standard_equivalent[i] <- NA
-      }
-      count_biosemi_a <- count_biosemi_a + 1
-    }
-    # Check if BioSemi B-series
-    else if (grepl(biosemi_b_pattern, ch_name)) {
-      channel_classification$naming_type[i] <- "BioSemi B-series"
-      channel_classification$system_category[i] <- "BioSemi_AB"
-      if (ch_name %in% names(biosemi_to_standard)) {
-        channel_classification$standard_equivalent[i] <- biosemi_to_standard[[ch_name]]
+        count_external <- count_external + 1
+        
       } else {
+        # Unrecognized
+        channel_classification$naming_type[i] <- "Unrecognized"
+        channel_classification$system_category[i] <- "Unknown"
         channel_classification$standard_equivalent[i] <- NA
+        count_unrecognized <- count_unrecognized + 1
       }
-      count_biosemi_b <- count_biosemi_b + 1
-    }
-    # Unrecognized
-    else {
+      
+    } else {
+      # Unknown channel - not in database
       channel_classification$naming_type[i] <- "Unrecognized"
       channel_classification$system_category[i] <- "Unknown"
       channel_classification$standard_equivalent[i] <- NA

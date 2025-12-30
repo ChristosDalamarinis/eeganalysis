@@ -17,4 +17,5 @@ Imports:
     edfReader,
     signal,
     ggplot2,
-    dplyr
+    dplyr,
+    plotly

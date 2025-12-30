@@ -17,18 +17,18 @@ new_eeg(
 }
 \arguments{
 \item{data}{Numeric matrix of EEG signal values
-Dimensions: rows = time points, columns = channels
+Dimensions: rows = channels, columns = time points
 Units: typically microvolts (µV)}
 
 \item{channels}{Character vector of channel names (e.g., "Cz", "Pz", "Oz")
-Length must match ncol(data)}
+Length must match nrow(data)}
 
 \item{sampling_rate}{Numeric value - sampling rate in Hz
 Common values: 256, 512, 1024, 2048 Hz}
 
 \item{times}{Numeric vector of time points in seconds (optional)
 If NULL, automatically created from sampling_rate
-Length must equal nrow(data)}
+Length must equal ncol(data)}
 
 \item{events}{Data frame with event/trigger information (optional)
 Columns should include: onset (sample index),
@@ -47,7 +47,7 @@ Useful for reproducibility and auditing}
 \value{
 An object of class 'eeg' containing:
 \describe{
-\item{data}{Numeric matrix of EEG values}
+\item{data}{Numeric matrix of EEG values (channels x time points)}
 \item{channels}{Character vector of channel names}
 \item{sampling_rate}{Numeric sampling rate}
 \item{times}{Numeric time vector}

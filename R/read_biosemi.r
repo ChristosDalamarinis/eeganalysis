@@ -44,7 +44,7 @@
 #'
 #' @return An object of class 'eeg' containing:
 #'  \describe{
-#'    \item{data}{Matrix of EEG signal values (time points × channels)}
+#'    \item{data}{Matrix of EEG signal values (channels × time points)}
 #'    \item{channels}{Character vector of EEG channel names}
 #'    \item{sampling_rate}{Numeric - sampling rate in Hz}
 #'    \item{times}{Numeric vector - time points in seconds}
@@ -132,16 +132,49 @@ read_biosemi <- function(file_path) {
   
   # Count number of channels and samples
   n_channels <- length(signals)
-  n_samples <- length(signals[[1]]$signal)
+  
+  #Check that all channels have the same number of samples
+  sample_lengths <- c()
+  for (i in 1:n_channels) {
+    sample_lengths[i] <- length(signals[[i]]$signal)
+  }
+  
+  if (length(unique(sample_lengths)) > 1) {
+    stop("ERROR: Channels have different numbers of samples!\n",
+         "  Sample lengths: ", paste(unique(sample_lengths), collapse = ", "), "\n",
+         "  This file may be corrupted or have variable sampling rates.")
+  }
+  
+  n_samples <- sample_lengths[1]
+  
+  # Check that all channels have the same number of samples
+  sample_lengths <- c()
+  for (i in 1:n_channels) {
+    sample_lengths[i] <- length(signals[[i]]$signal)
+  }
+  
+  # DIAGNOSTIC: Show sample lengths
+  cat("  Sample lengths per channel:\n")
+  cat("    Min: ", min(sample_lengths), "\n", sep = "")
+  cat("    Max: ", max(sample_lengths), "\n", sep = "")
+  cat("    Unique values: ", paste(unique(sample_lengths), collapse = ", "), "\n", sep = "")
+  
+  if (length(unique(sample_lengths)) > 1) {
+    stop("ERROR: Channels have different numbers of samples!\n",
+         "  Sample lengths: ", paste(unique(sample_lengths), collapse = ", "), "\n",
+         "  This file may be corrupted or have variable sampling rates.")
+  }
   
   # Create matrix to hold all channel data
-  # Rows = time points, Columns = channels
-  eeg_matrix <- matrix(0, nrow = n_samples, ncol = n_channels)
+  # Rows = channels, Columns = time points
+  eeg_matrix <- matrix(0, nrow = n_channels, ncol = n_samples)
   
   # Fill matrix with signal data from each channel
   # edfReader returns signals as a list, each element is a list with $signal
+  # Fill matrix with signal data from each channel
   for (i in 1:n_channels) {
-    eeg_matrix[, i] <- signals[[i]]$signal
+    signal_data <- signals[[i]]$signal
+    eeg_matrix[i, ] <- signal_data
   }
   
   # ========== IDENTIFY AND SEPARATE STATUS CHANNEL ==========
@@ -161,11 +194,11 @@ read_biosemi <- function(file_path) {
   }
   
   # Extract status channel for event parsing
-  status_signal <- as.numeric(eeg_matrix[, status_channel_idx[1]])
+  status_signal <- as.numeric(eeg_matrix[status_channel_idx[1], ])
   
   # Separate EEG channels from status channel
   eeg_channels_idx <- setdiff(1:n_channels, status_channel_idx)
-  eeg_data <- eeg_matrix[, eeg_channels_idx, drop = FALSE]
+  eeg_data <- eeg_matrix[eeg_channels_idx, , drop = FALSE]
   channels_final <- channels_clean[eeg_channels_idx]
   
   cat("  EEG channels: ", length(eeg_channels_idx), "\n", sep = "")
@@ -375,7 +408,7 @@ summarize_biosemi_import <- function(eeg) {
   # ========== DATA STATISTICS ==========
   cat("DATA STATISTICS:\n")
   cat("  Channels:        ", length(eeg$channels), "\n")
-  cat("  Time points:     ", nrow(eeg$data), "\n")
+  cat("  Time points:     ", ncol(eeg$data), "\n")
   cat("  Duration:        ", round(max(eeg$times), 3), " seconds\n")
   cat("  Sampling rate:   ", eeg$sampling_rate, " Hz\n")
   cat("  Data type:       numeric matrix\n")
@@ -395,9 +428,9 @@ summarize_biosemi_import <- function(eeg) {
   cat("\nDATA QUALITY METRICS:\n")
   
   # Calculate variance for each channel
-  channel_vars <- apply(eeg$data, 2, var, na.rm = TRUE)
-  channel_means <- apply(eeg$data, 2, mean, na.rm = TRUE)
-  channel_sds <- apply(eeg$data, 2, sd, na.rm = TRUE)
+  channel_vars <- apply(eeg$data, 1, var, na.rm = TRUE)
+  channel_means <- apply(eeg$data, 1, mean, na.rm = TRUE)
+  channel_sds <- apply(eeg$data, 1, sd, na.rm = TRUE)
   
   # Report amplitude statistics
   cat("  Amplitude range:       [", round(min(eeg$data), 2), ", ",

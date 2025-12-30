@@ -13,7 +13,7 @@ Example: "/Users/user/data/subject_01.bdf"}
 \value{
 An object of class 'eeg' containing:
 \describe{
-\item{data}{Matrix of EEG signal values (time points × channels)}
+\item{data}{Matrix of EEG signal values (channels × time points)}
 \item{channels}{Character vector of EEG channel names}
 \item{sampling_rate}{Numeric - sampling rate in Hz}
 \item{times}{Numeric vector - time points in seconds}

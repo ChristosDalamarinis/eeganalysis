@@ -16,18 +16,18 @@
 #' all eeganalysis functions.
 #'
 #' @param data Numeric matrix of EEG signal values
-#'            Dimensions: rows = time points, columns = channels
+#'            Dimensions: rows = channels, columns = time points
 #'            Units: typically microvolts (µV)
 #'
 #' @param channels Character vector of channel names (e.g., "Cz", "Pz", "Oz")
-#'                 Length must match ncol(data)
+#'                 Length must match nrow(data)
 #'
 #' @param sampling_rate Numeric value - sampling rate in Hz
 #'                      Common values: 256, 512, 1024, 2048 Hz
 #'
 #' @param times Numeric vector of time points in seconds (optional)
 #'             If NULL, automatically created from sampling_rate
-#'             Length must equal nrow(data)
+#'             Length must equal ncol(data)
 #'
 #' @param events Data frame with event/trigger information (optional)
 #'              Columns should include: onset (sample index), 
@@ -45,7 +45,7 @@
 #'
 #' @return An object of class 'eeg' containing:
 #'  \describe{
-#'    \item{data}{Numeric matrix of EEG values}
+#'    \item{data}{Numeric matrix of EEG values (channels x time points)}
 #'    \item{channels}{Character vector of channel names}
 #'    \item{sampling_rate}{Numeric sampling rate}
 #'    \item{times}{Numeric time vector}
@@ -84,23 +84,23 @@ new_eeg <- function(data,
   }
   
   # Validate channel count matches data dimensions
-  if (ncol(data) != length(channels)) {
+  if (nrow(data) != length(channels)) {
     stop("ERROR: Number of channels (", length(channels), 
          ") does not match number of columns in data (", 
-         ncol(data), ")")
+         nrow(data), ")")
   }
   
   # ========== CREATE TIME VECTOR ==========
   
   if (is.null(times)) {
     # Auto-generate time vector from sampling rate
-    times <- (0:(nrow(data) - 1)) / sampling_rate
+    times <- (0:(ncol(data) - 1)) / sampling_rate
   } else {
     # Validate provided time vector
-    if (length(times) != nrow(data)) {
+    if (length(times) != ncol(data)) {
       stop("ERROR: Length of times (", length(times), 
            ") does not match number of rows in data (", 
-           nrow(data), ")")
+           ncol(data), ")")
     }
   }
   
@@ -184,7 +184,7 @@ print.eeg <- function(x, ...) {
   }
   cat("    List:          ", channel_display, "\n")
   
-  cat("  Time points:     ", nrow(x$data), "\n")
+  cat("  Time points:     ", ncol(x$data), "\n")
   cat("  Duration:        ", round(max(x$times), 2), " seconds\n")
   cat("  Sampling rate:   ", x$sampling_rate, " Hz\n")
   

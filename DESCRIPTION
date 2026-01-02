@@ -4,8 +4,8 @@ Version: 0.0.0.9000
 Authors@R: 
     person("Christos", "Dalamarinis", , "dalamarinischristos@gmail.com", role = c("aut", "cre"))
 Description: Tools for reading, preprocessing, and analyzing EEG data from
-    BioSemi recordings. Includes functions for reading .bdf files, filtering,
-    referencing, artifact correction, and feature extraction..
+    BioSemi recordings. Includes functions for reading .bdf files (.edf are also supported), filtering,
+    referencing, artifact correction, and feature extraction.
 License: `use_mit_license()`, `use_gpl3_license()` or friends to pick a
     license
 Encoding: UTF-8

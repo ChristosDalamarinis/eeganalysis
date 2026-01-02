@@ -1,3 +1,21 @@
+#' ============================================================================
+#' External Channel Management Functions
+#' ============================================================================
+#'
+#' This module provides interactive and automated functions for identifying,
+#' labeling, and managing external (non-EEG) channels in BioSemi recordings.
+#' External channels include physiological signals like EOG (eye movements),
+#' EMG (muscle activity), ECG (heart rate), GSR (skin conductance), and other
+#' auxiliary measurements recorded alongside brain activity.
+#'
+#' The module integrates with the electrode database system to accurately
+#' distinguish between standard EEG electrodes and external recording channels,
+#' enabling proper documentation and analysis of multi-modal physiological data.
+#'
+#' Author: Christos Dalamarinis
+#' Date: 2026
+#' ============================================================================
+
 #' Interactively Identify and Label External Channels (Database-Driven)
 #'
 #' @description

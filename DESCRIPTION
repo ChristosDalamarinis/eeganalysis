@@ -1,5 +1,5 @@
 Package: eeganalysis
-Title: What the Package Does (One Line, Title Case)
+Title: EEG Package
 Version: 0.0.0.9000
 Authors@R: 
     person("Christos", "Dalamarinis", , "dalamarinischristos@gmail.com", role = c("aut", "cre"))

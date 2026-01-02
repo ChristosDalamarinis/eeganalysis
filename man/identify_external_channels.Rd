@@ -2,7 +2,7 @@
 % Please edit documentation in R/setexchannels.R
 \name{identify_external_channels}
 \alias{identify_external_channels}
-\title{Interactively Identify and Label External Channels (Database-Driven)}
+\title{============================================================================External Channel Management Functions}
 \usage{
 identify_external_channels(data, channel_col = NULL)
 }
@@ -24,6 +24,20 @@ official electrode database and allows the user to interactively label
 each one (e.g., "EMG", "ECG", "EOG").
 }
 \details{
+This module provides interactive and automated functions for identifying,
+labeling, and managing external (non-EEG) channels in BioSemi recordings.
+External channels include physiological signals like EOG (eye movements),
+EMG (muscle activity), ECG (heart rate), GSR (skin conductance), and other
+auxiliary measurements recorded alongside brain activity.
+
+The module integrates with the electrode database system to accurately
+distinguish between standard EEG electrodes and external recording channels,
+enabling proper documentation and analysis of multi-modal physiological data.
+}
+\section{Author: Christos Dalamarinis
+Date: 2026}{
+Interactively Identify and Label External Channels (Database-Driven)
+
 This function relies on get_electrode_database() from channel_info2.R to
 accurately identify which channels are external electrodes. It recognizes:
 \itemize{
@@ -35,6 +49,7 @@ accurately identify which channels are external electrodes. It recognizes:
 \item Temp (Temperature)
 }
 }
+
 \examples{
 \dontrun{
 # After importing BioSemi data

@@ -167,15 +167,16 @@ read_biosemi <- function(file_path) {
   
   # Create matrix to hold all channel data
   # Rows = channels, Columns = time points
-  eeg_matrix <- matrix(0, nrow = n_channels, ncol = n_samples)
+  eeg_matrix <- do.call(rbind, lapply(signals, function(sig) sig$signal))
+    #matrix(0, nrow = n_channels, ncol = n_samples) -> old code, slow
   
   # Fill matrix with signal data from each channel
   # edfReader returns signals as a list, each element is a list with $signal
   # Fill matrix with signal data from each channel
-  for (i in 1:n_channels) {
-    signal_data <- signals[[i]]$signal
-    eeg_matrix[i, ] <- signal_data
-  }
+  #for (i in 1:n_channels) {
+   # signal_data <- signals[[i]]$signal
+    #eeg_matrix[i, ] <- signal_data
+  #}
   
   # ========== IDENTIFY AND SEPARATE STATUS CHANNEL ==========
   

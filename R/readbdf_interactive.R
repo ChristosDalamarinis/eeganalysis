@@ -18,7 +18,7 @@
 #' - Seamless fallback to edfReader::readEdfSignals() for standard files
 #'
 #' Author: Christos Dalamarinis
-#' Date: 2026-01-03
+#' Date: Jan - 2026
 #' ============================================================================
 
 #' Internal Helper: Downsample During Import

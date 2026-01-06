@@ -8,7 +8,15 @@ Contact: [[dalamarinischristos\@gmail.com](mailto:dalamarinischristos@gmail.com)
 
 ## Version: 0.0.0.9000 (under construction)
 
-Currently focusing on setting up functions reading Biosemi files (.bdf). Other formats will be added in future releases.
+Current code reads .bdf and .edf files. Scripts include functions for assisting the researcher in importing, down-sampling, and referencing the data.
+
+Interactive function include:
+
+-   **read_biosemi_interactive()**: function to guide the user through the import of a .bdf file.
+-   **identify_external_channels()**: Allows the user to interactively label external channels detected in imported EEG data.
+-   **plot_electrode_3d()**: 3D visualization of electrode positions on a head model (helper function).
+-   **plot_electrode_3d_spherical()**: 3D visualization of electrode positions on a spherical head model (helper function).
+
 
 ## Analysis Pipeline
 

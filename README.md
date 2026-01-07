@@ -61,7 +61,7 @@ Contributions to the *eeganalysis* package are welcome! If you would like to con
 ``` r
 eeganalysis
 │
-├── R                              ← Your R functions live here
+├── R/                             ← Your R functions live here
 │   ├── eeg_class.R                ← EEG data structure & creation
 │   │   ├── new_eeg()              ← Create an eeg object
 │   │   └── print.eeg()            ← Display eeg object nicely
@@ -71,6 +71,13 @@ eeganalysis
 │   │   ├── extract_biosemi_events()   ← Parse trigger codes from status channel
 │   │   └── summarize_biosemi_import() ← Generate quality report
 │   │
+|   ├── readbdf_interactive.R ← Interactive BDF import with smart downsampling
+│   │   ├── read_biosemi_interactive() ← Interactive import (user prompts)
+│   │   ├── downsample_during_import() ← Helper: downsample during import
+│   │   ├── unpack_int24() ← Helper: unpack 24-bit integers
+│   │   └── read_bdf_chunked_lowlevel() ← Helper: chunked file reader for large files
+|
+|
 │   ├── preprocessing.R            ← (Future) Data cleaning & preprocessing
 │   │   ├── filter_eeg()           ← Apply filters
 │   │   ├── rereference_eeg()      ← Change reference scheme

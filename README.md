@@ -109,12 +109,21 @@ eeganalysis
 │       ├── compute_power()              ← Band power analysis
 │       └── ...                          ← Additional functions
 │
-├── man                            ← Auto-generated help files
-│   ├── new_eeg.Rd                 ← Help for new_eeg()
-│   ├── print.eeg.Rd               ← Help for print.eeg()
-│   ├── read_biosemi.Rd            ← Help for read_biosemi()
-│   ├── extract_biosemi_events.Rd  ← Help for extract_biosemi_events()
-│   ├── summarize_biosemi_import.Rd ← Help for summarize_biosemi_import()
+├── man                                  ← Auto-generated help files
+│   ├── new_eeg.Rd                       ← Help for new_eeg()
+│   ├── print.eeg.Rd                     ← Help for print.eeg()
+│   ├── read_biosemi.Rd                  ← Help for read_biosemi()
+│   ├── extract_biosemi_events.Rd        ← Help for extract_biosemi_events()
+│   ├── summarize_biosemi_import.Rd      ← Help for summarize_biosemi_import()
+│   ├── get_electrode_database.Rd ← Help for get_electrode_database()
+│   ├── get_electrode_position.Rd ← Help for get_electrode_position()
+│   ├── inspect_bdf_channels.Rd ← Help for inspect_bdf_channels()
+│   ├── identify_external_channels.Rd ← Help for identify_external_channels()
+│   ├── detect_external_channels.Rd ← Help for detect_external_channels()
+│   ├── apply_external_labels.Rd ← Help for apply_external_labels()
+│   ├── downsample.Rd ← Help for downsample()
+│   ├── eeg_rereference.Rd ← Help for eeg_rereference()
+│   ├── epoch_eeg.Rd ← Help for epoch_eeg()
 │   └── ...Rd                       ← Additional help files
 |
 ├── data                           ← Example datasets

@@ -84,6 +84,11 @@ eeganalysis
 │   │   ├── classify_channel_naming() ← Identify naming convention (10-20/10-10/BioSemi)
 │   │   ├── plot_electrode_3d() ← 3D electrode visualization (Cartesian)
 │   │   └── plot_electrode_3d_spherical()← 3D electrode visualization (Spherical)
+|   |
+|   ├── setexchannels.R ← External channel management
+│   │   ├── identify_external_channels() ← Interactive labeling (EOG, EMG, ECG, GSR)
+│   │   ├── detect_external_channels() ← Automated external channel detection
+│   │   └── apply_external_labels() ← Apply user-defined labels to data
 |
 │   ├── preprocessing.R            ← (Future) Data cleaning & preprocessing
 │   │   ├── filter_eeg()           ← Apply filters

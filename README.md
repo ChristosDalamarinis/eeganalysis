@@ -99,15 +99,15 @@ eeganalysis
 │   ├── epoch.R                          ← Epoching functions
 │   │   └── epoch_eeg()                  ← Extract time-locked epochs around events
 │   │
-│   ├── preprocessing.R            ← (Future) Data cleaning & preprocessing
-│   │   ├── filter_eeg()           ← Apply filters
-│   │   ├── rereference_eeg()      ← Change reference scheme
-│   │   └── ...                    ← Additional functions
+│   ├── preprocessing.R                  ← (Future) Data cleaning & preprocessing
+│   │   ├── filter_eeg()                 ← Apply filters
+│   │   ├── rereference_eeg()            ← Change reference scheme
+│   │   └── ...                          ← Additional functions
 │   │
-│   └── feature_extraction.R       ← (Future) Feature computation
-│       ├── compute_erp()          ← Calculate ERPs
-│       ├── compute_power()        ← Band power analysis
-│       └── ...                    ← Additional functions
+│   └── feature_extraction.R             ← (Future) Feature computation
+│       ├── compute_erp()                ← Calculate ERPs
+│       ├── compute_power()              ← Band power analysis
+│       └── ...                          ← Additional functions
 │
 ├── man                            ← Auto-generated help files
 │   ├── new_eeg.Rd                 ← Help for new_eeg()

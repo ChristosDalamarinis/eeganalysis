@@ -1,6 +1,6 @@
 # eeganalysis - Package under construction
 
-*eeganalysis* is an (under constraction) R package for analyzing EEG data. The scope is to create functions to pre-processes, analyze and visualize EEG data for research purposes.
+*eeganalysis* is an (under constraction) is an R package for comprehensive EEG data analysis, specializing in BioSemi recordings. The package provides functions to import, preprocess, analyze, and visualize EEG data for research purposes.
 
 Author: Christos Dalamarinis
 
@@ -16,7 +16,6 @@ Interactive function include:
 -   **identify_external_channels()**: Allows the user to interactively label external channels detected in imported EEG data.
 -   **plot_electrode_3d()**: 3D visualization of electrode positions on a head model (helper function).
 -   **plot_electrode_3d_spherical()**: 3D visualization of electrode positions on a spherical head model (helper function).
-
 
 ## Analysis Pipeline
 

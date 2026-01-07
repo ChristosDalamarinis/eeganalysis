@@ -92,7 +92,13 @@ eeganalysis
 |   |
 │   ├── downsample.R                     ← Smart downsampling with anti-aliasing
 │   │   └── downsample()                 ← Downsample EEG data with filters
-|
+|   |
+|   │ ├── rereference.R                  ← Re-referencing utilities
+│   │   └── eeg_rereference()            ← Change reference scheme (average/custom)
+|   |
+│   ├── epoch.R                          ← Epoching functions
+│   │   └── epoch_eeg()                  ← Extract time-locked epochs around events
+│   │
 │   ├── preprocessing.R            ← (Future) Data cleaning & preprocessing
 │   │   ├── filter_eeg()           ← Apply filters
 │   │   ├── rereference_eeg()      ← Change reference scheme

@@ -6,11 +6,11 @@ Author: Christos Dalamarinis
 
 Contact: [[dalamarinischristos\@gmail.com](mailto:dalamarinischristos@gmail.com)]
 
-## Version: 0.0.0.9000 (under construction)
+# Version: 0.0.0.9000 (under construction)
 
 Current code reads .bdf and .edf files. Scripts include functions for assisting the researcher in importing, down-sampling, and referencing the data.
 
-Interactive function include:
+## Interactive function include:
 
 -   **read_biosemi_interactive()**: function to guide the user through the import of a .bdf file.
 -   **identify_external_channels()**: Allows the user to interactively label external channels detected in imported EEG data.

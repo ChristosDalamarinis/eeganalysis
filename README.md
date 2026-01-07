@@ -126,16 +126,16 @@ eeganalysis
 │   ├── epoch_eeg.Rd                     ← Help for epoch_eeg()
 │   └── ...Rd                            ← Additional help files
 |
-├── data                           ← Example datasets
-│   └── example_eeg.RData          ← Example eeg object for testing (coming)
+├── data                                 ← Example datasets
+│   └── example_eeg.RData                ← Example eeg object for testing (coming)
 │
-├── NAMESPACE                      ← Exported functions (auto-generated)
-├── DESCRIPTION                    ← Package metadata
-├── LICENSE                        ← License information
-├── README.md                      ← Package overview
-├── .gitignore                     ← Git ignore rules
-├── .Rbuildignore                  ← Build ignore rules
-└── eeganalysis.Rproj              ← RStudio project file
+├── NAMESPACE                            ← Exported functions (auto-generated)
+├── DESCRIPTION                          ← Package metadata
+├── LICENSE                              ← License information
+├── README.md                            ← Package overview
+├── .gitignore                           ← Git ignore rules
+├── .Rbuildignore                        ← Build ignore rules
+└── eeganalysis.Rproj                    ← RStudio project file
 ```
 
 Note: This is structure is frequently expanded and updated with additional folders/files/functions.

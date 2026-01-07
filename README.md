@@ -89,6 +89,9 @@ eeganalysis
 │   │   ├── identify_external_channels() ← Interactive labeling (EOG, EMG, ECG, GSR)
 │   │   ├── detect_external_channels()   ← Automated external channel detection
 │   │   └── apply_external_labels()      ← Apply user-defined labels to data
+|   |
+│   ├── downsample.R                     ← Smart downsampling with anti-aliasing
+│   │   └── downsample()                 ← Downsample EEG data with filters
 |
 │   ├── preprocessing.R            ← (Future) Data cleaning & preprocessing
 │   │   ├── filter_eeg()           ← Apply filters

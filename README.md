@@ -17,7 +17,19 @@ Current code reads .bdf and .edf files. Scripts include functions for assisting 
 -   **plot_electrode_3d()**: 3D visualization of electrode positions on a head model (helper function).
 -   **plot_electrode_3d_spherical()**: 3D visualization of electrode positions on a spherical head model (helper function).
 
-## Analysis Pipeline
+## Dependencies
+
+-   "edfReader" -> Reading BDF/EDF files
+
+-   "signal" ->  Signal processing and filtering
+
+-   "ggplot2" ->  Data visualization
+
+-   "dplyr" -> Data manipulation
+
+-   "plotly" -> Interactive 3D plotting
+
+# Analysis Pipeline
 
 The analysis pipeline implemented in the package includes the following steps:
 

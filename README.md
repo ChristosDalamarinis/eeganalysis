@@ -61,34 +61,34 @@ Contributions to the *eeganalysis* package are welcome! If you would like to con
 ``` r
 eeganalysis
 │
-├── R/                                  ← Your R functions live here
-│   ├── eeg_class.R                     ← EEG data structure & creation
-│   │   ├── new_eeg()                   ← Create an eeg object
-│   │   └── print.eeg()                 ← Display eeg object nicely
+├── R/                                   ← Your R functions live here
+│   ├── eeg_class.R                      ← EEG data structure & creation
+│   │   ├── new_eeg()                    ← Create an eeg object
+│   │   └── print.eeg()                  ← Display eeg object nicely
 │   │
-│   ├── read_biosemi.R                  ← BioSemi file import
-│   │   ├── read_biosemi()              ← Import .bdf files (main function)
-│   │   ├── extract_biosemi_events()    ← Parse trigger codes from status channel
-│   │   └── summarize_biosemi_import()  ← Generate quality report
+│   ├── read_biosemi.R                   ← BioSemi file import
+│   │   ├── read_biosemi()               ← Import .bdf files (main function)
+│   │   ├── extract_biosemi_events()     ← Parse trigger codes from status channel
+│   │   └── summarize_biosemi_import()   ← Generate quality report
 │   │
-|   ├── readbdf_interactive.R           ← Interactive BDF import with smart downsampling
-│   │   ├── read_biosemi_interactive()  ← Interactive import (user prompts)
-│   │   ├── downsample_during_import()  ← Helper: downsample during import
-│   │   ├── unpack_int24()              ← Helper: unpack 24-bit integers
-│   │   └── read_bdf_chunked_lowlevel() ← Helper: chunked file reader for large files
+|   ├── readbdf_interactive.R            ← Interactive BDF import with smart downsampling
+│   │   ├── read_biosemi_interactive()   ← Interactive import (user prompts)
+│   │   ├── downsample_during_import()   ← Helper: downsample during import
+│   │   ├── unpack_int24()               ← Helper: unpack 24-bit integers
+│   │   └── read_bdf_chunked_lowlevel()  ← Helper: chunked file reader for large files
 |   |
-|   ├── channel_info2.R                 ← Electrode database & channel inspection
-│   │   ├── get_electrode_database()    ← Access 64-ch BioSemi electrode database
-│   │   ├── get_electrode_position()    ← Get coordinates for specific electrode
-│   │   ├── inspect_bdf_channels()      ← Preview channels without full import
-│   │   ├── classify_channel_naming()   ← Identify naming convention (10-20/10-10/BioSemi)
-│   │   ├── plot_electrode_3d()         ← 3D electrode visualization (Cartesian)
+|   ├── channel_info2.R                  ← Electrode database & channel inspection
+│   │   ├── get_electrode_database()     ← Access 64-ch BioSemi electrode database
+│   │   ├── get_electrode_position()     ← Get coordinates for specific electrode
+│   │   ├── inspect_bdf_channels()       ← Preview channels without full import
+│   │   ├── classify_channel_naming()    ← Identify naming convention (10-20/10-10/BioSemi)
+│   │   ├── plot_electrode_3d()          ← 3D electrode visualization (Cartesian)
 │   │   └── plot_electrode_3d_spherical()← 3D electrode visualization (Spherical)
 |   |
-|   ├── setexchannels.R ← External channel management
+|   ├── setexchannels.R                  ← External channel management
 │   │   ├── identify_external_channels() ← Interactive labeling (EOG, EMG, ECG, GSR)
-│   │   ├── detect_external_channels() ← Automated external channel detection
-│   │   └── apply_external_labels() ← Apply user-defined labels to data
+│   │   ├── detect_external_channels()   ← Automated external channel detection
+│   │   └── apply_external_labels()      ← Apply user-defined labels to data
 |
 │   ├── preprocessing.R            ← (Future) Data cleaning & preprocessing
 │   │   ├── filter_eeg()           ← Apply filters

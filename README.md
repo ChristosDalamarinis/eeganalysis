@@ -101,4 +101,4 @@ eeganalysis
 └── eeganalysis.Rproj              ← RStudio project file
 ```
 
-Note: This is a simplified structure and can be expanded with additional folders/files as needed.
+Note: This is structure is frequently expanded and updated with additional folders/files/functions.

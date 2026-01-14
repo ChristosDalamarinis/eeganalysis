@@ -7,7 +7,7 @@
 #' Useful for quick file preview, metadata extraction, and electrode layout verification.
 #'
 #' Author: Christos Dalamarinis
-#' Date: 2025
+#' Date: Dec - 2025
 #' ============================================================================
 
 #' ============================================================================

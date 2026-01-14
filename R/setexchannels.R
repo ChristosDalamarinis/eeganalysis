@@ -13,7 +13,7 @@
 #' enabling proper documentation and analysis of multi-modal physiological data.
 #'
 #' Author: Christos Dalamarinis
-#' Date: 2026
+#' Date: Jan - 2026
 #' ============================================================================
 
 #' Interactively Identify and Label External Channels (Database-Driven)

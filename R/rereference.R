@@ -7,7 +7,7 @@
 #' within the eeganalysis framework for downstream preprocessing and analysis.
 #'  
 #' Author: Christos Dalamarinis  
-#' Date: 2026  
+#' Date: Jan - 2026  
 #' ============================================================
 
 #' Re-reference EEG data

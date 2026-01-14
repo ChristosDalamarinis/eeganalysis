@@ -83,7 +83,7 @@ eeganalysis
 │   │   ├── inspect_bdf_channels()       ← Preview channels without full import
 │   │   ├── classify_channel_naming()    ← Identify naming convention (10-20/10-10/BioSemi)
 │   │   ├── plot_electrode_3d()          ← 3D electrode visualization (Cartesian)
-│   │   └── plot_electrode_3d_spherical()← 3D electrode visualization (Spherical)
+│   │   └── plot_electrode_3d_spherical() ← 3D electrode visualization (Spherical)
 |   |
 |   ├── setexchannels.R                  ← External channel management
 │   │   ├── identify_external_channels() ← Interactive labeling (EOG, EMG, ECG, GSR)

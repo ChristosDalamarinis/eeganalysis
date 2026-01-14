@@ -6,7 +6,7 @@
 #' The eeg class is the fundamental data container for all EEG analysis.
 #' 
 #' Author: Christos Dalamarinis
-#' Date: 2025
+#' Date: Dec - 2025
 #' ============================================================================
 
 #' Create a New EEG Object

@@ -13,7 +13,7 @@
 #'  - Status channel for event markers/triggers
 #'
 #' Author: Christos Dalamarinis
-#' Date: 2025-03-15
+#' Date: Dec - 2025
 #' ============================================================================
 
 #' Read BioSemi BDF File

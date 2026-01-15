@@ -466,15 +466,18 @@ unpack_int24 <- function(raw_vec) {
   vals
 }
 
-#' Low-level chunked BDF reader (internal)
+#' Low-level chunked BDF reader (full-rate events, optional downsampling)
 #'
 #' Reads BDF data in chunks to avoid loading the full file into memory.
-#' Returns EEG channels, status channel, time vector, and events.
+#' 1) Builds full-rate EEG and Status.
+#' 2) Detects events on the full-rate Status.
+#' 3) If requested, downsamples EEG (and times) only.
+#' 4) Rescales event onsets to the new sampling rate.
 #'
 #' @param file_path Path to BDF file
-#' @param header Edf header object as returned by edfReader::readEdfHeader()
-#' @param target_rate Optional target sampling rate for simple decimation
-#' @param chunk_mb Chunk size in megabytes
+#' @param header Edf header object from edfReader::readEdfHeader()
+#' @param target_rate Optional target sampling rate (Hz). If NULL, keep full rate.
+#' @param chunk_mb Chunk size in megabytes for reading
 #' @keywords internal
 read_bdf_chunked_lowlevel <- function(file_path, header,
                                       target_rate = NULL,
@@ -483,72 +486,107 @@ read_bdf_chunked_lowlevel <- function(file_path, header,
   con <- file(file_path, "rb")
   on.exit(close(con), add = TRUE)
   
+  # ----- basic metadata from header -----
   labels <- trimws(header$sHeaders$label)
-  srate  <- header$sHeaders$sRate[1]
-  nsamp  <- header$sHeaders$sLength[1]
-  nchan  <- length(labels)
+  srate_full <- header$sHeaders$sRate[1]
+  nsamp_full <- header$sHeaders$sLength[1]
+  nchan      <- length(labels)
   
-  # identify Status channel
+  # Status channel index
   status_idx <- which(tolower(labels) == "status")
   if (length(status_idx) == 0) status_idx <- nchan
   
-  # BDF data start is after header$headLen bytes
+  # BDF data start
   data_offset <- header$headLen
   seek(con, where = data_offset, origin = "start")
   
-  # total 24-bit ints = nchan * nsamp
-  total_samples <- nchan * nsamp
+  # 24-bit ints: total samples (all channels × time)
+  total_samples <- nsamp_full * nchan
   bytes_per_int <- 3L
-  bytes_total   <- total_samples * bytes_per_int
   
-  chunk_bytes     <- chunk_mb * 1024^2
-  ints_per_chunk  <- floor(chunk_bytes / bytes_per_int)
+  chunk_bytes    <- chunk_mb * 1024^2
+  ints_per_chunk <- floor(chunk_bytes / bytes_per_int)
   
-  eeg_list   <- list()
-  status_vec <- numeric(0)
-  read_so_far <- 0L
+  # ----- storage for full-rate EEG + status -----
+  eeg_list_full   <- list()   # EEG channels only, full rate
+  status_full_vec <- numeric(0)
+  read_so_far     <- 0L
   
+  # ----- Step 1: read full-rate EEG + status in chunks -----
   while (read_so_far < total_samples) {
     to_read <- min(ints_per_chunk, total_samples - read_so_far)
     raw_chunk <- readBin(con, what = "raw", n = to_read * bytes_per_int)
     if (!length(raw_chunk)) break
     
     vals <- unpack_int24(raw_chunk)
-    mat  <- matrix(vals, nrow = nchan, byrow = TRUE)
+    # ensure full columns only
+    n_full <- floor(length(vals) / nchan) * nchan
+    if (n_full == 0L) break
+    vals <- vals[seq_len(n_full)]
     
-    status_vec <- c(status_vec, mat[status_idx, ])
-    eeg_list[[length(eeg_list) + 1L]] <- mat[-status_idx, , drop = FALSE]
+    mat <- matrix(vals, nrow = nchan, byrow = TRUE)
     
-    read_so_far <- read_so_far + to_read
+    status_full_vec <- c(status_full_vec, mat[status_idx, ])
+    eeg_list_full[[length(eeg_list_full) + 1L]] <- mat[-status_idx, , drop = FALSE]
+    
+    read_so_far <- read_so_far + (n_full)
   }
   
-  eeg_data <- do.call(cbind, eeg_list) # EEG channels x timepoints
-  channels <- labels[-status_idx]
+  eegdata_full <- do.call(cbind, eeg_list_full)  # EEG channels x timepoints
+  channels_eeg <- labels[-status_idx]
   
-  # time vector
-  times <- (0:(ncol(eeg_data) - 1)) / srate
+  # full-rate time vector
+  times_full <- (0:(ncol(eegdata_full) - 1)) / srate_full
   
-  # optional simple decimation
-  if (!is.null(target_rate) && target_rate < srate) {
-    factor <- round(srate / target_rate)
-    idx    <- seq(1, ncol(eeg_data), by = factor)
-    eeg_data   <- eeg_data[, idx, drop = FALSE]
-    status_vec <- status_vec[idx]
-    times      <- times[idx]
-    srate      <- srate / factor
+  # ----- Step 2: detect events on full-rate status -----
+  events_full <- extract_biosemi_events(status_full_vec, srate_full)
+  
+  # ----- Step 3: if no downsampling requested -----
+  if (is.null(target_rate) || target_rate >= srate_full) {
+    return(list(
+      eeg_data = eegdata_full,
+      channels = channels_eeg,
+      srate    = srate_full,
+      status   = status_full_vec,
+      times    = times_full,
+      events   = events_full
+    ))
   }
   
-  events <- extract_biosemi_events(status_vec, srate)
+  # ----- Step 4: if downsampling is requested -----
   
+  # integer factor (assumes target_rate divides srate_full)
+  factor <- round(srate_full / target_rate)
+  if (factor < 1) factor <- 1
+  srate_ds <- srate_full / factor
+  
+  # 4.1 Downsample EEG + times only (keep status_full at full rate)
+  idx       <- seq(1, ncol(eegdata_full), by = factor)
+  eegdata_ds <- eegdata_full[, idx, drop = FALSE]
+  times_ds   <- times_full[idx]
+  
+  # 4.2 Rescale event onsets to new rate
+  events_ds <- events_full
+  if (nrow(events_ds) > 0) {
+    events_ds$onset <- round(events_full$onset / factor)
+    events_ds$onset <- pmax(1, events_ds$onset)
+    events_ds$onset <- pmin(events_ds$onset, length(times_ds))
+    if ("onset_time" %in% names(events_ds)) {
+      events_ds$onset_time <- times_ds[events_ds$onset]
+    }
+  }
+  
+  # Return downsampled set
   list(
-    eeg_data = eeg_data,
-    channels = channels,
-    srate    = srate,
-    status   = status_vec,
-    times    = times,
-    events   = events
+    eeg_data = eegdata_ds,
+    channels = channels_eeg,
+    srate    = srate_ds,
+    status   = status_full_vec,  # still full-rate, kept for completeness
+    times    = times_ds,
+    events   = events_ds
   )
 }
+
 
 #' Extract Events from BioSemi Status Channel
 #'

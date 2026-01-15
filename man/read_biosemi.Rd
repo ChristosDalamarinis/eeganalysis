@@ -38,7 +38,7 @@ BioSemi systems typically use:
 }
 }
 \section{Author: Christos Dalamarinis
-Date: 2025-03-15}{
+Date: Dec - 2025}{
 Read BioSemi BDF File
 
 This is the main function to import EEG data from a BioSemi .bdf file.

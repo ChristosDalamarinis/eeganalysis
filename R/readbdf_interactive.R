@@ -538,8 +538,13 @@ read_bdf_chunked_lowlevel <- function(file_path, header,
   # full-rate time vector
   times_full <- (0:(ncol(eegdata_full) - 1)) / srate_full
   
-  # ----- Step 2: detect events on full-rate status -----
-  events_full <- extract_biosemi_events(status_full_vec, srate_full)
+  # ----- Step 2: Mask to Lower 16 bits (usual trigger ranger) -----
+  status_clean <- bitwAnd(status_full_vec, 2^16 - 1)
+  events_full  <- extract_biosemi_events(status_clean, srate_full)
+  
+  #  Debugging - temporary code
+  cat("DEBUG: status_clean unique values:", length(unique(status_clean)), "\n")
+  cat("DEBUG: events_full:", nrow(events_full), "\n")
   
   # ----- Step 3: if no downsampling requested -----
   if (is.null(target_rate) || target_rate >= srate_full) {

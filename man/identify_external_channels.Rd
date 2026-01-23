@@ -35,7 +35,7 @@ distinguish between standard EEG electrodes and external recording channels,
 enabling proper documentation and analysis of multi-modal physiological data.
 }
 \section{Author: Christos Dalamarinis
-Date: 2026}{
+Date: Jan - 2026}{
 Interactively Identify and Label External Channels (Database-Driven)
 
 This function relies on get_electrode_database() from channel_info2.R to

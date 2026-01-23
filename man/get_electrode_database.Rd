@@ -26,7 +26,7 @@ for channel information without needing to import the full dataset.
 Useful for quick file preview, metadata extraction, and electrode layout verification.
 }
 \section{Author: Christos Dalamarinis
-Date: 2025}{
+Date: Dec - 2025}{
 ============================================================================
 Get Comprehensive Electrode Position Database (BioSemi 64-Channel)
 

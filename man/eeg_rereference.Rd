@@ -6,7 +6,7 @@
 
 This module provides functions to re-reference EEG recordings to
 different reference schemes (e.g., common average or selected channels)
-within the eeganalysis framework for downstream preprocessing and analysis.Author: Christos DalamarinisDate: 2026
+within the eeganalysis framework for downstream preprocessing and analysis.Author: Christos DalamarinisDate: Jan - 2026
 
 Re-reference EEG data}
 \usage{

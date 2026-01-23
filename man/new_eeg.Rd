@@ -62,7 +62,7 @@ This file defines the core EEG data structure as an S3 class in R.
 The eeg class is the fundamental data container for all EEG analysis.
 }
 \section{Author: Christos Dalamarinis
-Date: 2025}{
+Date: Dec - 2025}{
 Create a New EEG Object
 
 This function creates an S3 object of class 'eeg' that stores EEG data,

@@ -6,7 +6,7 @@
 #' from the STATUS channel using native R implementation (no edfReader dependency)
 #'
 #' Author: Christos Dalamarinis
-#' Date: 2026-01-24
+#' Date: Jan - s2026
 #' 
 #' BioSemi BDF STATUS Channel Structure (per BioSemi format spec):
 #' - Bits 1-16: Trigger codes (up to 65535)

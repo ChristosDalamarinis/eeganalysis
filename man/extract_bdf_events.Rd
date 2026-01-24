@@ -2,7 +2,7 @@
 % Please edit documentation in R/extract_bdf_events.R
 \name{extract_bdf_events}
 \alias{extract_bdf_events}
-\title{Extract EVENT codes from BDF STATUS channel (native)}
+\title{==============================================================================Extract EVENT codes from BDF STATUS channel}
 \usage{
 extract_bdf_events(bdf_file, verbose = TRUE)
 }
@@ -29,13 +29,30 @@ The returned data frame has attributes:
 }
 }
 \description{
-Convenience wrapper around \code{read_bdf_native()} and
-\code{extract_events_native()} to return only the events table.
+Function to read BioSemi BDF files and extract trigger/event codes
+from the STATUS channel using native R implementation (no edfReader dependency)
 }
 \details{
+Author: Christos Dalamarinis
+Date: Jan - 2026
+
+BioSemi BDF STATUS Channel Structure (per BioSemi format spec):
+\itemize{
+\item Bits 1-16: Trigger codes (up to 65535)
+\item Bits 16-23: System status (CMS, battery, etc.)
+\item Each sample = 24-bit value (3 bytes, little-endian)
+}
+}
+\section{Reference: https://www.biosemi.com/faq/file_format.htm}{
+Extract EVENT codes from BDF STATUS channel (native)
+
+Convenience wrapper around \code{read_bdf_native()} and
+\code{extract_events_native()} to return only the events table.
+
 Requires that \code{read_bdf_native()} and \code{extract_events_native()}
 from \code{read_bdf_native.R} are available in the package.
 }
+
 \examples{
 \dontrun{
   events <- extract_bdf_events("sub-01_task_eeg.bdf")

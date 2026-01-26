@@ -159,7 +159,7 @@ extract_events_native <- function(status_signal, sampling_rate) {
     return(data.frame(
       onset = integer(0),
       onset_time = numeric(0),
-      type = character(0),
+      type = interger(0),
       description = character(0),
       stringsAsFactors = FALSE
     ))
@@ -191,7 +191,7 @@ extract_events_native <- function(status_signal, sampling_rate) {
   data.frame(
     onset = event_indices,
     onset_time = (event_indices - 1) / sampling_rate,
-    type = as.character(trigger_values),
+    type = as.integer(trigger_values),
     description = paste0("Trigger: ", trigger_values),
     stringsAsFactors = FALSE
   )

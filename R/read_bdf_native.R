@@ -10,7 +10,7 @@
 #' Author: Christos Dalamarinis
 #' Date: Jan 2026
 #' ============================================================================
-
+#'
 #' Read BDF File Header
 #'
 #' @param file_path Character string with path to .bdf file

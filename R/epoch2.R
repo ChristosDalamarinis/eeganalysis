@@ -1,5 +1,5 @@
 #' ============================================================================
-#' EEG Epoching Functions - Enhanced Trigger Detection
+#'            EEG Epoching Functions - Enhanced Trigger Detection
 #' ============================================================================
 #'
 #' This module provides functions for epoching (segmenting) continuous EEG data

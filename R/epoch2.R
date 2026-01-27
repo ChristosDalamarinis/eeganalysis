@@ -295,10 +295,7 @@ inspect_triggers <- function(eeg_obj,
       max_count <- max(counts_sorted)
       upper_lim <- ceiling(max_count * 1.15) # Add 15% headroom above highest bar
       
-      # Create y-axis breaks
-      # axis_breaks <- pretty(c(0, ylim_max), n = 5) # Generate 5 round numbers
-      # ylim_final <- max(axis_breaks)
-      
+      # Create barplot with dynamic y-axis limit
       barplot(counts_sorted,
               col = rainbow(length(counts_sorted), alpha = 0.7),
               xlab = if (length(event_counts) > 15) "Trigger Code (Top 15)" else "Trigger Code",

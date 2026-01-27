@@ -6,7 +6,7 @@ Author: Christos Dalamarinis
 
 Contact: [[dalamarinischristos\@gmail.com](mailto:dalamarinischristos@gmail.com)]
 
-# Version: 0.0.0.9000 (under construction)
+# Version: 0.0.0.9000 (under development)
 
 Current code reads .bdf and .edf files. Scripts include functions for assisting the researcher in importing, down-sampling, and referencing the data.
 

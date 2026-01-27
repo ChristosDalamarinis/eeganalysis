@@ -291,12 +291,22 @@ inspect_triggers <- function(eeg_obj,
       counts_sorted <- sort(event_counts, decreasing = TRUE)
       if (length(counts_sorted) > 15) counts_sorted <- counts_sorted[1:15]
       
+      # DYNAMIC Y-AXIS: Calculate maximum count and add 10% headroom
+      max_count <- max(counts_sorted)
+      upper_lim <- ceiling(max_count * 1.15) # Add 15% headroom above highest bar
+      
+      # Create y-axis breaks
+      # axis_breaks <- pretty(c(0, ylim_max), n = 5) # Generate 5 round numbers
+      # ylim_final <- max(axis_breaks)
+      
       barplot(counts_sorted,
               col = rainbow(length(counts_sorted), alpha = 0.7),
               xlab = if (length(event_counts) > 15) "Trigger Code (Top 15)" else "Trigger Code",
               ylab = "Count",
               main = "Trigger Frequencies",
-              las = 2, cex.names = 0.8)
+              las = 2, 
+              cex.names = 0.8,
+              ylim = c(0, upper_lim)) # ADDED: Dynamic y-axis limit
       
       par(mfrow = c(1, 1))
     }, error = function(e) {

@@ -1,6 +1,6 @@
 # eeganalysis
 
-*eeganalysis* is an (under constraction) is an R package for comprehensive EEG data analysis, specializing in BioSemi recordings. The package provides functions to import, preprocess, analyze, and visualize EEG data for research purposes.
+*eeganalysis* is an R package for comprehensive EEG data analysis, specializing in BioSemi recordings. The package provides functions to import, preprocess, analyze, and visualize EEG data for research purposes.
 
 Author: Christos Dalamarinis
 

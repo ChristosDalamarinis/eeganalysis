@@ -12,7 +12,6 @@ Current code reads .bdf and .edf files. Scripts include functions for assisting 
 
 ## Interactive function include:
 
--   **read_biosemi_interactive()**: function to guide the user through the import of a .bdf file.
 -   **identify_external_channels()**: Allows the user to interactively label external channels detected in imported EEG data.
 -   **plot_electrode_3d()**: 3D visualization of electrode positions on a head model (helper function).
 -   **plot_electrode_3d_spherical()**: 3D visualization of electrode positions on a spherical head model (helper function).

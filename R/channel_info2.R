@@ -802,13 +802,13 @@ detect_electrode_naming_system <- function(data) {
       }
       
       header <- tryCatch({
-        edfReader::readEdfHeader(data)
+        read_bdf_header_native(data)
       }, error = function(e) {
         stop("ERROR reading BDF file header: ", e$message,
              "\nCheck that the file is a valid BioSemi BDF file.")
       })
       
-      channels_raw <- header$sHeaders$label
+      channels_raw <- header$labels
       channels_clean <- trimws(channels_raw)
       source_info <- basename(data)
       

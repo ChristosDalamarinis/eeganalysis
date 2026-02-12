@@ -223,45 +223,230 @@ summary_bdf_events <- function(events) {
 }
 
 
-#' Plot BDF event timeline
+#' Validate and summarize BDF events
 #'
-#' @param events Data frame returned from \code{extract_bdf_events()}
-#' @param show_codes Logical. If TRUE, label each event with its trigger code.
-#' 
+#' Provides a concise quality-control summary of extracted events.
+#' Only creates plots if issues are detected or explicitly requested.
+#'
+#' @param data Either a file path, eeg object, or events data frame
+#' @param verbose Logical. Print detailed summary
+#' @param plot Logical or character. Options:
+#'   \itemize{
+#'     \item FALSE - no plot (default, just print summary)
+#'     \item TRUE - auto-decide based on detected issues
+#'     \item "always" - always create diagnostic plot
+#'     \item "timeline" - show event timeline
+#'     \item "sequence" - show event sequence patterns
+#'   }
+#'
+#' @return Invisibly returns a list with:
+#'   - summary: data frame with per-trigger statistics
+#'   - issues: character vector of detected problems
+#'   - recommendation: suggested next steps
+#'
 #' @export
-plot_bdf_events <- function(events, show_codes = FALSE) {
+validate_bdf_events <- function(data, verbose = TRUE, plot = FALSE) {
   
-  if (is.null(events) || !nrow(events)) {
-    warning("No events to plot.")
-    return(invisible(NULL))
+  # Extract events (reuse existing logic)
+  events <- .extract_events_from_input(data)
+  
+  if (nrow(events) == 0) {
+    message("✗ No events found")
+    return(invisible(list(summary = NULL, issues = "no_events")))
   }
   
-  plot(events$onset_time,
-       as.numeric(events$type),
-       type = "h",
-       xlab = "Time (seconds)",
-       ylab = "Trigger code",
-       main = paste("BDF Events from",
-                    basename(attr(events, "bdf_file"))),
-       col = "darkblue",
-       lwd = 2)
+  # ========== ANALYSIS ==========
+  n_events <- nrow(events)
+  unique_triggers <- sort(as.numeric(unique(events$type)))
+  duration_sec <- attr(events, "duration_sec") %||% max(events$onset_time)
+  sample_rate <- attr(events, "sample_rate") %||% NA
   
-  points(events$onset_time,
-         as.numeric(events$type),
-         pch = 19,
-         col = "red",
-         cex = 0.8)
+  # Per-trigger statistics
+  trigger_summary <- as.data.frame(table(events$type))
+  names(trigger_summary) <- c("trigger", "count")
+  trigger_summary$trigger <- as.numeric(as.character(trigger_summary$trigger))
+  trigger_summary$percentage <- round(trigger_summary$count / n_events * 100, 1)
+  trigger_summary <- trigger_summary[order(-trigger_summary$count), ]
   
-  if (show_codes && nrow(events) < 50) {
-    text(events$onset_time,
-         as.numeric(events$type),
-         labels = events$type,
-         pos = 3,
-         cex = 0.7)
+  # Timing analysis
+  if (n_events > 1) {
+    intervals_ms <- diff(events$onset_time) * 1000
+    mean_isi <- mean(intervals_ms)
+    sd_isi <- sd(intervals_ms)
+    min_isi <- min(intervals_ms)
+    max_isi <- max(intervals_ms)
+    cv_isi <- sd_isi / mean_isi  # Coefficient of variation
   }
   
-  grid()
+  # ========== ISSUE DETECTION ==========
+  issues <- character(0)
+  
+  # Check 1: Very few events
+  if (n_events < 10) {
+    issues <- c(issues, "very_few_events")
+  }
+  
+  # Check 2: Imbalanced conditions (if >1 trigger type)
+  if (length(unique_triggers) > 1) {
+    max_count <- max(trigger_summary$count)
+    min_count <- min(trigger_summary$count)
+    if (max_count / min_count > 5) {
+      issues <- c(issues, "imbalanced_conditions")
+    }
+  }
+  
+  # Check 3: Suspiciously short intervals (<50ms)
+  if (n_events > 1 && min_isi < 50) {
+    issues <- c(issues, "double_triggers")
+  }
+  
+  # Check 4: High variability in timing
+  if (n_events > 1 && cv_isi > 0.5) {
+    issues <- c(issues, "irregular_timing")
+  }
+  
+  # Check 5: Unexpected trigger codes (e.g., >255 for 8-bit systems)
+  if (any(unique_triggers > 255)) {
+    issues <- c(issues, "unusual_trigger_values")
+  }
+  
+  # ========== PRINT SUMMARY ==========
+  if (verbose) {
+    cat("\n")
+    cat("========================================\n")
+    cat("           EVENT VALIDATION            \n")
+    cat("========================================\n\n")
+    
+    cat("File:", basename(attr(events, "bdf_file") %||% "Unknown"), "\n")
+    cat("Duration:", round(duration_sec, 1), "sec\n")
+    cat("Total events:", n_events, "\n")
+    cat("Event rate:", round(n_events / duration_sec, 2), "events/sec\n\n")
+    
+    cat("TRIGGER SUMMARY:\n")
+    print(trigger_summary, row.names = FALSE)
+    cat("\n")
+    
+    if (n_events > 1) {
+      cat("TIMING STATISTICS:\n")
+      cat("  Mean ISI:", round(mean_isi, 1), "ms\n")
+      cat("  SD:", round(sd_isi, 1), "ms\n")
+      cat("  Range:", round(min_isi, 1), "-", round(max_isi, 1), "ms\n")
+      cat("  Regularity:", ifelse(cv_isi < 0.2, "Regular", 
+                                  ifelse(cv_isi < 0.5, "Moderate", "Irregular")), 
+          "(CV =", round(cv_isi, 2), ")\n\n")
+    }
+    
+    # Report issues
+    if (length(issues) > 0) {
+      cat("⚠ POTENTIAL ISSUES DETECTED:\n")
+      if ("very_few_events" %in% issues) {
+        cat("  • Very few events (<10) - check recording\n")
+      }
+      if ("imbalanced_conditions" %in% issues) {
+        cat("  • Imbalanced conditions - check experimental design\n")
+      }
+      if ("double_triggers" %in% issues) {
+        cat("  • Very short intervals (<50ms) - possible double-triggers\n")
+        short_intervals <- which(intervals_ms < 50)
+        cat("    Occurs at events:", paste(head(short_intervals, 5), collapse = ", "))
+        if (length(short_intervals) > 5) cat(" ...")
+        cat("\n")
+      }
+      if ("irregular_timing" %in% issues) {
+        cat("  • Highly variable timing - check experimental control\n")
+      }
+      if ("unusual_trigger_values" %in% issues) {
+        cat("  • Trigger values >255 detected:", paste(unique_triggers[unique_triggers > 255], collapse = ", "), "\n")
+      }
+      cat("\n")
+    } else {
+      cat("✓ No issues detected\n\n")
+    }
+    
+    cat("========================================\n\n")
+  }
+  
+  # ========== DECIDE ON PLOTTING ==========
+  should_plot <- FALSE
+  if (is.logical(plot)) {
+    if (plot == TRUE && length(issues) > 0) should_plot <- TRUE
+    if (plot == TRUE && length(issues) == 0 && verbose) {
+      cat("No issues detected - skipping plot. Use plot='always' to force.\n\n")
+    }
+  } else if (is.character(plot)) {
+    should_plot <- TRUE
+  }
+  
+  # ========== CREATE DIAGNOSTIC PLOT (ONLY IF NEEDED) ==========
+  if (should_plot) {
+    
+    plot_type <- if (is.character(plot)) plot else "timeline"
+    
+    if (plot_type == "timeline" || plot_type == "always") {
+      # Simple, informative timeline
+      par(mfrow = c(2, 1), mar = c(4, 4, 2, 1))
+      
+      # Panel 1: Event sequence
+      plot(events$onset_time, as.numeric(events$type),
+           pch = "|", cex = 2, col = "darkblue",
+           xlab = "Time (sec)", ylab = "Trigger",
+           main = "Event Timeline")
+      grid()
+      
+      # Panel 2: Inter-event intervals (if >1 event)
+      if (n_events > 1) {
+        plot(events$onset_time[-1], intervals_ms,
+             type = "h", col = ifelse(intervals_ms < 50, "red", "darkgreen"),
+             xlab = "Time (sec)", ylab = "Interval (ms)",
+             main = "Inter-Event Intervals (red = <50ms)")
+        abline(h = mean_isi, col = "blue", lty = 2, lwd = 2)
+        grid()
+      }
+      
+      par(mfrow = c(1, 1))
+    }
+    
+    if (plot_type == "sequence") {
+      # Show trigger sequence pattern
+      plot(seq_along(events$type), as.numeric(events$type),
+           type = "b", pch = 19, cex = 0.8,
+           xlab = "Event number", ylab = "Trigger code",
+           main = "Trigger Sequence Pattern",
+           col = as.numeric(as.factor(events$type)))
+      grid()
+    }
+  }
+  
+  # ========== RETURN ==========
+  result <- list(
+    summary = trigger_summary,
+    issues = if (length(issues) > 0) issues else NULL,
+    events = events,
+    timing = if (n_events > 1) list(
+      mean_isi_ms = mean_isi,
+      sd_isi_ms = sd_isi,
+      cv = cv_isi
+    ) else NULL
+  )
+  
+  invisible(result)
 }
+
+
+# Helper to extract events from various input types
+.extract_events_from_input <- function(data) {
+  if (is.character(data) && length(data) == 1) {
+    return(extract_bdf_events(data, verbose = FALSE))
+  } else if (inherits(data, "eeg") || (is.list(data) && "events" %in% names(data))) {
+    return(data$events)
+  } else if (is.data.frame(data) && all(c("onset", "onset_time", "type") %in% names(data))) {
+    return(data)
+  } else {
+    stop("Invalid input type")
+  }
+}
+
+
 
 
 # ==============================================================================

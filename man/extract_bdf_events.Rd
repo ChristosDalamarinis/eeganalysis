@@ -4,12 +4,17 @@
 \alias{extract_bdf_events}
 \title{==============================================================================Extract EVENT codes from BDF STATUS channel}
 \usage{
-extract_bdf_events(bdf_file, verbose = TRUE)
+extract_bdf_events(data, verbose = TRUE)
 }
 \arguments{
-\item{bdf_file}{Path to BDF file (character string).}
+\item{data}{Either:
+\itemize{
+\item A character string with path to .bdf file, OR
+\item An \code{eeg} object (from \code{read_bdf_native()})
+}}
 
-\item{verbose}{Logical. If TRUE (default), print detailed progress messages.}
+\item{verbose}{Logical. If TRUE (default), print detailed progress messages.
+Only applies when reading from file.}
 }
 \value{
 Data frame with columns:
@@ -22,7 +27,7 @@ Data frame with columns:
 
 The returned data frame has attributes:
 \itemize{
-\item bdf_file: file path
+\item bdf_file: file path (if applicable)
 \item sample_rate: sampling rate in Hz
 \item n_samples: total number of samples
 \item duration_sec: total duration in seconds
@@ -44,18 +49,23 @@ BioSemi BDF STATUS Channel Structure (per BioSemi format spec):
 }
 }
 \section{Reference: https://www.biosemi.com/faq/file_format.htm}{
-Extract EVENT codes from BDF STATUS channel (native)
+Extract EVENT codes from BDF file or EEG object
 
-Convenience wrapper around \code{read_bdf_native()} and
-\code{extract_events_native()} to return only the events table.
-
-Requires that \code{read_bdf_native()} and \code{extract_events_native()}
-from \code{read_bdf_native.R} are available in the package.
+Extracts trigger/event codes from either a BDF file path or an already-loaded
+EEG object. When a file path is provided, it uses \code{read_bdf_native()}
+internally. When an EEG object is provided, it extracts events directly.
 }
 
 \examples{
 \dontrun{
+  # Option 1: Extract from file directly
   events <- extract_bdf_events("sub-01_task_eeg.bdf")
+  
+  # Option 2: Extract from already-loaded EEG object
+  eeg_data <- read_bdf_native("sub-01_task_eeg.bdf")
+  events <- extract_bdf_events(eeg_data, verbose = FALSE)
+  
+  # View results
   head(events)
   table(events$type)
 }

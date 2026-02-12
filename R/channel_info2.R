@@ -541,7 +541,7 @@ scan_biosemi_channels <- function(file_path) {
   # ========== EXTRACT CHANNEL INFORMATION ==========
   
   # Get channel names and clean whitespace
-  channels_raw <- header$sHeaders$label
+  channels_raw <- header$labels
   channels_clean <- trimws(channels_raw)
   
   # Total number of channels

@@ -512,7 +512,6 @@ get_electrode_position <- function(channel_name) {
 #' external <- channels[channels$region == "External", ]
 #' }
 #'
-#' @importFrom edfReader readEdfHeader
 #' @export
 scan_biosemi_channels <- function(file_path) {
   

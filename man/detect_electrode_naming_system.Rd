@@ -84,4 +84,3 @@ BioSemi electrode cap layout.
 }
 
 }
-\keyword{internal}

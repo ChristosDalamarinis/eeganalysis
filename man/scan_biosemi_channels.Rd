@@ -33,7 +33,7 @@ to extract channel metadata. Useful for:
 \item Quality control checks
 }
 
-Uses the edfReader package (same as read_biosemi).
+Uses the read_bdf_header_native (same as read_bdf_native.R).
 }
 \examples{
 \dontrun{

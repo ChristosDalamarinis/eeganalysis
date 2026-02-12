@@ -779,10 +779,7 @@ inspect_biosemi_file <- function(file_path) {
 #'   View(result$channels_detected[, c("channel_name", "standard_equivalent")])
 #' }
 #'
-#' @keywords internal
-#' @importFrom edfReader readEdfHeader
 #' @export
-#'
 detect_electrode_naming_system <- function(data) {
   
   # ========================================================================

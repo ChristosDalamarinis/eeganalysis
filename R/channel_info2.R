@@ -499,7 +499,7 @@ get_electrode_position <- function(channel_name) {
 #' - Extracting channel names programmatically
 #' - Quality control checks
 #'
-#' Uses the edfReader package (same as read_biosemi).
+#' Uses the read_bdf_header_native (same as read_bdf_native.R).
 #'
 #' @examples
 #' \dontrun{

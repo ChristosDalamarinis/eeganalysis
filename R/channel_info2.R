@@ -530,9 +530,9 @@ scan_biosemi_channels <- function(file_path) {
   
   # ========== READ BDF HEADER ==========
   
-  # Use edfReader to read only the header (no signal data)
+  # Use read_bdf_header_native to read only the header (no signal data)
   header <- tryCatch({
-    edfReader::readEdfHeader(file_path)
+    read_bdf_header_native(file_path)
   }, error = function(e) {
     stop("ERROR reading BDF file header: ", e$message,
          "\nCheck that the file is a valid BioSemi BDF file.")

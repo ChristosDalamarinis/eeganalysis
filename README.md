@@ -18,8 +18,6 @@ Current code reads .bdf and .edf files. Scripts include functions for assisting 
 
 ## Dependencies
 
--   "edfReader" -> Reading BDF/EDF files
-
 -   "signal" ->  Signal processing and filtering
 
 -   "ggplot2" ->  Data visualization

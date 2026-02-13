@@ -272,7 +272,7 @@ inspect_triggers <- function(eeg_obj,                              # EEG object 
     tryCatch({
       par(mfrow = c(1, 2), mar = c(4, 4, 3, 2))
       
-      # Plot 1: Timeline
+      # Plot 1: Timeline                                # UTILITY: mostly useful for detecting recording problems!!! NOT experimental design issues.
       if (n_events_cleaned <= 5000) {
         plot(events_cleaned$onset_time, rep(1, n_events_cleaned),
              type = "h", lwd = 2, col = "steelblue",

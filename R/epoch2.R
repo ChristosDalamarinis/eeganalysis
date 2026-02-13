@@ -41,13 +41,13 @@
 #' @return List with diagnostic information (invisible)
 #'
 #' @export
-inspect_triggers <- function(eeg_obj,
-                             mode = c("auto", "raw", "manual"),
-                             trigger_threshold = 0.002,
-                             min_iei = 0.01,
-                             exclude_types = NULL,
-                             plot = TRUE,
-                             export_csv = NULL) {
+inspect_triggers <- function(eeg_obj,                              # EEG object with events
+                             mode = c("auto", "raw", "manual"),    # Filtering mode
+                             trigger_threshold = 0.002,            # Numeric - specifies the minimum trigger duration in seconds. Events short than this are considered noise.
+                             min_iei = 0.01,                       # Numeric value for minimum inter-event interval in seconds. Events occuring below this threshold are filtered out.
+                             exclude_types = NULL,                 # Vector of events to exclude from analysis. Use this to manually remove specific trigger codes from consideration.
+                             plot = TRUE,                          # Logical - Controls whther to generate diagnostic plots. If enabled, it creates a trigger timeline and frequency distribution plot.
+                             export_csv = NULL) {                  # Specifies file path to export cleaned events as a CSV file. If provided, it saves the filtered event data to the specified location.
   
   mode <- match.arg(mode)
   

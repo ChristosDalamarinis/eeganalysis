@@ -45,20 +45,20 @@ head model using OFFICIAL BioSemi 64-channel SPHERICAL coordinates.
 }
 \details{
 This function visualizes electrode positions in 3D space using the official
-BioSemi 64-channel electrode cap SPHERICAL coordinates (θ, φ), which are then
+BioSemi 64-channel electrode cap SPHERICAL coordinates (theta, phi), which are then
 converted to Cartesian (x, y, z) for plotting.
 
 \strong{Spherical Coordinate System:}
 \itemize{
-\item θ (inclination): range from +180° to -180° (at Cz, inclination = 0°)
+\item theta (inclination): range from +180deg to -180deg (at Cz, inclination = 0deg)
 \itemize{
 \item Positive inclinations = right side of head
 \item Negative inclinations = left side of head
 }
-\item φ (azimuth): range from +90° to -90°
+\item phi (azimuth): range from +90deg to -90deg
 \itemize{
-\item For positive inclinations: φ = angle from T8 (right ear)
-\item For negative inclinations: φ = angle from T7 (left ear)
+\item For positive inclinations: phi = angle from T8 (right ear)
+\item For negative inclinations: phi = angle from T7 (left ear)
 \item Positive = anti-clockwise, negative = clockwise
 }
 \item r (radius): 87.54 mm (from 55 cm head circumference)
@@ -66,9 +66,9 @@ converted to Cartesian (x, y, z) for plotting.
 
 \strong{Conversion to Cartesian:}
 \itemize{
-\item x = r * sin(θ) * cos(φ)
-\item y = r * sin(θ) * sin(φ)
-\item z = r * cos(θ)
+\item x = r * sin(theta) * cos(phi)
+\item y = r * sin(theta) * sin(phi)
+\item z = r * cos(theta)
 }
 
 \strong{Coordinate System:}

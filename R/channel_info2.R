@@ -1168,18 +1168,18 @@ detect_electrode_naming_system <- function(data) {
   
   if (naming_system == "10-20/10-10") {
     summary_lines <- c(summary_lines,
-                       "✓ Standard international naming detected.")
+                       "[OK] Standard international naming detected.")
     summary_lines <- c(summary_lines,
-                       "✓ Compatible with most EEG analysis pipelines.")
+                       "[OK] Compatible with most EEG analysis pipelines.")
     summary_lines <- c(summary_lines,
-                       "✓ Ready for analysis without channel remapping.")
+                       "[OK] Ready for analysis without channel remapping.")
   } else if (naming_system == "BioSemi_AB") {
     summary_lines <- c(summary_lines,
-                       "⚠ BioSemi internal naming detected (A1-A32 + B1-B32)")
+                       "[WARN] BioSemi internal naming detected (A1-A32 + B1-B32)")
     summary_lines <- c(summary_lines,
-                       "⚠ Standard 10-20/10-10 equivalents provided in 'standard_equivalent' column")
+                       "[WARN] Standard 10-20/10-10 equivalents provided in 'standard_equivalent' column")
     summary_lines <- c(summary_lines,
-                       "⚠ Use channels_detected$standard_equivalent for standard names")
+                       "[WARN] Use channels_detected$standard_equivalent for standard names")
     summary_lines <- c(summary_lines, "")
     summary_lines <- c(summary_lines, "   BioSemi to Standard mapping examples:")
     summary_lines <- c(summary_lines, "   A1  -> Fp1  |  B1  -> Fpz")
@@ -1187,14 +1187,14 @@ detect_electrode_naming_system <- function(data) {
     summary_lines <- c(summary_lines, "   A32 -> CPz  |  B32 -> O2")
   } else if (naming_system == "Mixed") {
     summary_lines <- c(summary_lines,
-                       "⚠ Mixed naming systems detected.")
+                       "[WARN] Mixed naming systems detected.")
     summary_lines <- c(summary_lines,
-                       "⚠ Check 'standard_equivalent' column for mapped names.")
+                       "[WARN] Check 'standard_equivalent' column for mapped names.")
   } else {
     summary_lines <- c(summary_lines,
-                       "⚠ Unrecognized naming convention detected.")
+                       "[WARN] Unrecognized naming convention detected.")
     summary_lines <- c(summary_lines,
-                       "⚠ Please verify electrode naming.")
+                       "[WARN] Please verify electrode naming.")
   }
   
   summary_lines <- c(summary_lines, "")
@@ -1566,21 +1566,21 @@ plot_electrode_3d <- function(channels = NULL,
     ),
     scene = list(
       xaxis = list(
-        title = "← Left | Right →",
+        title = "Left | Right",
         showgrid = FALSE,
         zeroline = FALSE,
         showticklabels = FALSE,
         range = c(-110, 110)
       ),
       yaxis = list(
-        title = "← Back | Front (Nose) →",
+        title = "Back | Front (Nose)",
         showgrid = FALSE,
         zeroline = FALSE,
         showticklabels = FALSE,
         range = c(-110, 110)
       ),
       zaxis = list(
-        title = "← Bottom | Top →",
+        title = "Bottom | Top",
         showgrid = FALSE,
         zeroline = FALSE,
         showticklabels = FALSE,
@@ -1638,23 +1638,23 @@ plot_electrode_3d <- function(channels = NULL,
 #'
 #' @details
 #' This function visualizes electrode positions in 3D space using the official
-#' BioSemi 64-channel electrode cap SPHERICAL coordinates (θ, φ), which are then
+#' BioSemi 64-channel electrode cap SPHERICAL coordinates (theta, phi), which are then
 #' converted to Cartesian (x, y, z) for plotting.
 #'
 #' **Spherical Coordinate System:**
-#' - θ (inclination): range from +180° to -180° (at Cz, inclination = 0°)
+#' - theta (inclination): range from +180deg to -180deg (at Cz, inclination = 0deg)
 #'   - Positive inclinations = right side of head
 #'   - Negative inclinations = left side of head
-#' - φ (azimuth): range from +90° to -90°
-#'   - For positive inclinations: φ = angle from T8 (right ear)
-#'   - For negative inclinations: φ = angle from T7 (left ear)
+#' - phi (azimuth): range from +90deg to -90deg
+#'   - For positive inclinations: phi = angle from T8 (right ear)
+#'   - For negative inclinations: phi = angle from T7 (left ear)
 #'   - Positive = anti-clockwise, negative = clockwise
 #' - r (radius): 87.54 mm (from 55 cm head circumference)
 #'
 #' **Conversion to Cartesian:**
-#' - x = r * sin(θ) * cos(φ)
-#' - y = r * sin(θ) * sin(φ)
-#' - z = r * cos(θ)
+#' - x = r * sin(theta) * cos(phi)
+#' - y = r * sin(theta) * sin(phi)
+#' - z = r * cos(theta)
 #'
 #' **Coordinate System:**
 #' - Origin (0, 0, 0) at center of head
@@ -1703,7 +1703,7 @@ plot_electrode_3d_spherical <- function(channels = NULL,
   # OFFICIAL BIOSEMI 64-CHANNEL SPHERICAL COORDINATES
   # ========================================================================
   # From BioSemi Cap_coords_all.xls file
-  # θ (inclination) in degrees, φ (azimuth) in degrees
+  # theta (inclination) in degrees, phi (azimuth) in degrees
   
   electrode_coords_spherical <- data.frame(
     electrode = c(
@@ -1746,9 +1746,9 @@ plot_electrode_3d_spherical <- function(channels = NULL,
   }
   
   # Spherical to Cartesian conversion
-  # x = r * sin(θ) * cos(φ)
-  # y = r * sin(θ) * sin(φ)
-  # z = r * cos(θ)
+  # x = r * sin(theta) * cos(phi)
+  # y = r * sin(theta) * sin(phi)
+  # z = r * cos(theta)
   
   electrode_coords_spherical$theta_rad <- deg_to_rad(electrode_coords_spherical$theta)
   electrode_coords_spherical$phi_rad <- deg_to_rad(electrode_coords_spherical$phi)
@@ -1962,8 +1962,8 @@ plot_electrode_3d_spherical <- function(channels = NULL,
                           "Standard: ", standard_name, "<br>",
                           "Region: ", color_group, "<br>",
                           "Spherical (degrees):<br>",
-                          "  θ (inclination): ", theta, "°<br>",
-                          "  φ (azimuth): ", phi, "°<br>",
+                          "  theta (inclination): ", theta, "deg<br>",
+                          "  phi (azimuth): ", phi, "deg<br>",
                           "Cartesian (mm):<br>",
                           "  X: ", round(x, 1), " (L/R)<br>",
                           "  Y: ", round(y, 1), " (Back/Front)<br>",
@@ -1988,21 +1988,21 @@ plot_electrode_3d_spherical <- function(channels = NULL,
     ),
     scene = list(
       xaxis = list(
-        title = "← Left | Right →",
+        title = "Left | Right",
         showgrid = FALSE,
         zeroline = FALSE,
         showticklabels = FALSE,
         range = c(-axis_range, axis_range)
       ),
       yaxis = list(
-        title = "← Back | Front (Nose) →",
+        title = "Back | Front (Nose)",
         showgrid = FALSE,
         zeroline = FALSE,
         showticklabels = FALSE,
         range = c(-axis_range, axis_range)
       ),
       zaxis = list(
-        title = "← Bottom | Top →",
+        title = "Bottom | Top",
         showgrid = FALSE,
         zeroline = FALSE,
         showticklabels = FALSE,

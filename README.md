@@ -32,7 +32,7 @@ Current code reads .bdf and .edf files. Scripts include functions for assisting 
 library(eeganalysis)
 ```
 
-## Import BioSemi data
+### Import BioSemi data
 
 ``` r
 eeg_data <- read_biosemi("path/to/your/file.bdf")

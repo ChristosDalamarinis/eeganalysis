@@ -20,7 +20,7 @@
 #' tuning and works universally across all BioSemi recordings.
 #'
 #' Author: Christos Dalamarinis
-#' Date: Jan - 2026 NOT TESTED
+#' Date: Jan - 2026 
 #' ============================================================================
 #'
 #' ======================= INSPECT TRIGGERS FUNCTION ==========================

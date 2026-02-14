@@ -24,7 +24,6 @@
 #' ============================================================================
 #'
 #' ======================= INSPECT TRIGGERS FUNCTION ==========================
-#' ======================= INSPECT TRIGGERS FUNCTION ==========================
 #' Inspect Event Triggers in EEG Data
 #'
 #' Provides a concise diagnostic summary of event triggers in EEG recordings.
@@ -44,19 +43,18 @@
 #' @return List with diagnostic information (invisible)
 #'
 #' @export
-inspect_triggers <- function(eeg_obj,                            # Loaded data eeg object with events
-                             mode = c("auto", "raw", "manual"),  # Filtering mode
-                             trigger_threshold = 0.002,          # Numeric - specifies the minimum trigger duration in seconds. Events short than this are considered noise.
-                             min_iei = 0.01,                     # Numeric value for minimum inter-event interval in seconds. Events occurring below this threshold are filtered out.
-                             exclude_types = NULL,               # Vector of events to exclude from analysis. Use this to manually remove specific trigger codes from consideration.
-                             plot = FALSE,                       # Logical - Controls whether to generate diagnostic plots. If enabled, it creates a trigger timeline and frequency distribution plot.
-                             plot_timeline = TRUE,               # Logical - True by default to draw the timeline figure
-                             plot_frequencies = TRUE,            # Logical - True by default to draw the frequencies figure
-                             export_csv = NULL) {                # Character - If provided, exports the cleaned events to a CSV file at the specified path.
+inspect_triggers <- function(eeg_obj,
+                             mode = c("auto", "raw", "manual"),
+                             trigger_threshold = 0.002,
+                             min_iei = 0.01,
+                             exclude_types = NULL,
+                             plot = FALSE,
+                             plot_timeline = TRUE,
+                             plot_frequencies = TRUE,
+                             export_csv = NULL) {
   
   mode <- match.arg(mode)
   
-  # ========== VALIDATION ==========
   if (!inherits(eeg_obj, "eeg")) {
     stop("Input must be an object of class 'eeg'", call. = FALSE)
   }
@@ -67,7 +65,6 @@ inspect_triggers <- function(eeg_obj,                            # Loaded data e
     return(invisible(list(n_events_raw = 0, n_events_cleaned = 0)))
   }
   
-  # ========== FILTER EXPERIMENTAL TRIGGERS (BITS 0-15) ==========
   events_raw <- eeg_obj$events
   n_events_raw <- nrow(events_raw)
   recording_duration <- max(eeg_obj$times)
@@ -86,7 +83,6 @@ inspect_triggers <- function(eeg_obj,                            # Loaded data e
                                 " system status triggers (bits 16-23)"))
   }
   
-  # ========== ADDITIONAL FILTERING (IF NOT RAW MODE) ==========
   if (mode != "raw" && nrow(events_cleaned) > 0) {
     
     if (!is.null(exclude_types)) {
@@ -141,7 +137,6 @@ inspect_triggers <- function(eeg_obj,                            # Loaded data e
   
   n_events_cleaned <- nrow(events_cleaned)
   
-  # ========== CALCULATE STATISTICS ==========
   if (n_events_cleaned > 0) {
     event_types <- unique(events_cleaned$type)
     event_counts <- table(events_cleaned$type)
@@ -164,7 +159,6 @@ inspect_triggers <- function(eeg_obj,                            # Loaded data e
     event_rate <- NA
   }
   
-  # ========== COMPACT OUTPUT ==========
   cat("\n")
   cat("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
   cat("  TRIGGER INSPECTION (BioSemi Experimental Triggers: Bits 0-15)\n")
@@ -254,25 +248,19 @@ inspect_triggers <- function(eeg_obj,                            # Loaded data e
   cat("\n")
   cat("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n")
   
-  # ========== PLOTS (BASE R ONLY) ==========
   if (plot && n_events_cleaned > 0) {
-    
-    # Determine which plots to show
     n_plots <- sum(plot_timeline, plot_frequencies)
     
     if (n_plots == 0) {
       cat("Note: No plots requested. Set plot_timeline=TRUE or plot_frequencies=TRUE\n\n")
     } else {
-      
       tryCatch({
-        
         if (n_plots == 2) {
           par(mfrow = c(1, 2), mar = c(4, 4, 3, 2))
         } else {
           par(mfrow = c(1, 1), mar = c(5, 4, 4, 2))
         }
         
-        # Timeline plot
         if (plot_timeline) {
           if (n_events_cleaned <= 5000) {
             plot(events_cleaned$onset_time, rep(1, n_events_cleaned),
@@ -289,23 +277,29 @@ inspect_triggers <- function(eeg_obj,                            # Loaded data e
           }
         }
         
-        # Frequency plot
         if (plot_frequencies) {
           counts_sorted <- sort(event_counts, decreasing = TRUE)
           if (length(counts_sorted) > 15) counts_sorted <- counts_sorted[1:15]
           
-          # Dynamic y-axis ceiling
           max_val <- max(counts_sorted)
-          upper_lim <- ceiling(max_val * 1.15)
+          upper_lim <- ceiling(max_val * 1.2)
           
-          barplot(counts_sorted,
-                  col = rainbow(length(counts_sorted), alpha = 0.7),
-                  xlab = if (length(event_counts) > 15) "Trigger Code (Top 15)" else "Trigger Code",
-                  ylab = "Count",
-                  main = "Trigger Frequencies",
-                  las = 2, 
-                  cex.names = 0.8,
-                  ylim = c(0, upper_lim))
+          bar_positions <- barplot(counts_sorted,
+                                   col = rainbow(length(counts_sorted), alpha = 0.7),
+                                   xlab = if (length(event_counts) > 15) "Trigger Code (Top 15)" else "Trigger Code",
+                                   ylab = "Count",
+                                   main = "Trigger Frequencies",
+                                   las = 2, 
+                                   cex.names = 0.8,
+                                   ylim = c(0, upper_lim))
+          
+          text(x = bar_positions, 
+               y = as.numeric(counts_sorted), 
+               labels = format(counts_sorted, big.mark = ","), 
+               pos = 3,
+               cex = 0.8, 
+               col = "black",
+               font = 2)
         }
         
         par(mfrow = c(1, 1))
@@ -317,7 +311,6 @@ inspect_triggers <- function(eeg_obj,                            # Loaded data e
     }
   }
   
-  # ========== EXPORT ==========
   if (!is.null(export_csv)) {
     tryCatch({
       write.csv(events_cleaned, file = export_csv, row.names = FALSE)
@@ -327,7 +320,6 @@ inspect_triggers <- function(eeg_obj,                            # Loaded data e
     })
   }
   
-  # ========== RETURN ==========
   invisible(list(
     n_events_raw = n_events_raw,
     n_events_cleaned = n_events_cleaned,
@@ -340,8 +332,6 @@ inspect_triggers <- function(eeg_obj,                            # Loaded data e
     events_cleaned = events_cleaned
   ))
 }
-
-
 
 
 

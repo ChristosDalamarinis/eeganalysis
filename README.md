@@ -18,13 +18,35 @@ Current code reads .bdf and .edf files. Scripts include functions for assisting 
 
 ## Dependencies
 
--   "signal" ->  Signal processing and filtering
+-   "signal" -\> Signal processing and filtering
 
--   "ggplot2" ->  Data visualization
+-   "ggplot2" -\> Data visualization
 
--   "dplyr" -> Data manipulation
+-   "dplyr" -\> Data manipulation
 
--   "plotly" -> Interactive 3D plotting
+-   "plotly" -\> Interactive 3D plotting
+
+## Quick Start
+
+``` r
+library(eeganalysis)
+```
+
+## Import BioSemi data
+
+eeg_data \<- read_biosemi("path/to/your/file.bdf")
+
+## Downsample to 256 Hz
+
+eeg_data \<- downsample(eeg_data, target_srate = 256)
+
+## Rereference to average
+
+eeg_data \<- eeg_rereference(eeg_data, ref_type = "average")
+
+## Extract epochs around events
+
+epochs \<- epoch_eeg(eeg_data, events = c(1, 2), time_window = c(-0.2, 0.8))
 
 # Analysis Pipeline
 

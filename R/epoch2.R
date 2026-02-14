@@ -24,6 +24,7 @@
 #' ============================================================================
 #'
 #' ======================= INSPECT TRIGGERS FUNCTION ==========================
+#' ======================= INSPECT TRIGGERS FUNCTION ==========================
 #' Inspect Event Triggers in EEG Data
 #'
 #' Provides a concise diagnostic summary of event triggers in EEG recordings.
@@ -35,19 +36,23 @@
 #' @param trigger_threshold Numeric. Minimum trigger duration in seconds (default: 0.002)
 #' @param min_iei Numeric. Minimum inter-event interval in seconds (default: 0.01)
 #' @param exclude_types Character vector of event types to exclude (default: NULL)
-#' @param plot Logical. Generate diagnostic plots (default: TRUE)
+#' @param plot Logical. Generate diagnostic plots (default: FALSE)
+#' @param plot_timeline Logical. Show timeline plot (default: TRUE when plot=TRUE)
+#' @param plot_frequencies Logical. Show frequency barplot (default: TRUE when plot=TRUE)
 #' @param export_csv Character. Path to export cleaned events (default: NULL)
 #'
 #' @return List with diagnostic information (invisible)
 #'
 #' @export
-inspect_triggers <- function(eeg_obj,                              # EEG object with events
-                             mode = c("auto", "raw", "manual"),    # Filtering mode
-                             trigger_threshold = 0.002,            # Numeric - specifies the minimum trigger duration in seconds. Events short than this are considered noise.
-                             min_iei = 0.01,                       # Numeric value for minimum inter-event interval in seconds. Events occurring below this threshold are filtered out.
-                             exclude_types = NULL,                 # Vector of events to exclude from analysis. Use this to manually remove specific trigger codes from consideration.
-                             plot = TRUE,                          # Logical - Controls whether to generate diagnostic plots. If enabled, it creates a trigger timeline and frequency distribution plot.
-                             export_csv = NULL) {                  # Specifies file path to export cleaned events as a CSV file. If provided, it saves the filtered event data to the specified location.
+inspect_triggers <- function(eeg_obj,                            # Loaded data eeg object with events
+                             mode = c("auto", "raw", "manual"),  # Filtering mode
+                             trigger_threshold = 0.002,          # Numeric - specifies the minimum trigger duration in seconds. Events short than this are considered noise.
+                             min_iei = 0.01,                     # Numeric value for minimum inter-event interval in seconds. Events occurring below this threshold are filtered out.
+                             exclude_types = NULL,               # Vector of events to exclude from analysis. Use this to manually remove specific trigger codes from consideration.
+                             plot = FALSE,                       # Logical - Controls whether to generate diagnostic plots. If enabled, it creates a trigger timeline and frequency distribution plot.
+                             plot_timeline = TRUE,               # Logical - True by default to draw the timeline figure
+                             plot_frequencies = TRUE,            # Logical - True by default to draw the frequencies figure
+                             export_csv = NULL) {                # Character - If provided, exports the cleaned events to a CSV file at the specified path.
   
   mode <- match.arg(mode)
   
@@ -67,21 +72,11 @@ inspect_triggers <- function(eeg_obj,                              # EEG object 
   n_events_raw <- nrow(events_raw)
   recording_duration <- max(eeg_obj$times)
   
-  # Create bit mask for experimental triggers (bits 0-15)
-  # Mask: 0xFFFF = 65535 (binary: 0000000011111111 11111111)
-  EXPERIMENTAL_TRIGGER_MASK <- 0xFFFF  # 2^16 - 1
-  
-  # Filter to keep only experimental triggers
-  # Apply bitwise AND to extract only bits 0-15
+  EXPERIMENTAL_TRIGGER_MASK <- 0xFFFF
   experimental_triggers <- bitwAnd(as.integer(events_raw$type), EXPERIMENTAL_TRIGGER_MASK)
-  
-  # Keep only events where experimental trigger bits are non-zero
   events_cleaned <- events_raw[experimental_triggers != 0, ]
-  
-  # Update trigger codes to reflect only experimental bits
   events_cleaned$type <- experimental_triggers[experimental_triggers != 0]
   
-  # Track how many system triggers were removed
   n_system_triggers_removed <- n_events_raw - nrow(events_cleaned)
   
   filtering_notes <- character(0)
@@ -94,7 +89,6 @@ inspect_triggers <- function(eeg_obj,                              # EEG object 
   # ========== ADDITIONAL FILTERING (IF NOT RAW MODE) ==========
   if (mode != "raw" && nrow(events_cleaned) > 0) {
     
-    # Step 2: Exclude user-specified types
     if (!is.null(exclude_types)) {
       n_before_exclude <- nrow(events_cleaned)
       events_cleaned <- events_cleaned[!events_cleaned$type %in% exclude_types, ]
@@ -107,7 +101,6 @@ inspect_triggers <- function(eeg_obj,                              # EEG object 
     }
     
     if (nrow(events_cleaned) > 1) {
-      # Step 3: Merge consecutive identical events
       n_before_merge <- nrow(events_cleaned)
       type_changes <- c(TRUE, events_cleaned$type[-1] != events_cleaned$type[-nrow(events_cleaned)])
       events_cleaned <- events_cleaned[type_changes, ]
@@ -118,7 +111,6 @@ inspect_triggers <- function(eeg_obj,                              # EEG object 
                                     " consecutive identical events"))
       }
       
-      # Step 4: Remove very brief events (likely noise spikes)
       if (mode == "auto") {
         n_before_brief <- nrow(events_cleaned)
         durations <- c(diff(events_cleaned$onset_time), Inf)
@@ -132,7 +124,6 @@ inspect_triggers <- function(eeg_obj,                              # EEG object 
         }
       }
       
-      # Step 5: Filter by minimum inter-event interval
       if (mode == "auto") {
         n_before_iei <- nrow(events_cleaned)
         iei <- diff(events_cleaned$onset_time)
@@ -192,7 +183,6 @@ inspect_triggers <- function(eeg_obj,                              # EEG object 
         reduction_pct, "% filtered)\n\n", sep = "")
   }
   
-  # Show filtering steps
   if (length(filtering_notes) > 0) {
     cat("Filtering:\n")
     for (note in filtering_notes) {
@@ -216,7 +206,6 @@ inspect_triggers <- function(eeg_obj,                              # EEG object 
     )))
   }
   
-  # Trigger summary table
   cat("EXPERIMENTAL TRIGGERS:\n")
   cat(sprintf("  %-10s %8s %7s %9s %9s\n", "Code", "Count", "%", "First(s)", "Last(s)"))
   cat("  ─────────────────────────────────────────────────────\n")
@@ -235,7 +224,6 @@ inspect_triggers <- function(eeg_obj,                              # EEG object 
   
   cat("\n")
   
-  # Timing info
   if (!is.na(mean_iei)) {
     cat("Timing: Mean ITI = ", sprintf("%.3f", mean_iei), " s | ",
         "Median ITI = ", sprintf("%.3f", median_iei), " s | ",
@@ -243,7 +231,6 @@ inspect_triggers <- function(eeg_obj,                              # EEG object 
     cat("\n")
   }
   
-  # Epoching recommendation
   cat("Recommended epoch parameters:\n")
   suggested_tmax <- if (!is.na(mean_iei) && mean_iei > 1.0) {
     min(0.8, mean_iei * 0.6)
@@ -267,49 +254,67 @@ inspect_triggers <- function(eeg_obj,                              # EEG object 
   cat("\n")
   cat("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n")
   
-  # ========== PLOTS ==========
+  # ========== PLOTS (BASE R ONLY) ==========
   if (plot && n_events_cleaned > 0) {
-    tryCatch({
-      par(mfrow = c(1, 2), mar = c(4, 4, 3, 2))
+    
+    # Determine which plots to show
+    n_plots <- sum(plot_timeline, plot_frequencies)
+    
+    if (n_plots == 0) {
+      cat("Note: No plots requested. Set plot_timeline=TRUE or plot_frequencies=TRUE\n\n")
+    } else {
       
-      # Plot 1: Timeline                                # UTILITY: mostly useful for detecting recording problems!!! NOT experimental design issues.
-      if (n_events_cleaned <= 5000) {
-        plot(events_cleaned$onset_time, rep(1, n_events_cleaned),
-             type = "h", lwd = 2, col = "steelblue",
-             xlab = "Time (s)", ylab = "", yaxt = "n",
-             main = paste0("Trigger Timeline (n=", format(n_events_cleaned, big.mark = ","), ")"),
-             ylim = c(0, 1.2))
-        abline(h = 0, col = "gray70")
-      } else {
-        bins <- hist(events_cleaned$onset_time, breaks = 100, plot = FALSE)
-        plot(bins$mids, bins$counts, type = "h", lwd = 2, col = "steelblue",
-             xlab = "Time (s)", ylab = "Count per bin",
-             main = paste0("Trigger Timeline (n=", format(n_events_cleaned, big.mark = ","), ")"))
-      }
-      
-      # Plot 2: Frequencies
-      counts_sorted <- sort(event_counts, decreasing = TRUE)
-      if (length(counts_sorted) > 15) counts_sorted <- counts_sorted[1:15]
-      
-      # DYNAMIC Y-AXIS: Calculate maximum count and add 10% headroom
-      max_count <- max(counts_sorted)
-      upper_lim <- ceiling(max_count * 1.15) # Add 15% headroom above highest bar
-      
-      # Create barplot with dynamic y-axis limit
-      barplot(counts_sorted,
-              col = rainbow(length(counts_sorted), alpha = 0.7),
-              xlab = if (length(event_counts) > 15) "Trigger Code (Top 15)" else "Trigger Code",
-              ylab = "Count",
-              main = "Trigger Frequencies",
-              las = 2, 
-              cex.names = 0.8,
-              ylim = c(0, upper_lim)) # ADDED: Dynamic y-axis limit
-      
-      par(mfrow = c(1, 1))
-    }, error = function(e) {
-      warning("Could not generate plots: ", e$message, call. = FALSE)
-      par(mfrow = c(1, 1))
-    })
+      tryCatch({
+        
+        if (n_plots == 2) {
+          par(mfrow = c(1, 2), mar = c(4, 4, 3, 2))
+        } else {
+          par(mfrow = c(1, 1), mar = c(5, 4, 4, 2))
+        }
+        
+        # Timeline plot
+        if (plot_timeline) {
+          if (n_events_cleaned <= 5000) {
+            plot(events_cleaned$onset_time, rep(1, n_events_cleaned),
+                 type = "h", lwd = 2, col = "steelblue",
+                 xlab = "Time (s)", ylab = "", yaxt = "n",
+                 main = paste0("Trigger Timeline (n=", format(n_events_cleaned, big.mark = ","), ")"),
+                 ylim = c(0, 1.2))
+            abline(h = 0, col = "gray70")
+          } else {
+            bins <- hist(events_cleaned$onset_time, breaks = 100, plot = FALSE)
+            plot(bins$mids, bins$counts, type = "h", lwd = 2, col = "steelblue",
+                 xlab = "Time (s)", ylab = "Count per bin",
+                 main = paste0("Trigger Timeline (n=", format(n_events_cleaned, big.mark = ","), ")"))
+          }
+        }
+        
+        # Frequency plot
+        if (plot_frequencies) {
+          counts_sorted <- sort(event_counts, decreasing = TRUE)
+          if (length(counts_sorted) > 15) counts_sorted <- counts_sorted[1:15]
+          
+          # Dynamic y-axis ceiling
+          max_val <- max(counts_sorted)
+          upper_lim <- ceiling(max_val * 1.15)
+          
+          barplot(counts_sorted,
+                  col = rainbow(length(counts_sorted), alpha = 0.7),
+                  xlab = if (length(event_counts) > 15) "Trigger Code (Top 15)" else "Trigger Code",
+                  ylab = "Count",
+                  main = "Trigger Frequencies",
+                  las = 2, 
+                  cex.names = 0.8,
+                  ylim = c(0, upper_lim))
+        }
+        
+        par(mfrow = c(1, 1))
+        
+      }, error = function(e) {
+        warning("Could not generate plots: ", e$message, call. = FALSE)
+        par(mfrow = c(1, 1))
+      })
+    }
   }
   
   # ========== EXPORT ==========
@@ -335,6 +340,8 @@ inspect_triggers <- function(eeg_obj,                              # EEG object 
     events_cleaned = events_cleaned
   ))
 }
+
+
 
 
 

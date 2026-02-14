@@ -18,7 +18,7 @@ new_eeg(
 \arguments{
 \item{data}{Numeric matrix of EEG signal values
 Dimensions: rows = channels, columns = time points
-Units: typically microvolts (µV)}
+Units: typically microvolts (microV)}
 
 \item{channels}{Character vector of channel names (e.g., "Cz", "Pz", "Oz")
 Length must match nrow(data)}

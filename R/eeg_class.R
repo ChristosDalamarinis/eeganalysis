@@ -8,7 +8,7 @@
 #' Author: Christos Dalamarinis
 #' Date: Dec - 2025
 #' ============================================================================
-
+#'
 #' Create a New EEG Object
 #'
 #' This function creates an S3 object of class 'eeg' that stores EEG data,
@@ -17,7 +17,7 @@
 #'
 #' @param data Numeric matrix of EEG signal values
 #'            Dimensions: rows = channels, columns = time points
-#'            Units: typically microvolts (µV)
+#'            Units: typically microvolts (microV)
 #'
 #' @param channels Character vector of channel names (e.g., "Cz", "Pz", "Oz")
 #'                 Length must match nrow(data)
@@ -191,9 +191,9 @@ print.eeg <- function(x, ...) {
   # ========== DATA STATISTICS ==========
   cat("\nDATA STATISTICS:\n")
   cat("  Amplitude range: ", round(min(x$data), 2), " to ", 
-      round(max(x$data), 2), " µV\n", sep = "")
-  cat("  Mean amplitude:  ", round(mean(x$data), 2), " µV\n")
-  cat("  Std deviation:   ", round(sd(x$data), 2), " µV\n")
+      round(max(x$data), 2), " microV\n", sep = "")
+  cat("  Mean amplitude:  ", round(mean(x$data), 2), " microV\n")
+  cat("  Std deviation:   ", round(sd(x$data), 2), " microV\n")
   
   # ========== REFERENCE INFORMATION ==========
   cat("\nREFERENCE:\n")

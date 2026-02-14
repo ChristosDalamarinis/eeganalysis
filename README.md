@@ -24,7 +24,6 @@ Contact: [[dalamarinischristos\@gmail.com](mailto:dalamarinischristos@gmail.com)
 
 ![Last Commit](https://img.shields.io/github/last-commit/ChristosDalamarinis/eeganalysis)
 
-
 <!-- badges: end -->
 
 # Version: 0.0.0.9000 (under development)

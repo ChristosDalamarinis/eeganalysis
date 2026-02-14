@@ -50,7 +50,7 @@ This database includes:
 \strong{NEW FEATURES:}
 \itemize{
 \item Dual naming: Access by "Cz" OR "B16"
-\item Dual coordinates: Cartesian (x,y,z) AND Spherical (θ,φ,r)
+\item Dual coordinates: Cartesian (x, y, z) AND Spherical (theta, phi, r)
 \item Case-insensitive: get_electrode_position("CZ") works!
 }
 }

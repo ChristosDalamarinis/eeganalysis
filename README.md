@@ -10,17 +10,8 @@ Contact: [[dalamarinischristos\@gmail.com](mailto:dalamarinischristos@gmail.com)
 
 [![R-CMD-check](https://github.com/ChristosDalamarinis/eeganalysis/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/ChristosDalamarinis/eeganalysis/actions/workflows/R-CMD-check.yaml)
 [![Lifecycle: experimental](https://img.shields.io/badge/lifecycle-experimental-orange.svg)](https://lifecycle.r-lib.org/articles/stages.html#experimental)
-
-<!-- Version -->
-
 ![Version](https://img.shields.io/badge/version-0.0.0.9000-blue)
-
-<!-- License -->
-
 ![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)
-
-<!-- Last commit -->
-
 ![Last Commit](https://img.shields.io/github/last-commit/ChristosDalamarinis/eeganalysis)
 
 <!-- badges: end -->

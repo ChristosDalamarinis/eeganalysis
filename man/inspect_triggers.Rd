@@ -60,7 +60,6 @@ tuning and works universally across all BioSemi recordings.
 \section{Author: Christos Dalamarinis
 Date: Jan - 2026 NOT TESTED}{
 ======================= INSPECT TRIGGERS FUNCTION ==========================
-======================= INSPECT TRIGGERS FUNCTION ==========================
 Inspect Event Triggers in EEG Data
 
 Provides a concise diagnostic summary of event triggers in EEG recordings.

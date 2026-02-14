@@ -40,7 +40,7 @@
 #'
 #' **NEW FEATURES:**
 #' - Dual naming: Access by "Cz" OR "B16"
-#' - Dual coordinates: Cartesian (x,y,z) AND Spherical (θ,φ,r)
+#' - Dual coordinates: Cartesian (x, y, z) AND Spherical (theta, phi, r)
 #' - Case-insensitive: get_electrode_position("CZ") works!
 #'
 #' @keywords internal
@@ -69,7 +69,7 @@ get_electrode_database <- function() {
   # BIOSEMI 64-CHANNEL: COMPLETE ELECTRODE SPECIFICATIONS
   # ========================================================================
   # From official BioSemi Cap_coords_all.xls
-  # Head circumference = 55 cm → radius = 87.54 mm
+  # Head circumference = 55 centimeters is radius = 87.54 milimeters 
   
   electrode_specs <- data.frame(
     standard_name = c(

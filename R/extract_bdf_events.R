@@ -86,8 +86,8 @@ extract_bdf_events <- function(data, verbose = TRUE) {
     
     file_size_mb <- file.info(bdf_file)$size / (1024^2)
     if (verbose) {
-      cat("  ✓ File found: ", basename(bdf_file), "\n", sep = "")
-      cat("  ✓ File size: ", round(file_size_mb, 1), " MB\n", sep = "")
+      cat("  [OK] File found: ", basename(bdf_file), "\n", sep = "")
+      cat("  [OK] File size: ", round(file_size_mb, 1), " MB\n", sep = "")
     }
     
     # Read BDF file
@@ -124,9 +124,9 @@ extract_bdf_events <- function(data, verbose = TRUE) {
   
   if (verbose) {
     if (nrow(events) == 0) {
-      cat("  ⚠ No events found in STATUS channel\n")
+      cat("  [WARN] No events found in STATUS channel\n")
     } else {
-      cat("  ✓ Events extracted: ", nrow(events), "\n", sep = "")
+      cat("  [OK] Events extracted: ", nrow(events), "\n", sep = "")
     }
   }
   
@@ -140,9 +140,9 @@ extract_bdf_events <- function(data, verbose = TRUE) {
   attr(events, "duration_sec")<- max(eeg_obj$times)
   
   if (verbose) {
-    cat("  ✓ Sample rate: ", eeg_obj$sampling_rate, " Hz\n", sep = "")
-    cat("  ✓ Total samples: ", length(eeg_obj$times), "\n", sep = "")
-    cat("  ✓ Duration: ", round(max(eeg_obj$times), 2), " seconds\n", sep = "")
+    cat("  [OK] Sample rate: ", eeg_obj$sampling_rate, " Hz\n", sep = "")
+    cat("  [OK] Total samples: ", length(eeg_obj$times), "\n", sep = "")
+    cat("  [OK] Duration: ", round(max(eeg_obj$times), 2), " seconds\n", sep = "")
   }
   
   # ========== Summary Statistics ==========
@@ -151,26 +151,26 @@ extract_bdf_events <- function(data, verbose = TRUE) {
     cat("\n", step_label, " Event extraction summary:\n", sep = "")
     
     unique_codes <- unique(events$type)
-    cat("  • Total events: ", nrow(events), "\n", sep = "")
-    cat("  • Unique trigger codes: ", length(unique_codes), "\n", sep = "")
+    cat("  - Total events: ", nrow(events), "\n", sep = "")
+    cat("  - Unique trigger codes: ", length(unique_codes), "\n", sep = "")
     
     if (length(unique_codes) <= 10) {
-      cat("  • Trigger codes: ", paste(sort(as.numeric(unique_codes)), collapse = ", "), "\n", sep = "")
+      cat("  - Trigger codes: ", paste(sort(as.numeric(unique_codes)), collapse = ", "), "\n", sep = "")
     } else {
-      cat("  • Trigger code range: ", min(as.numeric(unique_codes)), 
+      cat("  - Trigger code range: ", min(as.numeric(unique_codes)), 
           " to ", max(as.numeric(unique_codes)), "\n", sep = "")
     }
     
-    cat("  • First event at: ", round(min(events$onset_time), 3), " sec\n", sep = "")
-    cat("  • Last event at: ", round(max(events$onset_time), 3), " sec\n", sep = "")
+    cat("  - First event at: ", round(min(events$onset_time), 3), " sec\n", sep = "")
+    cat("  - Last event at: ", round(max(events$onset_time), 3), " sec\n", sep = "")
     
     if (nrow(events) > 1) {
       mean_interval <- mean(diff(events$onset_time))
-      cat("  • Mean inter-event interval: ", round(mean_interval, 3), " sec\n", sep = "")
-      cat("  • Approximate event rate: ", round(1/mean_interval, 2), " events/sec\n", sep = "")
+      cat("  - Mean inter-event interval: ", round(mean_interval, 3), " sec\n", sep = "")
+      cat("  - Approximate event rate: ", round(1/mean_interval, 2), " events/sec\n", sep = "")
     }
     
-    cat("\n✓ Event extraction complete!\n")
+    cat("\n [OK] Event extraction complete!\n")
     cat("==========================================\n\n")
   } else if (verbose) {
     step_label <- if (is_file) "[5/5]" else ""
@@ -251,7 +251,7 @@ validate_bdf_events <- function(data, verbose = TRUE, plot = FALSE) {
   events <- .extract_events_from_input(data)
   
   if (nrow(events) == 0) {
-    message("✗ No events found")
+    message(" [WARN] No events found")
     return(invisible(list(summary = NULL, issues = "no_events")))
   }
   
@@ -338,29 +338,29 @@ validate_bdf_events <- function(data, verbose = TRUE, plot = FALSE) {
     
     # Report issues
     if (length(issues) > 0) {
-      cat("⚠ POTENTIAL ISSUES DETECTED:\n")
+      cat("[WARN] POTENTIAL ISSUES DETECTED:\n")
       if ("very_few_events" %in% issues) {
-        cat("  • Very few events (<10) - check recording\n")
+        cat("  - Very few events (<10) - check recording\n")
       }
       if ("imbalanced_conditions" %in% issues) {
-        cat("  • Imbalanced conditions - check experimental design\n")
+        cat("  - Imbalanced conditions - check experimental design\n")
       }
       if ("double_triggers" %in% issues) {
-        cat("  • Very short intervals (<50ms) - possible double-triggers\n")
+        cat("  - Very short intervals (<50ms) - possible double-triggers\n")
         short_intervals <- which(intervals_ms < 50)
         cat("    Occurs at events:", paste(head(short_intervals, 5), collapse = ", "))
         if (length(short_intervals) > 5) cat(" ...")
         cat("\n")
       }
       if ("irregular_timing" %in% issues) {
-        cat("  • Highly variable timing - check experimental control\n")
+        cat("  - Highly variable timing - check experimental control\n")
       }
       if ("unusual_trigger_values" %in% issues) {
-        cat("  • Trigger values >255 detected:", paste(unique_triggers[unique_triggers > 255], collapse = ", "), "\n")
+        cat("  - Trigger values >255 detected:", paste(unique_triggers[unique_triggers > 255], collapse = ", "), "\n")
       }
       cat("\n")
     } else {
-      cat("✓ No issues detected\n\n")
+      cat("[OK] No issues detected\n\n")
     }
     
     cat("========================================\n\n")

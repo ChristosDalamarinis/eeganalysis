@@ -613,7 +613,7 @@ epoch_eeg <- function(eeg_obj,                                           # Loade
 plot_epochs <- function(epochs_obj,
                         plot_type = c("butterfly", "image", "trials", "evoked"),
                         channels = NULL,
-                        events = NULL,
+                        events = NULL, # Which events to plot. NULL = all
                         max_trials = 50,
                         n_trials = 20,
                         color_by = c("channel", "event_type"),

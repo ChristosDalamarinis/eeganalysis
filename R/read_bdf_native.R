@@ -134,8 +134,8 @@ unpack_int24_native <- function(raw_vec) {
 #' @param digital Integer vector of digital values
 #' @param digital_min Digital minimum from header
 #' @param digital_max Digital maximum from header
-#' @param physical_min Physical minimum from header (µV)
-#' @param physical_max Physical maximum from header (µV)
+#' @param physical_min Physical minimum from header (microV)
+#' @param physical_max Physical maximum from header (microV)
 #' @return Numeric vector of physical values
 #' @keywords internal
 digital_to_physical <- function(digital, digital_min, digital_max, 
@@ -370,7 +370,7 @@ read_bdf_native <- function(file_path, verbose = TRUE, chunk_records = 100) {
     )
   )
   
-  if (verbose) cat("\n✓ Successfully imported BDF file!\n\n")
+  if (verbose) cat("\n[OK] Successfully imported BDF file!\n\n")
   
   return(eeg_obj)
 }

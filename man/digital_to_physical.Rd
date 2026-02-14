@@ -19,9 +19,9 @@ digital_to_physical(
 
 \item{digital_max}{Digital maximum from header}
 
-\item{physical_min}{Physical minimum from header (µV)}
+\item{physical_min}{Physical minimum from header (microV)}
 
-\item{physical_max}{Physical maximum from header (µV)}
+\item{physical_max}{Physical maximum from header (microV)}
 }
 \value{
 Numeric vector of physical values

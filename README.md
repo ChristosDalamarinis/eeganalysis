@@ -8,8 +8,8 @@ Contact: [[dalamarinischristos\@gmail.com](mailto:dalamarinischristos@gmail.com)
 
 <!-- badges: start -->
 
-[![R-CMD-check](https://github.com/ChristosDalamarinis/eeganalysis/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/ChristosDalamarinis/eeganalysis/actions/workflows/R-CMD-check.yaml)
-[![Lifecycle: experimental](https://img.shields.io/badge/lifecycle-experimental-orange.svg)](https://lifecycle.r-lib.org/articles/stages.html#experimental)
+[![R-CMD-check](https://github.com/ChristosDalamarinis/eeganalysis/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/ChristosDalamarinis/eeganalysis/actions/workflows/R-CMD-check.yaml) [![Lifecycle: experimental](https://img.shields.io/badge/lifecycle-experimental-orange.svg)](https://lifecycle.r-lib.org/articles/stages.html#experimental)
+
 <!-- badges: end -->
 
 # Version: 0.0.0.9000 (under development)

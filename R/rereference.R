@@ -28,14 +28,13 @@
 #' @details
 #' EEG data are measured as voltage differences between each electrode
 #' and a reference electrode. Re-referencing applies a linear transformation
-#' so that all channels are expressed relative to the new reference defined
-#' by \code{ref}.[web:6]
+#' so that all channels are expressed relative to the new reference defined.
 #'
 #' If \code{ref = "average"}, the reference signal is computed as the mean
 #' across all non-excluded EEG channels at each time point (common average
-#' reference).[web:6][web:25]
+#' reference).
 #' When one or several channels are specified in \code{ref}, the reference
-#' signal is the mean of those channels at each time point.[web:20]
+#' signal is the mean of those channels at each time point.
 #'
 #' @examples
 #' \dontrun{

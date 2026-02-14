@@ -19,6 +19,10 @@ Contact: [[dalamarinischristos\@gmail.com](mailto:dalamarinischristos@gmail.com)
 <!-- License -->
 ![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)
 
+<!-- Repository size -->
+![Repo Size](https://img.shields.io/github/repo-size/dalamarinischristos/eeganalysis)
+
+
 <!-- badges: end -->
 
 # Version: 0.0.0.9000 (under development)

@@ -10,7 +10,9 @@ inspect_triggers(
   trigger_threshold = 0.002,
   min_iei = 0.01,
   exclude_types = NULL,
-  plot = TRUE,
+  plot = FALSE,
+  plot_timeline = TRUE,
+  plot_frequencies = TRUE,
   export_csv = NULL
 )
 }
@@ -25,7 +27,11 @@ inspect_triggers(
 
 \item{exclude_types}{Character vector of event types to exclude (default: NULL)}
 
-\item{plot}{Logical. Generate diagnostic plots (default: TRUE)}
+\item{plot}{Logical. Generate diagnostic plots (default: FALSE)}
+
+\item{plot_timeline}{Logical. Show timeline plot (default: TRUE when plot=TRUE)}
+
+\item{plot_frequencies}{Logical. Show frequency barplot (default: TRUE when plot=TRUE)}
 
 \item{export_csv}{Character. Path to export cleaned events (default: NULL)}
 }
@@ -53,6 +59,7 @@ tuning and works universally across all BioSemi recordings.
 }
 \section{Author: Christos Dalamarinis
 Date: Jan - 2026 NOT TESTED}{
+======================= INSPECT TRIGGERS FUNCTION ==========================
 ======================= INSPECT TRIGGERS FUNCTION ==========================
 Inspect Event Triggers in EEG Data
 

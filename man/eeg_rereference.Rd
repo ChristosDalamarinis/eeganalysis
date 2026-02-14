@@ -6,9 +6,7 @@
 
 This module provides functions to re-reference EEG recordings to
 different reference schemes (e.g., common average or selected channels)
-within the eeganalysis framework for downstream preprocessing and analysis.Author: Christos DalamarinisDate: Jan - 2026
-
-Re-reference EEG data}
+within the eeganalysis framework for downstream preprocessing and analysis.Author: Christos DalamarinisDate: Jan - 2026}
 \usage{
 eeg_rereference(eeg, ref = "average", exclude = NULL, copy = TRUE)
 }
@@ -29,10 +27,12 @@ exclude from computing the reference (e.g., EOG, EMG).}
 An EEG object with updated reference.
 }
 \description{
-Change the reference of EEG signals to a new set of reference channels
-or to the common average across channels.
+Re-reference EEG data
 }
 \details{
+Change the reference of EEG signals to a new set of reference channels
+or to the common average across channels.
+
 EEG data are measured as voltage differences between each electrode
 and a reference electrode. Re-referencing applies a linear transformation
 so that all channels are expressed relative to the new reference defined

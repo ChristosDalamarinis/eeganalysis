@@ -9,7 +9,7 @@
 #' Author: Christos Dalamarinis  
 #' Date: Jan - 2026  
 #' ============================================================
-
+#'
 #' Re-reference EEG data
 #'
 #' Change the reference of EEG signals to a new set of reference channels

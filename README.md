@@ -34,19 +34,27 @@ library(eeganalysis)
 
 ## Import BioSemi data
 
-eeg_data \<- read_biosemi("path/to/your/file.bdf")
+``` r
+eeg_data <- read_biosemi("path/to/your/file.bdf")
+```
 
-## Downsample to 256 Hz
+### Downsample to 256 Hz
 
-eeg_data \<- downsample(eeg_data, target_srate = 256)
+``` r
+eeg_data <- downsample(eeg_data, target_srate = 256)
+```
 
-## Rereference to average
+### Rereference to average
 
-eeg_data \<- eeg_rereference(eeg_data, ref_type = "average")
+``` r
+eeg_data <- eeg_rereference(eeg_data, ref_type = "average")
+```
 
-## Extract epochs around events
+### Extract epochs around events
 
-epochs \<- epoch_eeg(eeg_data, events = c(1, 2), time_window = c(-0.2, 0.8))
+``` r
+epochs <- epoch_eeg(eeg_data, events = c(1, 2), time_window = c(-0.2, 0.8))
+```
 
 # Analysis Pipeline
 

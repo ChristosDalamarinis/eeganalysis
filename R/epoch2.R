@@ -374,15 +374,15 @@ inspect_triggers <- function(eeg_obj,                             # EEG object w
 #'   }
 #'
 #' @export
-epoch_eeg <- function(eeg_obj,
-                      events = "all",
-                      tmin = -0.2,
-                      tmax = 0.8,
-                      baseline = c(-0.2, 0),
-                      baseline_method = c("mean", "median", "none"),
-                      reject_threshold = NULL,
-                      preload = TRUE,
-                      verbose = TRUE) {
+epoch_eeg <- function(eeg_obj,                                           # Loaded data that will be epoched
+                      events = "all",                                    # Which trigger(s) to epoch round
+                      tmin = -0.2,                                       # Epoch start time (s) relative to event
+                      tmax = 0.8,                                        # Epoch end time (s) relative to event
+                      baseline = c(-0.2, 0),                             # Removes pre-stimulus activity to zero-center your data
+                      baseline_method = c("mean", "median", "none"),     # Different ways to compute what gets subtracted. 
+                      reject_threshold = NULL,                           # Automatically rejects trials with extreme voltages (artifacts)
+                      preload = TRUE,                                    # Whether to load all epoch data into memory immediately
+                      verbose = TRUE) {                                  # Shows you what's happening during epoching
   
   baseline_method <- match.arg(baseline_method)
   

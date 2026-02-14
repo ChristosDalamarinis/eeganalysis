@@ -13,6 +13,9 @@ Contact: [[dalamarinischristos\@gmail.com](mailto:dalamarinischristos@gmail.com)
 
 [![Lifecycle: experimental](https://img.shields.io/badge/lifecycle-experimental-orange.svg)](https://lifecycle.r-lib.org/articles/stages.html#experimental)
 
+<!-- Version -->
+![Version](https://img.shields.io/badge/version-0.0.0.9000-blue)
+
 <!-- badges: end -->
 
 # Version: 0.0.0.9000 (under development)

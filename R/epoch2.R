@@ -786,7 +786,3 @@ plot_epochs <- function(epochs_obj,
   }
 }
 
-
-
-
-

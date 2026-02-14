@@ -60,7 +60,7 @@ inspect_triggers <- function(eeg_obj,                             # EEG object w
   }
   
   if (is.null(eeg_obj$events) || nrow(eeg_obj$events) == 0) {
-    cat("\n⚠ No events found in EEG recording!\n")
+    cat("\n[WARN] No events found in EEG recording!\n")
     cat("Cannot epoch data without triggers.\n\n")
     return(invisible(list(n_events_raw = 0, n_events_cleaned = 0)))
   }
@@ -160,19 +160,19 @@ inspect_triggers <- function(eeg_obj,                             # EEG object w
   }
   
   cat("\n")
-  cat("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+  cat("======================================================================\n")
   cat("  TRIGGER INSPECTION (BioSemi Experimental Triggers: Bits 0-15)\n")
-  cat("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n")
+  cat("======================================================================\n\n")
   
   cat("Recording: ", round(recording_duration/60, 1), " min | ",
       eeg_obj$sampling_rate, " Hz | Mode: ", toupper(mode), "\n", sep = "")
   
   if (mode == "raw") {
-    cat("Events: ", format(n_events_raw, big.mark = ","), " total → ",
+    cat("Events: ", format(n_events_raw, big.mark = ","), " total = ",
         format(n_events_cleaned, big.mark = ","), " experimental triggers\n\n", sep = "")
   } else {
     reduction_pct <- round((1 - n_events_cleaned/n_events_raw)*100, 1)
-    cat("Events: ", format(n_events_raw, big.mark = ","), " total → ",
+    cat("Events: ", format(n_events_raw, big.mark = ","), " total = ",
         format(n_events_cleaned, big.mark = ","), " triggers (",
         reduction_pct, "% filtered)\n\n", sep = "")
   }
@@ -180,18 +180,18 @@ inspect_triggers <- function(eeg_obj,                             # EEG object w
   if (length(filtering_notes) > 0) {
     cat("Filtering:\n")
     for (note in filtering_notes) {
-      cat("  • ", note, "\n", sep = "")
+      cat("  - ", note, "\n", sep = "")
     }
     cat("\n")
   }
   
   if (n_events_cleaned == 0) {
-    cat("⚠ No experimental triggers found!\n\n")
+    cat("[WARN] No experimental triggers found!\n\n")
     cat("Possible issues:\n")
-    cat("  • All events were system status triggers (bits 16-23)\n")
-    cat("  • No experimental triggers sent during recording\n")
-    cat("  • Try: inspect_triggers(eeg, mode=\"raw\") to see all events\n\n")
-    cat("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n")
+    cat("  - All events were system status triggers (bits 16-23)\n")
+    cat("  - No experimental triggers sent during recording\n")
+    cat("  - Try: inspect_triggers(eeg, mode=\"raw\") to see all events\n\n")
+    cat("======================================================================\n\n")
     return(invisible(list(
       n_events_raw = n_events_raw,
       n_events_cleaned = 0,
@@ -202,7 +202,7 @@ inspect_triggers <- function(eeg_obj,                             # EEG object w
   
   cat("EXPERIMENTAL TRIGGERS:\n")
   cat(sprintf("  %-10s %8s %7s %9s %9s\n", "Code", "Count", "%", "First(s)", "Last(s)"))
-  cat("  ─────────────────────────────────────────────────────\n")
+  cat("  =====================================================\n")
   
   for (event_type in names(sort(event_counts, decreasing = TRUE))) {
     count <- event_counts[event_type]
@@ -246,7 +246,7 @@ inspect_triggers <- function(eeg_obj,                             # EEG object w
   }
   
   cat("\n")
-  cat("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n")
+  cat("======================================================================\n\n")
   
   if (plot && n_events_cleaned > 0) {
     n_plots <- sum(plot_timeline, plot_frequencies)
@@ -314,7 +314,7 @@ inspect_triggers <- function(eeg_obj,                             # EEG object w
   if (!is.null(export_csv)) {
     tryCatch({
       write.csv(events_cleaned, file = export_csv, row.names = FALSE)
-      cat("✓ Exported to:", export_csv, "\n\n")
+      cat("[OK] Exported to:", export_csv, "\n\n")
     }, error = function(e) {
       warning("Could not export: ", e$message, call. = FALSE)
     })
@@ -353,14 +353,14 @@ inspect_triggers <- function(eeg_obj,                             # EEG object w
 #' @param baseline Numeric vector c(start, end) specifying baseline correction
 #'   window in seconds. Set to NULL to skip baseline correction (default: c(-0.2, 0))
 #' @param baseline_method Character: "mean", "median", or "none" (default: "mean")
-#' @param reject_threshold Numeric. Amplitude threshold in µV for epoch rejection.
+#' @param reject_threshold Numeric. Amplitude threshold in microV for epoch rejection.
 #'   Set to NULL to disable (default: NULL)
 #' @param preload Logical. If TRUE, extract all epoch data into memory (default: TRUE)
 #' @param verbose Logical. Print progress messages (default: TRUE)
 #'
 #' @return A list of class 'eeg_epochs' containing:
 #'   \describe{
-#'     \item{data}{3D array (channels × timepoints × trials) of epoched data}
+#'     \item{data}{3D array (channels TIMES timepoints TIMES trials) of epoched data}
 #'     \item{channels}{Character vector of channel names}
 #'     \item{times}{Numeric vector of time points relative to event (seconds)}
 #'     \item{events}{Data frame with event information for each epoch}
@@ -521,7 +521,7 @@ epoch_eeg <- function(eeg_obj,                                           # Loade
             epoch_id = i,
             event_type = selected_events$type[i],
             event_time = selected_events$onset_time[i],
-            reason = paste0("Amplitude exceeds threshold (", round(epoch_max, 1), " µV)"),
+            reason = paste0("Amplitude exceeds threshold (", round(epoch_max, 1), " microV)"),
             stringsAsFactors = FALSE
           ))
           next
@@ -672,7 +672,7 @@ plot_epochs <- function(epochs_obj,
     plot(range(epochs_obj$times), range(plot_data, na.rm = TRUE),
          type = "n",
          xlab = "Time (s)",
-         ylab = "Amplitude (µV)",
+         ylab = "Amplitude (microV)",
          main = paste("Butterfly Plot -", length(trial_indices), "trials,",
                       length(channel_indices), "channels"))
     abline(h = 0, col = "gray70", lty = 2)
@@ -759,7 +759,7 @@ plot_epochs <- function(epochs_obj,
          range(c(avg_data - 1.96*se_data, avg_data + 1.96*se_data), na.rm = TRUE),
          type = "n",
          xlab = "Time (s)",
-         ylab = "Amplitude (µV)",
+         ylab = "Amplitude (microV)",
          main = paste("Evoked Response -", length(trial_indices), "trials averaged"))
     abline(h = 0, col = "gray70", lty = 2)
     abline(v = 0, col = "red", lty = 2, lwd = 2)

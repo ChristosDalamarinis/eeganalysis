@@ -34,7 +34,7 @@ window in seconds. Set to NULL to skip baseline correction (default: c(-0.2, 0))
 
 \item{baseline_method}{Character: "mean", "median", or "none" (default: "mean")}
 
-\item{reject_threshold}{Numeric. Amplitude threshold in µV for epoch rejection.
+\item{reject_threshold}{Numeric. Amplitude threshold in microV for epoch rejection.
 Set to NULL to disable (default: NULL)}
 
 \item{preload}{Logical. If TRUE, extract all epoch data into memory (default: TRUE)}
@@ -44,7 +44,7 @@ Set to NULL to disable (default: NULL)}
 \value{
 A list of class 'eeg_epochs' containing:
 \describe{
-\item{data}{3D array (channels × timepoints × trials) of epoched data}
+\item{data}{3D array (channels TIMES timepoints TIMES trials) of epoched data}
 \item{channels}{Character vector of channel names}
 \item{times}{Numeric vector of time points relative to event (seconds)}
 \item{events}{Data frame with event information for each epoch}

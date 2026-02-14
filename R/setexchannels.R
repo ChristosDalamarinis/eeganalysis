@@ -120,7 +120,7 @@ identify_external_channels <- function(data, channel_col = NULL) {
   # ========================================================================
   
   if (length(external_channels) == 0) {
-    cat("\n✓ No external channels detected in the dataset.\n\n")
+    cat("\n[OK] No external channels detected in the dataset.\n\n")
     return(list(labels = character(0), summary = data.frame()))
   }
   
@@ -177,17 +177,17 @@ identify_external_channels <- function(data, channel_col = NULL) {
       # If empty, mark as unlabeled
       if (user_input == "") {
         labels[channel] <- "Unlabeled"
-        cat("  → Skipped (marked as Unlabeled)\n\n")
+        cat("  -> Skipped (marked as Unlabeled)\n\n")
         break
       }
       
       # Validate input (only letters, numbers, underscores, hyphens, spaces)
       if (grepl("^[A-Za-z0-9_ -]+$", user_input)) {
         labels[channel] <- user_input
-        cat("  → Labeled as:", user_input, "\n\n")
+        cat("  -> Labeled as:", user_input, "\n\n")
         break
       } else {
-        cat("  ✗ Invalid input. Please use only letters, numbers, hyphens, underscores, or spaces.\n")
+        cat("  [WARN] Invalid input. Please use only letters, numbers, hyphens, underscores, or spaces.\n")
       }
     }
   }
@@ -235,7 +235,7 @@ identify_external_channels <- function(data, channel_col = NULL) {
   
   cat("Total labeled: ", n_labeled, " / ", length(external_channels), "\n", sep = "")
   if (n_unlabeled > 0) {
-    cat("⚠ ", n_unlabeled, " channel(s) remain unlabeled.\n", sep = "")
+    cat("[WARN] ", n_unlabeled, " channel(s) remain unlabeled.\n", sep = "")
   }
   cat("\n")
   
@@ -377,7 +377,7 @@ apply_external_labels <- function(data, labels, keep_original = TRUE) {
     # Apply new names back to the data structure
     data[[channel_location]] <- new_names
     
-    cat("✓ Applied", n_changed, "external channel label(s).\n")
+    cat("[OK] Applied", n_changed, "external channel label(s).\n")
     
     return(data)
     
@@ -413,7 +413,7 @@ apply_external_labels <- function(data, labels, keep_original = TRUE) {
     # Apply new names
     colnames(data) <- new_names
     
-    cat("✓ Applied", n_changed, "external channel label(s).\n")
+    cat("[OK] Applied", n_changed, "external channel label(s).\n")
     
     return(data)
     

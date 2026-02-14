@@ -15,7 +15,7 @@
 #' Author: Christos Dalamarinis
 #' Date: 2026
 #' ============================================================================
-
+#'
 #' Downsample EEG Data
 #'
 #' Reduces the sampling rate of EEG data by applying an anti-aliasing low-pass
@@ -26,7 +26,7 @@
 #' 
 #' @param target_rate Numeric value specifying the desired sampling rate in Hz.
 #'                    Must be lower than current sampling rate and satisfy
-#'                    Nyquist theorem (≥ 2 × highest frequency of interest).
+#'                    Nyquist theorem (at least 2 times highest frequency of interest).
 #'                    Common values: 128, 256, 512 Hz
 #' 
 #' @param method Character string specifying downsampling method:
@@ -44,7 +44,7 @@
 #' @param cutoff_ratio Numeric value between 0 and 1 specifying the filter cutoff
 #'                     as a proportion of the new Nyquist frequency.
 #'                     Default: 0.9 (90% of Nyquist).
-#'                     Formula: cutoff_freq = (target_rate / 2) × cutoff_ratio
+#'                     Formula: cutoff_freq = (target_rate / 2) times cutoff_ratio
 #'                     Lower values (0.8) = more conservative, higher values (0.95) = more aggressive.
 #' 
 #' @param preserve_bands Numeric vector of length 2: c(min_freq, max_freq) in Hz.
@@ -84,21 +84,21 @@
 #' \strong{Frequency Preservation:}
 #' The cutoff frequency determines what frequencies are preserved:
 #' \itemize{
-#'   \item{Target 512 Hz → cutoff ~230 Hz → suitable for high gamma}
-#'   \item{Target 256 Hz → cutoff ~115 Hz → suitable for RIFT/SSVEP studies}
-#'   \item{Target 128 Hz → cutoff ~58 Hz → suitable only for standard EEG bands}
+#'   \item{Target 512 Hz -> cutoff ~230 Hz -> suitable for high gamma}
+#'   \item{Target 256 Hz -> cutoff ~115 Hz -> suitable for RIFT/SSVEP studies}
+#'   \item{Target 128 Hz -> cutoff ~58 Hz -> suitable only for standard EEG bands}
 #' }
 #'
 #' \strong{DO NOT downsample if you need to preserve:}
 #' \itemize{
-#'   \item{RIFT/SSVEP signals (60-120 Hz) → keep ≥256 Hz sampling}
-#'   \item{High gamma (60-100 Hz) → keep ≥200 Hz sampling}
-#'   \item{Ripples (80-250 Hz) → keep ≥500 Hz sampling}
+#'   \item{RIFT/SSVEP signals (60-120 Hz) -> keep at least 256 Hz sampling}
+#'   \item{High gamma (60-100 Hz) -> keep at least 200 Hz sampling}
+#'   \item{Ripples (80-250 Hz) -> keep  at least 500 Hz sampling}
 #' }
 #'
 #' @return An 'eeg' object with downsampled data and updated parameters:
 #'   \describe{
-#'     \item{data}{Downsampled signal matrix (channels × new_timepoints)}
+#'     \item{data}{Downsampled signal matrix (channels times new_timepoints)}
 #'     \item{sampling_rate}{Updated to actual achieved sampling rate}
 #'     \item{times}{Adjusted time vector for new sampling rate}
 #'     \item{events}{Event data frame with recalculated onset times}
@@ -257,14 +257,14 @@ downsample <- function(eeg_obj,
     }
     
     if (verbose) {
-      message("✓ Frequency preservation validated: ", min_freq_needed, "-", 
+      message("[OK] Frequency preservation validated: ", min_freq_needed, "-", 
               max_freq_needed, " Hz can be preserved at ", actual_target_rate, " Hz")
     }
   }
   
   # Warn about high-frequency loss
   if (filter_cutoff < 60 && verbose) {
-    message("\n⚠ WARNING: High-frequency content will be removed!")
+    message("\n WARNING: High-frequency content will be removed!")
     message("  Filter cutoff: ", round(filter_cutoff, 1), " Hz")
     message("  Frequencies above ~", round(filter_cutoff, 1), " Hz will be lost.")
     message("  This is NOT suitable for:")

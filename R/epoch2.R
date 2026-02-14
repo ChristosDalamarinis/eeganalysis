@@ -378,7 +378,7 @@ epoch_eeg <- function(eeg_obj,                                           # Loade
                       events = "all",                                    # Which trigger(s) to epoch round
                       tmin = -0.2,                                       # Epoch start time (s) relative to event
                       tmax = 0.8,                                        # Epoch end time (s) relative to event
-                      baseline = c(-0.2, 0),                             # Removes pre-stimulus activity to zero-center your data
+                      baseline = c(-0.2, 0),                             # Determines time window (range) that will be used as the baseline, in seconds.
                       baseline_method = c("mean", "median", "none"),     # Different ways to compute what gets subtracted. 
                       reject_threshold = NULL,                           # Automatically rejects trials with extreme voltages (artifacts)
                       preload = TRUE,                                    # Whether to load all epoch data into memory immediately

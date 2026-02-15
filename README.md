@@ -13,7 +13,7 @@ Contact: [[dalamarinischristos\@gmail.com](mailto:dalamarinischristos@gmail.com)
 ![Version](https://img.shields.io/badge/version-0.0.0.9000-blue)
 ![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)
 ![Last Commit](https://img.shields.io/github/last-commit/ChristosDalamarinis/eeganalysis)
-
+[![Codecov test coverage](https://codecov.io/gh/ChristosDalamarinis/eeganalysis/graph/badge.svg)](https://app.codecov.io/gh/ChristosDalamarinis/eeganalysis)
 <!-- badges: end -->
 
 # Version: 0.0.0.9000 (under development)

@@ -212,7 +212,8 @@ read_bdf_native <- function(file_path, verbose = TRUE, chunk_records = 100) {
   }
   
   if (!grepl("\\.bdf$", file_path, ignore.case = TRUE)) {
-    warning("File does not have .bdf extension. Attempting to read anyway...")
+    warning("File does not have .bdf extension. Attempting to read stopped.")
+    return(invisible(NULL))
   }
   
   # ========== READ HEADER ==========

@@ -1,6 +1,6 @@
 comment: false
 
-coverage:
+coverage: true
   status:
     project:
       default:

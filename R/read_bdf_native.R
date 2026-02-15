@@ -159,7 +159,7 @@ extract_events_native <- function(status_signal, sampling_rate) {
     return(data.frame(
       onset = integer(0),
       onset_time = numeric(0),
-      type = interger(0),
+      type = integer(0),
       description = character(0),
       stringsAsFactors = FALSE
     ))

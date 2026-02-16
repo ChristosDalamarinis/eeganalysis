@@ -131,6 +131,7 @@ eeganalysis
 |   |
 │   ├── epoch2.R                          ← Epoching functions
 │   |   ├── inspect_triggers()            ← Inspect Event Triggers in EEG Data
+│   │   ├── plot_epochs()                 ← Visualize  extracted epochs
 │   │   └── epoch_eeg()                   ← Extract time-locked epochs around events
 │   │
 │   ├── preprocessing.R                   ← (Future) Data cleaning & preprocessing

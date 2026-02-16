@@ -122,7 +122,7 @@ eeganalysis
 │   │   ├── identify_external_channels()  ← Interactive labeling (EOG, EMG, ECG, GSR)
 │   │   ├── detect_external_channels()    ← Automated external channel detection
 │   │   └── apply_external_labels()       ← Apply user-defined labels to data
-|   |
+│   │
 │   ├── downsample.R                      ← Smart downsampling with anti-aliasing
 │   │   └── downsample()                  ← Downsample EEG data with filters
 |   |
@@ -130,7 +130,7 @@ eeganalysis
 │   │   └── eeg_rereference()             ← Change reference scheme (average/custom)
 |   |
 │   ├── epoch2.R                          ← Epoching functions
-│   |   ├── inspect_triggers()            ← Inspect Event Triggers in EEG Data
+│   │   ├── inspect_triggers()            ← Inspect Event Triggers in EEG Data
 │   │   ├── plot_epochs()                 ← Visualize  extracted epochs
 │   │   └── epoch_eeg()                   ← Extract time-locked epochs around events
 │   │

@@ -1,5 +1,5 @@
 #' ============================================================================
-#' Native BDF File Reader
+#'                          Native BDF File Reader
 #' ============================================================================
 #'
 #' This module provides a native R implementation for reading BioSemi BDF

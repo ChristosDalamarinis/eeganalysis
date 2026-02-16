@@ -122,7 +122,7 @@ eeganalysis
 |   |
 |   ├── rereference.R                     ← Re-referencing utilities
 │   │   └── eeg_rereference()             ← Change reference scheme (average/custom)
-|   |
+│   │
 │   ├── epoch2.R                          ← Epoching functions
 │   │   ├── inspect_triggers()            ← Inspect Event Triggers in EEG Data
 │   │   ├── plot_epochs()                 ← Visualize  extracted epochs

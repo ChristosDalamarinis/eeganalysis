@@ -197,8 +197,8 @@ summary_bdf_events <- function(events) {
   cat("File: ", attr(events, "bdf_file"), "\n", sep = "")
   cat("Sample rate: ", attr(events, "sample_rate"), " Hz\n", sep = "")
   cat("Recording duration: ",
-      round(attr(events, "duration_sec"), 2), " seconds\n", sep = "")
-  cat("Total samples: ", attr(events, "n_samples"), "\n", sep = "")
+      round(attr(events, "duration_sec") %||% 0, 2), " seconds\n", sep = "")
+  cat("Total samples: ", attr(events, "n_samples") %||% "N/A", "\n", sep = "")
   cat("\n")
   
   cat("Event Summary:\n")
@@ -296,12 +296,14 @@ validate_bdf_events <- function(data, verbose = TRUE, plot = FALSE) {
   }
   
   # Check 3: Suspiciously short intervals (<50ms)
-  if (n_events > 1 && min_isi < 50) {
+  # Use isTRUE() to safely handle NA values
+  if (n_events > 1 && exists("min_isi") && isTRUE(min_isi < 50)) {
     issues <- c(issues, "double_triggers")
   }
   
   # Check 4: High variability in timing
-  if (n_events > 1 && cv_isi > 0.5) {
+  # Use isTRUE() to safely handle NA/NaN/Inf values
+  if (n_events > 1 && exists("cv_isi") && isTRUE(cv_isi > 0.5)) {
     issues <- c(issues, "irregular_timing")
   }
   
@@ -461,9 +463,6 @@ validate_bdf_events <- function(data, verbose = TRUE, plot = FALSE) {
 #
 # # Get summary statistics
 # summary_bdf_events(events)
-#
-# # Create a visualization
-# plot_bdf_events(events, show_codes = TRUE)
 #
 # # Filter specific trigger codes (e.g., only code 255)
 # target_events <- events[events$type == "255", ]

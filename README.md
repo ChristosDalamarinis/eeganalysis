@@ -100,9 +100,11 @@ eeganalysis
 │   │   └── print.eeg()                   ← Display eeg object nicely
 │   │
 │   ├── read_bdf_native.R                 ← BioSemi file import
-│   │   ├── read_biosemi()                ← Import .bdf files (main function)
+│   │   └── read_bdf_native()             ← Import .bdf files (main function)
+│   │
+│   ├── extract_bdf_events()
 │   │   ├── extract_bdf_events()          ← Parse trigger codes from status channel
-│   │   └── summary_bdf_import()          ← Generate quality report
+│   │   ├── summary_bdf_events().         
 │   │
 |   ├── channel_info2.R                   ← Electrode database & channel inspection
 │   │   ├── get_electrode_database()      ← Access 64-ch BioSemi electrode database

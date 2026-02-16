@@ -136,38 +136,38 @@ eeganalysis
 │   │   ├── rereference_eeg()             ← Change reference scheme
 │   │   └── ...                           ← Additional functions
 │   │
-│   └── feature_extraction.R             ← (Future) Feature computation
-│       ├── compute_erp()                ← Calculate ERPs
-│       ├── compute_power()              ← Band power analysis
-│       └── ...                          ← Additional functions
+│   └── feature_extraction.R              ← (Future) Feature computation
+│       ├── compute_erp()                 ← Calculate ERPs
+│       ├── compute_power()               ← Band power analysis
+│       └── ...                           ← Additional functions
 │
-├── man                                  ← Auto-generated help files
-│   ├── new_eeg.Rd                       ← Help for new_eeg()
-│   ├── print.eeg.Rd                     ← Help for print.eeg()
-│   ├── read_biosemi.Rd                  ← Help for read_biosemi()
-│   ├── extract_biosemi_events.Rd        ← Help for extract_biosemi_events()
-│   ├── summarize_biosemi_import.Rd      ← Help for summarize_biosemi_import()
-│   ├── get_electrode_database.Rd        ← Help for get_electrode_database()
-│   ├── get_electrode_position.Rd        ← Help for get_electrode_position()
-│   ├── inspect_bdf_channels.Rd          ← Help for inspect_bdf_channels()
-│   ├── identify_external_channels.Rd    ← Help for identify_external_channels()
-│   ├── detect_external_channels.Rd      ← Help for detect_external_channels()
-│   ├── apply_external_labels.Rd         ← Help for apply_external_labels()
-│   ├── downsample.Rd                    ← Help for downsample()
-│   ├── eeg_rereference.Rd               ← Help for eeg_rereference()
-│   ├── epoch_eeg.Rd                     ← Help for epoch_eeg()
-│   └── ...Rd                            ← Additional help files
+├── man                                   ← Auto-generated help files
+│   ├── new_eeg.Rd                        ← Help for new_eeg()
+│   ├── print.eeg.Rd                      ← Help for print.eeg()
+│   ├── read_biosemi.Rd                   ← Help for read_biosemi()
+│   ├── extract_biosemi_events.Rd         ← Help for extract_biosemi_events()
+│   ├── summarize_biosemi_import.Rd       ← Help for summarize_biosemi_import()
+│   ├── get_electrode_database.Rd         ← Help for get_electrode_database()
+│   ├── get_electrode_position.Rd         ← Help for get_electrode_position()
+│   ├── inspect_bdf_channels.Rd           ← Help for inspect_bdf_channels()
+│   ├── identify_external_channels.Rd     ← Help for identify_external_channels()
+│   ├── detect_external_channels.Rd       ← Help for detect_external_channels()
+│   ├── apply_external_labels.Rd          ← Help for apply_external_labels()
+│   ├── downsample.Rd                     ← Help for downsample()
+│   ├── eeg_rereference.Rd                ← Help for eeg_rereference()
+│   ├── epoch_eeg.Rd                      ← Help for epoch_eeg()
+│   └── ...Rd                             ← Additional help files
 |
-├── data                                 ← Example datasets
-│   └── example_eeg.RData                ← Example eeg object for testing (coming)
+├── data                                  ← Example datasets
+│   └── example_eeg.RData                 ← Example eeg object for testing (coming)
 │
-├── NAMESPACE                            ← Exported functions (auto-generated)
-├── DESCRIPTION                          ← Package metadata
-├── LICENSE                              ← License information
-├── README.md                            ← Package overview
-├── .gitignore                           ← Git ignore rules
-├── .Rbuildignore                        ← Build ignore rules
-└── eeganalysis.Rproj                    ← RStudio project file
+├── NAMESPACE                             ← Exported functions (auto-generated)
+├── DESCRIPTION                           ← Package metadata
+├── LICENSE                               ← License information
+├── README.md                             ← Package overview
+├── .gitignore                            ← Git ignore rules
+├── .Rbuildignore                         ← Build ignore rules
+└── eeganalysis.Rproj                     ← RStudio project file
 ```
 
 Note: This is structure is frequently expanded and updated with additional folders/files/functions.

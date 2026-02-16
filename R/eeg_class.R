@@ -83,6 +83,9 @@ new_eeg <- function(data,
     data <- as.matrix(data)
   }
   
+  # Ensure data is numeric (double) type 16/02/2026
+  storage.mode(data) <- "double"
+  
   # Validate channel count matches data dimensions
   if (nrow(data) != length(channels)) {
     stop("ERROR: Number of channels (", length(channels), 

@@ -223,7 +223,7 @@ print.eeg <- function(x, ...) {
       } else if (is.character(val) && length(val) > 1) {
         val <- paste(val[1:min(3, length(val))], collapse = ", ")
       } else {
-        val <- as.character(val)
+        val <- paste(as.character(val), collapse = ", ")
       }
       
       if (nchar(val) > 40) {

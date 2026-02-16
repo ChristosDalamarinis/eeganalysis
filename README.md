@@ -115,22 +115,23 @@ eeganalysis
 │   │   ├── get_electrode_position()     ← Get coordinates for specific electrode
 │   │   ├── inspect_bdf_channels()       ← Preview channels without full import
 │   │   ├── classify_channel_naming()    ← Identify naming convention (10-20/10-10/BioSemi)
-│   │   ├── plot_electrode_3d()          ← 3D electrode visualization (Cartesian)
+│   │   ├── plot_electrode_3d()           ← 3D electrode visualization (Cartesian)
 │   │   └── plot_electrode_3d_spherical() ← 3D electrode visualization (Spherical)
 |   |
-|   ├── setexchannels.R                  ← External channel management
-│   │   ├── identify_external_channels() ← Interactive labeling (EOG, EMG, ECG, GSR)
-│   │   ├── detect_external_channels()   ← Automated external channel detection
-│   │   └── apply_external_labels()      ← Apply user-defined labels to data
+|   ├── setexchannels.R                   ← External channel management
+│   │   ├── identify_external_channels()  ← Interactive labeling (EOG, EMG, ECG, GSR)
+│   │   ├── detect_external_channels()    ← Automated external channel detection
+│   │   └── apply_external_labels()       ← Apply user-defined labels to data
 |   |
-│   ├── downsample.R                     ← Smart downsampling with anti-aliasing
-│   │   └── downsample()                 ← Downsample EEG data with filters
+│   ├── downsample.R                      ← Smart downsampling with anti-aliasing
+│   │   └── downsample()                  ← Downsample EEG data with filters
 |   |
-|   │ ├── rereference.R                  ← Re-referencing utilities
-│   │   └── eeg_rereference()            ← Change reference scheme (average/custom)
+|   ├── rereference.R                     ← Re-referencing utilities
+│   │   └── eeg_rereference()             ← Change reference scheme (average/custom)
 |   |
-│   ├── epoch.R                          ← Epoching functions
-│   │   └── epoch_eeg()                  ← Extract time-locked epochs around events
+│   ├── epoch2.R                          ← Epoching functions
+|   |   ├── inspect_triggers()            ← Inspect Event Triggers in EEG Data
+│   │   └── epoch_eeg()                   ← Extract time-locked epochs around events
 │   │
 │   ├── preprocessing.R                  ← (Future) Data cleaning & preprocessing
 │   │   ├── filter_eeg()                 ← Apply filters

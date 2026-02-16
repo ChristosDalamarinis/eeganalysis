@@ -134,7 +134,7 @@ test_that("digital_to_physical preserves vector length", {
 })
 
 # ============================================================================
-# Tests for extract_events_native()
+#                     Tests for extract_events_native()
 # ============================================================================
 
 test_that("extract_events_native handles empty status signal", {

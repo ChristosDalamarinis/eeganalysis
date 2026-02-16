@@ -188,7 +188,7 @@ print.eeg <- function(x, ...) {
   cat("    List:          ", channel_display, "\n")
   
   cat("  Time points:     ", ncol(x$data), "\n")
-  cat("  Duration:        ", round(max(x$times), 2), " seconds\n")
+  cat("  Duration:        ", sprintf("%.2f", ncol(x$data) / x$sampling_rate), " seconds\n")
   cat("  Sampling rate:   ", x$sampling_rate, " Hz\n")
   
   # ========== DATA STATISTICS ==========

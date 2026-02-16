@@ -1,5 +1,5 @@
 #' ============================================================================
-#' EEG S3 Class Definition
+#'                        EEG S3 Class Definition
 #' ============================================================================
 #' 
 #' This file defines the core EEG data structure as an S3 class in R.

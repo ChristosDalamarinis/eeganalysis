@@ -141,7 +141,10 @@ unpack_int24_native <- function(raw_vec) {
 digital_to_physical <- function(digital, digital_min, digital_max, 
                                 physical_min, physical_max) {
   
-  gain <- (physical_max - physical_min) / (digital_max - digital_min)
+  # Force symmetric range 16/02/2026
+  digital_max_adjusted <- -digital_min
+  
+  gain <- (physical_max - physical_min) / (digital_max_adjusted - digital_min)
   offset <- physical_min - gain * digital_min
   
   gain * digital + offset
@@ -170,10 +173,10 @@ extract_events_native <- function(status_signal, sampling_rate) {
   
   # Detect changes in trigger values
   status_diff <- c(0, diff(status_masked))
-  event_indices <- which(status_diff != 0 & status_masked[-1] != 0)
+  event_indices <- which(status_diff != 0 & status_masked != 0)
   
   # Adjust indices
-  event_indices <- event_indices + 1L
+  # event_indices <- event_indices + 1L
   
   if (length(event_indices) == 0) {
     return(data.frame(

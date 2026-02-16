@@ -789,6 +789,27 @@ detect_electrode_naming_system <- function(data) {
   channels_clean <- NULL
   source_info <- NULL
   
+  # Check for empty input - 16/02/2026
+  if (missing(data) || is.null(data)) {
+    stop("No channel names found")
+  }
+  
+  if (is.character(data) && length(data) == 0) {
+    stop("No channel names found")
+  }
+  
+  if ((is.data.frame(data) || is.matrix(data)) && nrow(data) == 0) {
+    stop("Data frame/matrix has no column names")
+  }
+  
+  if ((is.data.frame(data) || is.matrix(data)) && is.null(colnames(data))) {
+    stop("Data frame/matrix has no column names")
+  }
+  
+  if (is.list(data) && !is.data.frame(data) && length(data) == 0) {
+    stop("No channel names found")
+  }
+  
   # Determine input type and extract channel names accordingly
   if (is.character(data)) {
     # Case 1: Character vector
@@ -1060,7 +1081,7 @@ detect_electrode_naming_system <- function(data) {
           
         } else {
           # User used standard naming (Fp1, Cz, etc.) -> this is 10-20/10-10 system
-          channel_classification$system_category[i] <- "10-20/10-10"
+          channel_classification$system_category[i] <- "Standard_10-20/10-10"
           # Show the same name
           channel_classification$standard_equivalent[i] <- ch_name
           

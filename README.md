@@ -130,7 +130,7 @@ eeganalysis
 │   │   └── eeg_rereference()             ← Change reference scheme (average/custom)
 |   |
 │   ├── epoch2.R                          ← Epoching functions
-|   |   ├── inspect_triggers()            ← Inspect Event Triggers in EEG Data
+│   |   ├── inspect_triggers()            ← Inspect Event Triggers in EEG Data
 │   │   └── epoch_eeg()                   ← Extract time-locked epochs around events
 │   │
 │   ├── preprocessing.R                   ← (Future) Data cleaning & preprocessing

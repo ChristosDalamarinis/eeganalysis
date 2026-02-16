@@ -105,9 +105,9 @@ eeganalysis
 │   ├── extract_bdf_events()
 │   │   ├── extract_bdf_events()          ← Parse trigger codes from status channel
 │   │   ├── summary_bdf_events()          ← Summary of extracted BDF events   
-│   │   ├── validate_bdf_events() 
+│   │   └── validate_bdf_events()         ← Validate and summarize BDF events
 │   │
-|   ├── channel_info2.R                   ← Electrode database & channel inspection
+│   ├── channel_info2.R                   ← Electrode database & channel inspection
 │   │   ├── get_electrode_database()      ← Access 64-ch BioSemi electrode database
 │   │   ├── get_electrode_position()      ← Get coordinates for specific electrode
 │   │   ├── inspect_bdf_channels()        ← Preview channels without full import

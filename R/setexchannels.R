@@ -1,5 +1,5 @@
 #' ============================================================================
-#' External Channel Management Functions
+#'                    External Channel Management Functions
 #' ============================================================================
 #'
 #' This module provides interactive and automated functions for identifying,
@@ -15,7 +15,7 @@
 #' Author: Christos Dalamarinis
 #' Date: Jan - 2026
 #' ============================================================================
-
+#'
 #' Interactively Identify and Label External Channels (Database-Driven)
 #'
 #' @description

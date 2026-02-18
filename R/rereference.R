@@ -1,5 +1,5 @@
 #' ============================================================
-#' EEG Re-referencing Utilities  
+#'                  EEG Re-referencing Utilities  
 #' ============================================================  
 #'  
 #' This module provides functions to re-reference EEG recordings to  
@@ -123,7 +123,7 @@ eeg_rereference <- function(eeg,
   apply_idx <- contrib_idx
   
   signals[apply_idx, ] <- sweep(signals[apply_idx, , drop = FALSE],
-                                1,
+                                2,
                                 ref_signal,
                                 FUN = "-")
   

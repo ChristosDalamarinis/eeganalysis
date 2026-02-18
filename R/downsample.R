@@ -1,5 +1,5 @@
 #' ============================================================================
-#' EEG Downsampling Functions
+#'                          EEG Downsampling Functions
 #' ============================================================================
 #'
 #' This module provides functions for downsampling EEG data to reduce sampling

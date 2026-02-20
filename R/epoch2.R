@@ -96,7 +96,7 @@ inspect_triggers <- function(eeg_obj,                             # EEG object w
       }
     }
     
-    if (nrow(events_cleaned) > 1) {
+    if (mode == "auto" && nrow(events_cleaned) > 1) {
       n_before_merge <- nrow(events_cleaned)
       type_changes <- c(TRUE, events_cleaned$type[-1] != events_cleaned$type[-nrow(events_cleaned)])
       events_cleaned <- events_cleaned[type_changes, ]

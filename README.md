@@ -16,7 +16,7 @@ Contact: [[dalamarinischristos\@gmail.com](mailto:dalamarinischristos@gmail.com)
 
 Current code reads .bdf and .edf files. Scripts include functions for assisting the researcher in importing, down-sampling, and referencing the data.
 
-## Interactive function include:
+## Interactive functions include:
 
 -   **identify_external_channels()**: Allows the user to interactively label external channels detected in imported EEG data.
 -   **plot_electrode_3d()**: 3D visualization of electrode positions on a head model (helper function).

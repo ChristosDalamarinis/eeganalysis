@@ -120,12 +120,9 @@ accuracy of neural events. Filter parameters follow standard EEG analysis
 conventions and integrate seamlessly with the eeganalysis pipeline.
 }
 \section{Author: Christos Dalamarinis
-Date: February 2026}{
+Date: 2026}{
+Apply a Bandpass Filter to EEG Data
 
-}
-
-\section{============================================================================
-Apply a Bandpass Filter to EEG Data}{
 Filters EEG data by attenuating frequencies outside a specified passband.
 Supports highpass-only, lowpass-only, or true bandpass filtering using a
 zero-phase Butterworth filter applied with forward-backward (filtfilt)

@@ -13,12 +13,10 @@
 #' conventions and integrate seamlessly with the eeganalysis pipeline.
 #'
 #' Author: Christos Dalamarinis
-#' Date: February 2026
+#' Date: 2026
 #' ============================================================================
 #'
-#' ============================================================================
-#'                    Apply a Bandpass Filter to EEG Data
-#' ============================================================================
+#' Apply a Bandpass Filter to EEG Data
 #'
 #' Filters EEG data by attenuating frequencies outside a specified passband.
 #' Supports highpass-only, lowpass-only, or true bandpass filtering using a
@@ -191,17 +189,17 @@
 #'
 #' @importFrom signal butter filtfilt filter fir1
 #' @export
-eeg_bandpass <- function(eeg_obj,                # EEG data object of class 'eeg'
-                         low_freq        = 0.5,  # CORE FILTERING - Primary control - Set to NULL to disable. 
-                         high_freq       = 30,   # CORE FILTERING - Primary control - Set to NULL to disable.
-                         filter_order    = 4,    # Higher values = sharper steepness but more ringing and edge artifacts
-                         channels        = NULL, # Accepts names or indices, essential for skipping EOG/EMG channels that should not be bandpass filtered.
-                         zero_phase      = TRUE, # Default to TRUE
-                         method          = c("butter", "fir"), # "butter" = Butterworth, "fir" = FIR (linear phase, heavier)
-                         padding         = NULL, # Reduces edge ringing at the cost of small computation overhead
-                         notch_freq      = NULL, # see below
-                         notch_bandwidth = 2,    # This and the one above are for noise removal so it can be done in the same call rather than requiring a second function call.
-                         verbose         = TRUE) { # Print summary of filter parameters and progress; set to FALSE for silent batch processing.
+eeg_bandpass <- function(eeg_obj,
+                         low_freq        = 0.5,
+                         high_freq       = 30,
+                         filter_order    = 4,
+                         channels        = NULL,
+                         zero_phase      = TRUE,
+                         method          = c("butter", "fir"),
+                         padding         = NULL,
+                         notch_freq      = NULL,
+                         notch_bandwidth = 2,
+                         verbose         = TRUE) {
   
   # ========== MATCH ARGUMENTS ==========
   
@@ -524,12 +522,6 @@ eeg_bandpass <- function(eeg_obj,                # EEG data object of class 'eeg
   
   return(filtered_eeg)
 }
-
-# End of filter.R
-
-
-
-
 
 # ============================================================================
 #
@@ -900,14 +892,149 @@ eeg_notch <- function(eeg_obj,
   return(notched_eeg)
 }
 
+# ============================================================================
+#
+#' Apply Bandpass and Optional Notch Filtering to EEG Data
+#'
+#' A unified wrapper that combines \code{eeg_bandpass()} and \code{eeg_notch()}
+#' into a single call. Applies bandpass filtering first (to set the frequency
+#' window of interest), then optionally applies a notch filter (to remove line
+#' noise), in the correct order. All arguments are passed directly to the
+#' underlying functions.
+#'
+#' @param eeg_obj An object of class 'eeg' containing EEG data.
+#'
+#' @param low_freq Numeric. Highpass cutoff in Hz. Frequencies below this are
+#'                 removed. Set to \code{NULL} for lowpass only.
+#'                 Default: \code{0.5}.
+#'
+#' @param high_freq Numeric. Lowpass cutoff in Hz. Frequencies above this are
+#'                  removed. Set to \code{NULL} for highpass only.
+#'                  Default: \code{40}.
+#'
+#' @param notch_freq Numeric. Centre frequency of the notch filter in Hz.
+#'                   Use \code{50} (Europe) or \code{60} (North America).
+#'                   Set to \code{NULL} (default) to skip notch filtering.
+#'
+#' @param notch_bandwidth Numeric. Width of the notch in Hz, centred on
+#'                        \code{notch_freq}. Default: \code{2}.
+#'                        Only used when \code{notch_freq} is not \code{NULL}.
+#'
+#' @param notch_harmonics Logical. If \code{TRUE}, also removes harmonics of
+#'                        \code{notch_freq} (e.g. 100, 150, 200 Hz for a
+#'                        50 Hz notch). Default: \code{FALSE}.
+#'                        Only used when \code{notch_freq} is not \code{NULL}.
+#'
+#' @param filter_order Integer. Order of the Butterworth filter applied for
+#'                     both bandpass and notch stages. Default: \code{4}.
+#'
+#' @param channels Character or integer vector. Channel names or indices to
+#'                 filter. \code{NULL} (default) filters all channels.
+#'
+#' @param zero_phase Logical. If \code{TRUE} (default), uses zero-phase
+#'                   forward-backward filtering (\code{filtfilt}).
+#'
+#' @param padding Integer. Mirror-padding samples added at each end before
+#'                filtering to reduce edge artefacts. Default: \code{NULL}
+#'                (auto: \code{3 * filter_order}).
+#'
+#' @param verbose Logical. If \code{TRUE} (default), prints progress for both
+#'                filtering stages. Set to \code{FALSE} for silent processing.
+#'
+#' @return An object of class 'eeg' with filtered data and updated
+#'   \code{preprocessing_history}. If \code{notch_freq} is not \code{NULL},
+#'   the history will contain two entries — one for the bandpass and one for
+#'   the notch.
+#'
+#' @examples
+#' \dontrun{
+#'   # Standard ERP pipeline in one line
+#'   eeg_clean <- eeg_filter(data4,
+#'                           low_freq   = 1,
+#'                           high_freq  = 40,
+#'                           notch_freq = 50)
+#'
+#'   # Bandpass only — no notch
+#'   eeg_clean <- eeg_filter(data4, low_freq = 0.1, high_freq = 40)
+#'
+#'   # Bandpass + notch + harmonics, EEG channels only
+#'   eeg_clean <- eeg_filter(data4,
+#'                           low_freq         = 1,
+#'                           high_freq        = 100,
+#'                           notch_freq       = 50,
+#'                           notch_harmonics  = TRUE,
+#'                           channels         = 1:64)
+#'
+#'   # Silent batch mode
+#'   eeg_clean <- eeg_filter(data4,
+#'                           low_freq   = 1,
+#'                           high_freq  = 40,
+#'                           notch_freq = 50,
+#'                           verbose    = FALSE)
+#' }
+#'
+#' @seealso \code{\link{eeg_bandpass}} for bandpass-only filtering,
+#'   \code{\link{eeg_notch}} for notch-only filtering,
+#'   \code{\link{new_eeg}} for the EEG object structure.
+#'
+#' @export
+eeg_filter <- function(eeg_obj,
+                       low_freq         = 0.5,
+                       high_freq        = 40,
+                       notch_freq       = NULL,
+                       notch_bandwidth  = 2,
+                       notch_harmonics  = FALSE,
+                       filter_order     = 4,
+                       channels         = NULL,
+                       zero_phase       = TRUE,
+                       padding          = NULL,
+                       verbose          = TRUE) {
+  
+  # ========== INPUT VALIDATION ==========
+  
+  if (!inherits(eeg_obj, "eeg")) {
+    stop("'eeg_obj' must be an object of class 'eeg'.", call. = FALSE)
+  }
+  
+  if (is.null(low_freq) && is.null(high_freq) && is.null(notch_freq)) {
+    stop("At least one of 'low_freq', 'high_freq', or 'notch_freq' must be ",
+         "specified.", call. = FALSE)
+  }
+  
+  # ========== STAGE 1: BANDPASS ==========
+  # Only run if at least one of low_freq / high_freq is specified
+  
+  if (!is.null(low_freq) || !is.null(high_freq)) {
+    eeg_obj <- eeg_bandpass(
+      eeg_obj      = eeg_obj,
+      low_freq     = low_freq,
+      high_freq    = high_freq,
+      filter_order = filter_order,
+      channels     = channels,
+      zero_phase   = zero_phase,
+      padding      = padding,
+      verbose      = verbose
+    )
+  }
+  
+  # ========== STAGE 2: NOTCH ==========
+  # Only run if notch_freq is specified
+  
+  if (!is.null(notch_freq)) {
+    eeg_obj <- eeg_notch(
+      eeg_obj      = eeg_obj,
+      freq         = notch_freq,
+      bandwidth    = notch_bandwidth,
+      filter_order = filter_order,
+      harmonics    = notch_harmonics,
+      channels     = channels,
+      zero_phase   = zero_phase,
+      padding      = padding,
+      verbose      = verbose
+    )
+  }
+  
+  return(eeg_obj)
+}
+
 # End of filter.R
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  

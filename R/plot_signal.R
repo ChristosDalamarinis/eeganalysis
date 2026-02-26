@@ -30,11 +30,11 @@
 #'                 (e.g. \code{48}). Default: \code{"Cz"}.
 #'
 #' @param tmin Numeric. Start of the time window to display, in milliseconds.
-#'             Default: \code{NULL} — plots from the very beginning of the
+#'             Default: \code{NULL} it plots from the very beginning of the
 #'             recording.
 #'
 #' @param tmax Numeric. End of the time window to display, in milliseconds.
-#'             Default: \code{NULL} — plots to the very end of the recording.
+#'             Default: \code{NULL} it plots to the very end of the recording.
 #'
 #' @param demean Logical. If \code{TRUE} (default), subtracts the mean of the
 #'               plotted window from the signal before drawing, centering the
@@ -161,7 +161,7 @@ plot_eeg_signal <- function(eeg_obj,
          call. = FALSE)
   }
   
-  # ---- Resolve time window (ms → sample indices) ----
+  # ---- Resolve time window (ms - sample indices) ----
   rec_start_ms <- times_ms[1]
   rec_end_ms   <- times_ms[n_timepoints]
   
@@ -196,7 +196,7 @@ plot_eeg_signal <- function(eeg_obj,
   samp_end   <- which.min(abs(times_ms - tmax))
   
   if (samp_start >= samp_end) {
-    stop("Time window too narrow — fewer than 2 samples selected. ",
+    stop("Time window too narrow - fewer than 2 samples selected. ",
          "Increase the range between 'tmin' and 'tmax'.", call. = FALSE)
   }
   
@@ -264,7 +264,7 @@ plot_eeg_signal <- function(eeg_obj,
   if (is.null(title)) {
     title <- paste0(
       "EEG Signal  |  Channel: ", ch_name,
-      "  |  ", round(tmin), " – ", round(tmax), " ms"
+      "  |  ", round(tmin), " - ", round(tmax), " ms"
     )
   }
   

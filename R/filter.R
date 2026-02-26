@@ -46,7 +46,7 @@
 #'                     computation time and risk of edge artefacts.
 #'                     For bandpass, the effective order is doubled
 #'                     (highpass + lowpass applied sequentially).
-#'                     Typical range: 2–8. Default: 4.
+#'                     Typical range: 2 to 8. Default: 4.
 #'
 #' @param channels Character or integer vector. Channel names or indices to
 #'                 filter. If \code{NULL} (default), all channels are filtered.
@@ -56,17 +56,17 @@
 #'
 #' @param zero_phase Logical. If \code{TRUE} (default), uses forward-backward
 #'                   filtering (\code{filtfilt}) which produces zero phase
-#'                   distortion — essential for ERP latency measurements.
+#'                   distortion / essential for ERP latency measurements.
 #'                   If \code{FALSE}, uses one-pass causal filtering
 #'                   (\code{filter}), which is faster but introduces phase
 #'                   delay. Only use \code{FALSE} for exploratory inspection.
 #'
 #' @param method Character string specifying the filter design method:
 #'               \describe{
-#'                 \item{"butter"}{(default) Butterworth filter — maximally
+#'                 \item{"butter"}{(default) Butterworth filter is maximally
 #'                                 flat passband, no ripple. Recommended for
 #'                                 all standard EEG analyses.}
-#'                 \item{"fir"}{Finite Impulse Response filter — linear phase
+#'                 \item{"fir"}{Finite Impulse Response filter is linear phase
 #'                              by design, no phase distortion even in
 #'                              one-pass mode. Computationally heavier.
 #'                              Requires the \code{signal} package.}
@@ -87,7 +87,7 @@
 #'
 #' @param notch_bandwidth Numeric. Bandwidth in Hz around \code{notch_freq}
 #'                        to attenuate. Default: 2 (i.e., notch spans
-#'                        \code{notch_freq ± 1 Hz}).
+#'                        \code{notch_freq plus/minus 1 Hz}).
 #'                        Only used when \code{notch_freq} is not \code{NULL}.
 #'
 #' @param verbose Logical. If \code{TRUE} (default), prints a summary of
@@ -148,13 +148,13 @@
 #'
 #' @examples
 #' \dontrun{
-#'   # Standard ERP bandpass (0.1 – 40 Hz)
+#'   # Standard ERP bandpass (0.1 to 40 Hz)
 #'   eeg_filt <- eeg_bandpass(eeg, low_freq = 0.1, high_freq = 40)
 #'
-#'   # Highpass only — remove DC drift
+#'   # Highpass only removes DC drift
 #'   eeg_filt <- eeg_bandpass(eeg, low_freq = 0.5, high_freq = NULL)
 #'
-#'   # Lowpass only — smooth signal
+#'   # Lowpass only smooths signal
 #'   eeg_filt <- eeg_bandpass(eeg, low_freq = NULL, high_freq = 40)
 #'
 #'   # Bandpass + 50 Hz notch for European line noise
@@ -280,8 +280,8 @@ eeg_bandpass <- function(eeg_obj,
     notch_low  <- notch_freq - notch_bandwidth / 2
     notch_high <- notch_freq + notch_bandwidth / 2
     if (notch_low <= 0 || notch_high >= nyquist) {
-      stop("Notch filter edges (", notch_low, " – ", notch_high, " Hz) fall ",
-           "outside the valid frequency range (0 – ", nyquist, " Hz).",
+      stop("Notch filter edges (", notch_low, " - ", notch_high, " Hz) fall ",
+           "outside the valid frequency range (0 - ", nyquist, " Hz).",
            call. = FALSE)
     }
   }
@@ -353,7 +353,7 @@ eeg_bandpass <- function(eeg_obj,
     cat("  Nyquist frequency:    ", nyquist, " Hz\n")
     
     if (!is.null(low_freq) && !is.null(high_freq)) {
-      cat("  Filter type:          Bandpass (", low_freq, " – ", high_freq,
+      cat("  Filter type:          Bandpass (", low_freq, " - ", high_freq,
           " Hz)\n", sep = "")
     } else if (!is.null(low_freq)) {
       cat("  Filter type:          Highpass (", low_freq, " Hz)\n", sep = "")
@@ -368,7 +368,7 @@ eeg_bandpass <- function(eeg_obj,
     cat("  Padding:              ", padding, " samples\n")
     
     if (!is.null(notch_freq)) {
-      cat("  Notch filter:         ", notch_freq, " Hz (±",
+      cat("  Notch filter:         ", notch_freq, " Hz (plus/minus",
           notch_bandwidth / 2, " Hz)\n", sep = "")
     }
     
@@ -473,7 +473,7 @@ eeg_bandpass <- function(eeg_obj,
   # ========== BUILD PREPROCESSING HISTORY ENTRY ==========
   
   filter_desc <- if (!is.null(low_freq) && !is.null(high_freq)) {
-    paste0("Bandpass filtered: ", low_freq, " – ", high_freq, " Hz")
+    paste0("Bandpass filtered: ", low_freq, " - ", high_freq, " Hz")
   } else if (!is.null(low_freq)) {
     paste0("Highpass filtered: ", low_freq, " Hz")
   } else {
@@ -545,16 +545,16 @@ eeg_bandpass <- function(eeg_obj,
 #'                  \code{freq}. A value of \code{2} means the filter removes
 #'                  frequencies from \code{freq - 1} to \code{freq + 1} Hz.
 #'                  Keeping this narrow preserves as much real brain signal as
-#'                  possible. Typical range: 1–4 Hz.
+#'                  possible. Typical range: 1 to 4 Hz.
 #'                  Default: \code{2}.
 #'
 #' @param filter_order Integer. Order of the Butterworth band-stop filter.
 #'                     Higher values create a steeper notch but may introduce
-#'                     more edge artefacts. Typical range: 2–6.
+#'                     more edge artefacts. Typical range: 2 to 6.
 #'                     Default: \code{4}.
 #'
 #' @param harmonics Logical. If \code{TRUE}, also applies the notch filter to
-#'                  harmonics of \code{freq} — i.e. 100 Hz, 150 Hz, etc. for
+#'                  harmonics of \code{freq} - i.e. 100 Hz, 150 Hz, etc. for
 #'                  a 50 Hz notch. Harmonics are integer multiples of the line
 #'                  frequency that can appear in recordings with strong
 #'                  interference. Only harmonics below the Nyquist frequency
@@ -598,7 +598,7 @@ eeg_bandpass <- function(eeg_obj,
 #'   }
 #'
 #' @details
-#' The notch filter is a band-stop filter — it passes all frequencies except
+#' The notch filter is a band-stop filter which passes all frequencies except
 #' those within the notch window. It is applied after bandpass filtering in a
 #' typical EEG pipeline.
 #'
@@ -785,7 +785,7 @@ eeg_notch <- function(eeg_obj,
     cat("  Nyquist frequency:    ", nyquist, " Hz\n")
     cat("  Notch frequency:      ", freq, " Hz\n")
     cat("  Bandwidth:            ", bandwidth, " Hz  (",
-        notch_low, " – ", notch_high, " Hz)\n", sep = "")
+        notch_low, " - ", notch_high, " Hz)\n", sep = "")
     cat("  Filter order:         ", filter_order, "\n")
     cat("  Zero-phase:           ",
         if (zero_phase) "Yes (filtfilt)" else "No (causal)", "\n")
@@ -848,7 +848,7 @@ eeg_notch <- function(eeg_obj,
   
   history_entry <- paste0(
     "Notch filtered: ", freq, " Hz",
-    " (", notch_low, " – ", notch_high, " Hz)",
+    " (", notch_low, " - ", notch_high, " Hz)",
     " | bandwidth: ", bandwidth, " Hz",
     ", order: ", filter_order,
     ", zero-phase: ", if (zero_phase) "yes" else "no",
@@ -943,7 +943,7 @@ eeg_notch <- function(eeg_obj,
 #'
 #' @return An object of class 'eeg' with filtered data and updated
 #'   \code{preprocessing_history}. If \code{notch_freq} is not \code{NULL},
-#'   the history will contain two entries — one for the bandpass and one for
+#'   the history will contain two entries, one for the bandpass and one for
 #'   the notch.
 #'
 #' @examples
@@ -954,7 +954,7 @@ eeg_notch <- function(eeg_obj,
 #'                           high_freq  = 40,
 #'                           notch_freq = 50)
 #'
-#'   # Bandpass only — no notch
+#'   # Bandpass only - no notch
 #'   eeg_clean <- eeg_filter(data4, low_freq = 0.1, high_freq = 40)
 #'
 #'   # Bandpass + notch + harmonics, EEG channels only

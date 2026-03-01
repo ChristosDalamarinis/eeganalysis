@@ -29,16 +29,16 @@ Default: \code{50}.}
 \code{freq}. A value of \code{2} means the filter removes
 frequencies from \code{freq - 1} to \code{freq + 1} Hz.
 Keeping this narrow preserves as much real brain signal as
-possible. Typical range: 1–4 Hz.
+possible. Typical range: 1 to 4 Hz.
 Default: \code{2}.}
 
 \item{filter_order}{Integer. Order of the Butterworth band-stop filter.
 Higher values create a steeper notch but may introduce
-more edge artefacts. Typical range: 2–6.
+more edge artefacts. Typical range: 2 to 6.
 Default: \code{4}.}
 
 \item{harmonics}{Logical. If \code{TRUE}, also applies the notch filter to
-harmonics of \code{freq} — i.e. 100 Hz, 150 Hz, etc. for
+harmonics of \code{freq} - i.e. 100 Hz, 150 Hz, etc. for
 a 50 Hz notch. Harmonics are integer multiples of the line
 frequency that can appear in recordings with strong
 interference. Only harmonics below the Nyquist frequency
@@ -90,7 +90,7 @@ recording equipment. Uses a zero-phase Butterworth band-stop filter applied
 with forward-backward (filtfilt) convolution to preserve event timing.
 }
 \details{
-The notch filter is a band-stop filter — it passes all frequencies except
+The notch filter is a band-stop filter which passes all frequencies except
 those within the notch window. It is applied after bandpass filtering in a
 typical EEG pipeline.
 

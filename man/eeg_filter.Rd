@@ -61,7 +61,7 @@ filtering stages. Set to \code{FALSE} for silent processing.}
 \value{
 An object of class 'eeg' with filtered data and updated
 \code{preprocessing_history}. If \code{notch_freq} is not \code{NULL},
-the history will contain two entries — one for the bandpass and one for
+the history will contain two entries, one for the bandpass and one for
 the notch.
 }
 \description{
@@ -79,7 +79,7 @@ underlying functions.
                           high_freq  = 40,
                           notch_freq = 50)
 
-  # Bandpass only — no notch
+  # Bandpass only - no notch
   eeg_clean <- eeg_filter(data4, low_freq = 0.1, high_freq = 40)
 
   # Bandpass + notch + harmonics, EEG channels only

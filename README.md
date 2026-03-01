@@ -126,9 +126,10 @@ eeganalysis
 |   ├── rereference.R                     ← Re-referencing utilities
 │   │   └── eeg_rereference()             ← Change reference scheme (average/custom)
 │   │
-│   ├── filter.R
-│   │
-│   │
+│   ├── filter.R                          ← Filtering utilities
+│   │   ├── eeg_bandpass()
+│   │   ├── eeg_notch()
+│   │   └── eeg_filter()
 │   │
 │   ├── epoch2.R                          ← Epoching functions
 │   │   ├── inspect_triggers()            ← Inspect Event Triggers in EEG Data

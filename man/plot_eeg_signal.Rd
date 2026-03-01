@@ -26,11 +26,11 @@ Either the channel name (e.g. \code{"Cz"}) or its index
 (e.g. \code{48}). Default: \code{"Cz"}.}
 
 \item{tmin}{Numeric. Start of the time window to display, in milliseconds.
-Default: \code{NULL} — plots from the very beginning of the
+Default: \code{NULL} it plots from the very beginning of the
 recording.}
 
 \item{tmax}{Numeric. End of the time window to display, in milliseconds.
-Default: \code{NULL} — plots to the very end of the recording.}
+Default: \code{NULL} it plots to the very end of the recording.}
 
 \item{demean}{Logical. If \code{TRUE} (default), subtracts the mean of the
 plotted window from the signal before drawing, centering the

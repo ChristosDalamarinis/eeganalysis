@@ -114,8 +114,8 @@ eeganalysis
 │   │   ├── classify_channel_naming()     ← Identify naming convention (10-20/10-10/BioSemi)
 │   │   ├── plot_electrode_3d()           ← 3D electrode visualization (Cartesian)
 │   │   └── plot_electrode_3d_spherical() ← 3D electrode visualization (Spherical)
-|   |
-|   ├── setexchannels.R                   ← External channel management
+│   │
+│   ├── setexchannels.R                   ← External channel management
 │   │   ├── identify_external_channels()  ← Interactive labeling (EOG, EMG, ECG, GSR)
 │   │   ├── detect_external_channels()    ← Automated external channel detection
 │   │   └── apply_external_labels()       ← Apply user-defined labels to data
@@ -162,7 +162,7 @@ eeganalysis
 │   ├── eeg_rereference.Rd                ← Help for eeg_rereference()
 │   ├── epoch_eeg.Rd                      ← Help for epoch_eeg()
 │   └── ...Rd                             ← Additional help files
-|
+│
 ├── data                                  ← Example datasets
 │   └── example_eeg.RData                 ← Example eeg object for testing (coming)
 │

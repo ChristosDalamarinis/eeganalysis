@@ -537,9 +537,11 @@ eeg_bandpass <- function(eeg_obj,
   return(filtered_eeg)
 }
 
-# ============================================================================
-#
-#' Apply a Notch Filter to EEG Data
+#' ============================================================================
+#'
+#'                      Apply a Notch Filter to EEG Data
+#'
+#' ============================================================================
 #'
 #' Removes a narrow frequency band from EEG data to eliminate electrical line
 #' noise interference. The most common use is removing 50 Hz noise (Europe)
@@ -906,10 +908,12 @@ eeg_notch <- function(eeg_obj,
   return(notched_eeg)
 }
 
-# ============================================================================
-#
-#' Apply Bandpass and Optional Notch Filtering to EEG Data
+#' ============================================================================
 #'
+#'          Apply Bandpass and Optional Notch Filtering to EEG Data
+#'
+#' ============================================================================
+#' 
 #' A unified wrapper that combines \code{eeg_bandpass()} and \code{eeg_notch()}
 #' into a single call. Applies bandpass filtering first (to set the frequency
 #' window of interest), then optionally applies a notch filter (to remove line

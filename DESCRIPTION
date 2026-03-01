@@ -3,9 +3,9 @@ Title: EEG Package
 Version: 0.0.0.9000
 Authors@R: 
     person("Christos", "Dalamarinis", , "dalamarinischristos@gmail.com", role = c("aut", "cre"))
-Description: Tools for reading, preprocessing, and analyzing EEG data from
-    BioSemi recordings. Includes functions for reading .bdf files (.edf are also supported), filtering,
-    referencing, artifact correction, and feature extraction.
+Description: Tools for reading, preprocessing, and analyzing EEG data from BioSemi recordings. 
+    Includes functions for reading .bdf files (.edf are also supported), filtering, referencing, 
+    artifact correction, and feature extraction.
 License: MIT + file LICENSE
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)

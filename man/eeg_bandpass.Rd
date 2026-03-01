@@ -120,7 +120,7 @@ accuracy of neural events. Filter parameters follow standard EEG analysis
 conventions and integrate seamlessly with the eeganalysis pipeline.
 }
 \section{Author: Christos Dalamarinis
-Date: Feb 2026}{
+Date: Feb - 2026}{
 
 }
 

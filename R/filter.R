@@ -13,7 +13,7 @@
 #' conventions and integrate seamlessly with the eeganalysis pipeline.
 #'
 #' Author: Christos Dalamarinis
-#' Date: Feb 2026
+#' Date: Feb - 2026
 #' ============================================================================
 #'
 #'

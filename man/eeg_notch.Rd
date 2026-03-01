@@ -2,7 +2,7 @@
 % Please edit documentation in R/filter.R
 \name{eeg_notch}
 \alias{eeg_notch}
-\title{Apply a Notch Filter to EEG Data}
+\title{============================================================================}
 \usage{
 eeg_notch(
   eeg_obj,
@@ -83,13 +83,18 @@ notch filter parameters applied.}
 }
 }
 \description{
+\if{html}{\out{<div class="sourceCode">}}\preformatted{                 Apply a Notch Filter to EEG Data
+}\if{html}{\out{</div>}}
+}
+\details{
+============================================================================
+
 Removes a narrow frequency band from EEG data to eliminate electrical line
 noise interference. The most common use is removing 50 Hz noise (Europe)
 or 60 Hz noise (North America) introduced by the power grid into the
 recording equipment. Uses a zero-phase Butterworth band-stop filter applied
 with forward-backward (filtfilt) convolution to preserve event timing.
-}
-\details{
+
 The notch filter is a band-stop filter which passes all frequencies except
 those within the notch window. It is applied after bandpass filtering in a
 typical EEG pipeline.

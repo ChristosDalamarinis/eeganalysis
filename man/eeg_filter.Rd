@@ -2,7 +2,7 @@
 % Please edit documentation in R/filter.R
 \name{eeg_filter}
 \alias{eeg_filter}
-\title{Apply Bandpass and Optional Notch Filtering to EEG Data}
+\title{============================================================================}
 \usage{
 eeg_filter(
   eeg_obj,
@@ -65,6 +65,12 @@ the history will contain two entries, one for the bandpass and one for
 the notch.
 }
 \description{
+\if{html}{\out{<div class="sourceCode">}}\preformatted{     Apply Bandpass and Optional Notch Filtering to EEG Data
+}\if{html}{\out{</div>}}
+}
+\details{
+============================================================================
+
 A unified wrapper that combines \code{eeg_bandpass()} and \code{eeg_notch()}
 into a single call. Applies bandpass filtering first (to set the frequency
 window of interest), then optionally applies a notch filter (to remove line

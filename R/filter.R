@@ -12,8 +12,8 @@
 #' accuracy of neural events. Filter parameters follow standard EEG analysis
 #' conventions and integrate seamlessly with the eeganalysis pipeline.
 #'
-#' Author: Christos Dalamarinis
-#' Date: Feb - 2026
+#  Author: Christos Dalamarinis
+#  Date: Feb - 2026
 #' ============================================================================
 #'
 #'

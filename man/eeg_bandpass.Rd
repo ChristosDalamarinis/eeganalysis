@@ -118,12 +118,9 @@ The module implements Butterworth filters (highpass, lowpass, bandpass, and
 notch) with zero-phase forward-backward filtering to preserve temporal
 accuracy of neural events. Filter parameters follow standard EEG analysis
 conventions and integrate seamlessly with the eeganalysis pipeline.
-}
-\section{Author: Christos Dalamarinis
-Date: Feb - 2026}{
 
+============================================================================
 }
-
 \section{============================================================================
 Apply a Bandpass Filter to EEG Data}{
 Filters EEG data by attenuating frequencies outside a specified passband.

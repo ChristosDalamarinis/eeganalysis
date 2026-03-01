@@ -127,9 +127,9 @@ eeganalysis
 │   │   └── eeg_rereference()             ← Change reference scheme (average/custom)
 │   │
 │   ├── filter.R                          ← Filtering utilities
-│   │   ├── eeg_bandpass()
-│   │   ├── eeg_notch()
-│   │   └── eeg_filter()
+│   │   ├── eeg_bandpass()                ← Attenuate frequencies outside a specified passband.
+│   │   ├── eeg_notch()                   ← Remove powerline noise with notch filter
+│   │   └── eeg_filter()                  ← Unified function combining both in one go
 │   │
 │   ├── epoch2.R                          ← Epoching functions
 │   │   ├── inspect_triggers()            ← Inspect Event Triggers in EEG Data

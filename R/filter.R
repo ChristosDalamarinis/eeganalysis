@@ -407,7 +407,18 @@ eeg_bandpass <- function(eeg_obj,
   } else {
     # FIR design via fir1 (requires signal package)
     # fir1 expects filter length (order + 1 must be odd for symmetric FIR)
-    fir_len <- filter_order * 2 + 1
+    # FIXED - adaptive FIR length scaled to cutoff frequency - added on 1/03/2026
+    min_cutoff_hz <- min(
+      if (!is.null(low_freq))  low_freq  else Inf,
+      if (!is.null(high_freq)) high_freq else Inf
+    )
+    # Rule of thumb: N ≈ 3.3 * fs / transition_bandwidth
+    # We use the cutoff freq itself as a conservative proxy for transition width
+    fir_order <- max(filter_order * 2,
+                     as.integer(ceiling(3.3 * nyquist / min_cutoff_hz)))
+    # fir1 requires an odd filter LENGTH (even order), ensure this:
+    if (fir_order %% 2 != 0) fir_order <- fir_order + 1
+    fir_len <- fir_order + 1
     
     if (!is.null(W_low)) {
       hp_filt <- signal::fir1(fir_len - 1, W_low, type = "high")

@@ -122,8 +122,8 @@ eeganalysis
 │   │
 │   ├── downsample.R                      ← Smart downsampling with anti-aliasing
 │   │   └── downsample()                  ← Downsample EEG data with filters
-|   |
-|   ├── rereference.R                     ← Re-referencing utilities
+│   │
+│   ├── rereference.R                     ← Re-referencing utilities
 │   │   └── eeg_rereference()             ← Change reference scheme (average/custom)
 │   │
 │   ├── filter.R                          ← Filtering utilities

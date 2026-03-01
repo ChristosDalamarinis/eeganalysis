@@ -16,7 +16,10 @@
 #' Date: 2026
 #' ============================================================================
 #'
-#' Apply a Bandpass Filter to EEG Data
+#'
+#' ============================================================================
+#'                    Apply a Bandpass Filter to EEG Data
+#' ============================================================================
 #'
 #' Filters EEG data by attenuating frequencies outside a specified passband.
 #' Supports highpass-only, lowpass-only, or true bandpass filtering using a

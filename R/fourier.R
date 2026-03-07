@@ -28,7 +28,7 @@
 #' returns a data frame or list of data frames for multi-condition evoked data).
 #'
 #' Return object structure (eeg_spectrum):
-#'   $power         - matrix [channels x frequencies] or named list for evoked
+#'   $power         - matrix \[channels x frequencies] or named list for evoked
 #'   $amplitude     - sqrt(power)
 #'   $phase         - phase angles in radians (eeg_fft only; NULL otherwise)
 #'   $frequencies   - numeric vector of frequencies in Hz
@@ -39,7 +39,7 @@
 #'   $n_fft         - FFT length used
 #'   $window_type   - window function applied ("hann", "hamming", etc.)
 #'   $per_epoch     - logical; TRUE if per-epoch spectra were computed
-#'   $epoch_power   - 3D array [channels x freqs x epochs] (per_epoch = TRUE)
+#'   $epoch_power   - 3D array \[channels x freqs x epochs] (per_epoch = TRUE)
 #'   $n_epochs      - number of epochs (eeg_epochs input only)
 #'   $conditions    - condition names (eeg_evoked input only)
 #'   + method-specific fields (window_length, overlap, time_bandwidth, etc.)
@@ -131,7 +131,7 @@
 #' @param n  Integer. Signal length.
 #' @param nw Numeric. Time-bandwidth product (e.g. 4 gives NW=4).
 #' @param k  Integer. Number of tapers to return (k <= 2*nw - 1 recommended).
-#' @return Numeric matrix of dimensions [n x k]. Columns are the tapers,
+#' @return Numeric matrix of dimensions \[n x k]. Columns are the tapers,
 #'         normalised to unit energy. Sign convention: first element positive.
 #' @keywords internal
 .compute_dpss <- function(n, nw, k) {
@@ -169,7 +169,7 @@
 #'
 #' @param x      Numeric vector of length n (must match nrow of tapers).
 #' @param sr     Numeric. Sampling rate in Hz.
-#' @param tapers Numeric matrix [n x k] from .compute_dpss().
+#' @param tapers Numeric matrix \[n x k] from .compute_dpss().
 #' @return Numeric vector of PSD estimates (uV^2/Hz), length floor(n/2)+1.
 #' @keywords internal
 .mtaper_psd <- function(x, sr, tapers) {

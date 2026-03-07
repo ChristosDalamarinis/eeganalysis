@@ -42,7 +42,7 @@ All return objects of class 'eeg_spectrum' (except eeg_band_power which
 returns a data frame or list of data frames for multi-condition evoked data).
 
 Return object structure (eeg_spectrum):
-$power         - matrix \link{channels x frequencies} or named list for evoked
+$power         - matrix [channels x frequencies] or named list for evoked
 $amplitude     - sqrt(power)
 $phase         - phase angles in radians (eeg_fft only; NULL otherwise)
 $frequencies   - numeric vector of frequencies in Hz
@@ -53,7 +53,7 @@ $input_class   - "eeg" | "eeg_epochs" | "eeg_evoked"
 $n_fft         - FFT length used
 $window_type   - window function applied ("hann", "hamming", etc.)
 $per_epoch     - logical; TRUE if per-epoch spectra were computed
-$epoch_power   - 3D array \link{channels x freqs x epochs} (per_epoch = TRUE)
+$epoch_power   - 3D array [channels x freqs x epochs] (per_epoch = TRUE)
 $n_epochs      - number of epochs (eeg_epochs input only)
 $conditions    - condition names (eeg_evoked input only)
 \itemize{

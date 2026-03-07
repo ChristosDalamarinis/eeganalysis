@@ -14,7 +14,7 @@
 \item{k}{Integer. Number of tapers to return (k <= 2*nw - 1 recommended).}
 }
 \value{
-Numeric matrix of dimensions \link{n x k}. Columns are the tapers,
+Numeric matrix of dimensions [n x k]. Columns are the tapers,
 normalised to unit energy. Sign convention: first element positive.
 }
 \description{

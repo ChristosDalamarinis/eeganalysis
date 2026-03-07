@@ -11,7 +11,7 @@
 
 \item{sr}{Numeric. Sampling rate in Hz.}
 
-\item{tapers}{Numeric matrix \link{n x k} from .compute_dpss().}
+\item{tapers}{Numeric matrix [n x k] from .compute_dpss().}
 }
 \value{
 Numeric vector of PSD estimates (uV^2/Hz), length floor(n/2)+1.

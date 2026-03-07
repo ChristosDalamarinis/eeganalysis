@@ -1,5 +1,5 @@
 # ==============================================================================
-#                             Label EEG Events
+# label_bdf_events.R
 # ==============================================================================
 #
 # Interactive labeling of BDF trigger codes
@@ -7,18 +7,19 @@
 # Author: Christos Dalamarinis
 # Date: March 2026
 # ==============================================================================
+
+
+#' Interactively label BDF trigger codes
 #'
-#' =============================================================================
-#' Label BDF events with user-friendly labels via interactive prompts.
-#' =============================================================================
-#' 
 #' Displays a summary table of all unique trigger codes found in an events
 #' data frame, then prompts the user to provide a plain-text label for each
 #' one. Pressing Enter without typing a label assigns \code{"unknown"} to that
 #' code. The resulting labels are stored in a new \code{label} column and the
 #' full code-to-label mapping is attached as the \code{trigger_labels}
 #' attribute so it can be inspected or reused programmatically.
-#' 
+#'
+#' Author: Christos Dalamarinis
+#' Date: March 2026
 #'
 #' @param events  Data frame returned by \code{extract_bdf_events()}.
 #'   Must contain at minimum the columns \code{type} and \code{onset_time}.
@@ -145,7 +146,11 @@ label_bdf_events <- function(events, verbose = TRUE) {
   
   # ========== STEP 5: Interactive prompt — one code at a time ==========
   
-  mapping <- setNames(character(n_codes), unique_codes)  # named character vector
+  # Use a plain character vector indexed by position during the loop.
+  # Name-based assignment (mapping[code] <- value) can silently fail when
+  # the code strings from events$type carry a different encoding than the
+  # names vector — positional indexing (labels[i] <- value) is always safe.
+  labels <- character(n_codes)
   
   for (i in seq_len(n_codes)) {
     code  <- unique_codes[i]
@@ -156,21 +161,26 @@ label_bdf_events <- function(events, verbose = TRUE) {
       i, n_codes, code, count
     )
     
-    raw_input <- readline(prompt = prompt_str)
-    raw_input <- trimws(raw_input)
+    raw_input <- trimws(readline(prompt = prompt_str))
     
     # Empty input → auto-assign "unknown"
-    if (nchar(raw_input) == 0) {
-      mapping[code] <- "unknown"
+    if (nchar(raw_input) == 0L) {
+      labels[i] <- "unknown"
       if (verbose) cat("         → assigned: 'unknown'\n")
     } else {
-      mapping[code] <- raw_input
+      labels[i] <- raw_input
     }
   }
   
+  # Build the named mapping vector after all labels are collected
+  mapping <- setNames(labels, unique_codes)
+  
   # ========== STEP 6: Apply mapping — add 'label' column ==========
   
-  events$label <- mapping[events$type]
+  # Use match() for lookup — avoids encoding-based name mismatches that can
+  # occur with direct named-vector indexing (mapping[events$type]).
+  # unname() ensures a plain character column with no inherited vector names.
+  events$label <- unname(labels[match(events$type, unique_codes)])
   
   # ========== STEP 7: Attach mapping as attribute ==========
   
@@ -184,12 +194,15 @@ label_bdf_events <- function(events, verbose = TRUE) {
     cat("  ", strrep("-", 36), "\n", sep = "")
     cat(sprintf("  %-12s  %-20s\n", "Code", "Label"))
     cat("  ", strrep("-", 36), "\n", sep = "")
-    for (code in names(mapping)) {
-      cat(sprintf("  %-12s  %-20s\n", code, mapping[code]))
+    # Iterate positionally — avoids runaway output if NA names exist
+    for (i in seq_along(unique_codes)) {
+      if (!is.na(unique_codes[i]) && !is.na(labels[i])) {
+        cat(sprintf("  %-12s  %-20s\n", unique_codes[i], labels[i]))
+      }
     }
     cat("  ", strrep("-", 36), "\n", sep = "")
-    n_unknown <- sum(mapping == "unknown")
-    if (n_unknown > 0) {
+    n_unknown <- sum(labels == "unknown", na.rm = TRUE)
+    if (!is.na(n_unknown) && n_unknown > 0L) {
       cat("\n  [NOTE]", n_unknown, "code(s) left as 'unknown'.\n")
     }
     cat("==========================================\n\n")
@@ -199,9 +212,8 @@ label_bdf_events <- function(events, verbose = TRUE) {
 }
 
 
-#' ==============================================================================
-#'        Apply a pre-built trigger label mapping to an events data frame
-#' ==============================================================================
+# ==============================================================================
+#' Apply a pre-built trigger label mapping to an events data frame
 #'
 #' Non-interactive companion to \code{\link{label_bdf_events}}. Applies an
 #' existing code-to-label mapping (typically the \code{trigger_labels}

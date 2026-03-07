@@ -37,9 +37,7 @@ attribute so it can be inspected or reused programmatically.
 \details{
 Author: Christos Dalamarinis
 Date: March 2026
-}
-\section{============================================================================
-label_bdf_events()}{
+
 This function requires an interactive R session because it uses
 \code{\link[base]{readline}} to collect input. It will stop with an
 informative error if called in a non-interactive context (e.g. during
@@ -47,7 +45,6 @@ informative error if called in a non-interactive context (e.g. during
 \code{apply_trigger_labels()} helper to apply a pre-built mapping without
 interactivity.
 }
-
 \examples{
 \dontrun{
   # Typical workflow

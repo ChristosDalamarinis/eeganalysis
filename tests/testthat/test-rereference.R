@@ -10,7 +10,7 @@
 #
 # HOW THE FUNCTION WORKS (and therefore how each suite tests it):
 # -----------------------------------------------------------------------
-# eeg_rereference(eeg, ref, exclude, copy) operates in 8 logical steps:
+# eeg_rereference(eeg, ref, exclude, copy) operates in these steps:
 #
 #  1. Copies the eeg object (R's copy-on-modify semantics protect the
 #     original when copy = TRUE; the code always does eeg_out <- eeg).
@@ -28,15 +28,16 @@
 #  6. Computes ref_signal = colMeans(data[ref_idx,], na.rm=TRUE)
 #     → vector of length ncol (one value per time point) → Suite 9.
 #  7. Subtracts ref_signal from all channels in apply_idx (= contrib_idx)
-#     via sweep(). Excluded channels are untouched → Suites 4–7.
-#  8. If eeg$meta != NULL, updates eeg$meta$reference → Suite 8.
-#
-# NOTE: new_eeg() stores metadata as $metadata (not $meta). The function
-#   updates $meta; for freshly constructed objects $meta is NULL, so the
-#   update is a no-op unless the caller adds $meta manually.
+#     via sweep(..., MARGIN=2, ...). Excluded channels untouched → Suites 4–7.
+#  8. Updates THREE fields:
+#       - eeg$reference (always - used by print.eeg)
+#       - eeg$metadata$reference_scheme (if metadata exists)
+#       - eeg$preprocessing_history (always - appends log entry)
+#     → Suite 8.
 #
 # Author: Christos Dalamarinis
 # Date: February 2026
+# Updated: March 2026 
 # ============================================================================
 
 library(testthat)
@@ -48,23 +49,20 @@ library(eeganalysis)
 
 # Helper: create a minimal valid eeg object with deterministic data.
 # Data layout: rows = channels, columns = time points.
-make_eeg <- function(n_channels = 4,
-                     n_timepoints = 50,
+make_eeg <- function(n_channels    = 4,
+                     n_timepoints  = 50,
                      channel_names = NULL,
-                     seed = 42) {
+                     seed          = 42) {
   set.seed(seed)
   if (is.null(channel_names)) {
     channel_names <- paste0("Ch", seq_len(n_channels))
-  } else {
-    # Update n_channels to match the provided channel_names
-    n_channels <- length(channel_names)
   }
   data_mat <- matrix(rnorm(n_channels * n_timepoints, mean = 50, sd = 10),
                      nrow = n_channels,
                      ncol = n_timepoints)
   new_eeg(
-    data = data_mat,
-    channels = channel_names,
+    data          = data_mat,
+    channels      = channel_names,
     sampling_rate = 256
   )
 }
@@ -93,7 +91,7 @@ make_known_eeg <- function() {
 
 
 # ============================================================================
-#                       TEST SUITE 1 – Input Validation
+# TEST SUITE 1 – Input Validation
 # ============================================================================
 # WHAT THESE TESTS DO:
 #   Each test deliberately triggers a different error branch inside
@@ -161,7 +159,7 @@ test_that("eeg_rereference stops when all ref channels are excluded", {
 
 
 # ============================================================================
-#               TEST SUITE 2 – Return Type and Object Integrity
+# TEST SUITE 2 – Return Type and Object Integrity
 # ============================================================================
 # WHAT THESE TESTS DO:
 #   Call the function with valid input and inspect the returned object.
@@ -201,7 +199,7 @@ test_that("eeg_rereference preserves sampling_rate, times, and events", {
 
 
 # ============================================================================
-#                 TEST SUITE 3 – copy Parameter Behaviour
+# TEST SUITE 3 – copy Parameter Behaviour
 # ============================================================================
 # WHAT THESE TESTS DO:
 #   With copy = TRUE (default), the function does eeg_out <- eeg before
@@ -240,7 +238,7 @@ test_that("copy = FALSE still returns a valid modified eeg object", {
 
 
 # ============================================================================
-#         TEST SUITE 4 – Average Reference: Mathematical Correctness
+# TEST SUITE 4 – Average Reference: Mathematical Correctness
 # ============================================================================
 # WHAT THESE TESTS DO:
 #   When ref = "average", the reference signal at time t is
@@ -295,7 +293,7 @@ test_that("average reference is idempotent: applying it twice leaves data unchan
 
 
 # ============================================================================
-#               TEST SUITE 5 – Single Named Channel Reference
+# TEST SUITE 5 – Single Named Channel Reference
 # ============================================================================
 # WHAT THESE TESTS DO:
 #   When ref = "Ch1" (one channel name), ref_signal = data[ch1_idx, ].
@@ -342,7 +340,7 @@ test_that("numeric ref index gives identical result to named ref", {
 
 
 # ============================================================================
-#             TEST SUITE 6 – Multi-Channel (Linked) Reference
+# TEST SUITE 6 – Multi-Channel (Linked) Reference
 # ============================================================================
 # WHAT THESE TESTS DO:
 #   When ref is a vector of two or more channels, ref_signal = rowwise mean
@@ -390,7 +388,7 @@ test_that("numeric vector ref gives same result as named vector ref", {
 
 
 # ============================================================================
-#                     TEST SUITE 7 – Exclude Parameter
+# TEST SUITE 7 – Exclude Parameter
 # ============================================================================
 # WHAT THESE TESTS DO:
 #   Channels in 'exclude' are removed from contrib_idx, which means:
@@ -482,52 +480,111 @@ test_that("unrecognised channel name in exclude is silently ignored", {
 
 
 # ============================================================================
-#                       TEST SUITE 8 – Metadata Update
+# TEST SUITE 8 – Metadata and History Updates
 # ============================================================================
 # WHAT THESE TESTS DO:
-#   The function runs: if (!is.null(eeg_out$meta)) { eeg_out$meta$reference <- ... }
-#   new_eeg() creates $metadata (not $meta), so $meta is NULL on fresh objects.
-#   To test the update branch, we manually add $meta to the eeg object.
-#   We also verify that the function runs without error on standard new_eeg
-#   objects (where $meta is NULL and the update is skipped).
+#   The updated function modifies THREE fields:
+#     1. eeg$reference (always - this is what print.eeg displays)
+#     2. eeg$metadata$reference_scheme (if $metadata exists)
+#     3. eeg$preprocessing_history (always - appends a log entry)
+#
+#   Tests verify correct label generation and field updates for all three
+#   reference types: "average", single channel, and linked channels.
 
-test_that("average ref sets eeg$meta$reference to 'average' when $meta exists", {
-  eeg      <- make_eeg()
-  eeg$meta <- list()   # inject the field the function will update
+test_that("average ref sets eeg$reference to 'Common Average'", {
+  eeg    <- make_eeg()
+  result <- eeg_rereference(eeg, ref = "average")
+  
+  expect_equal(result$reference, "Common Average")
+})
+
+test_that("average ref sets eeg$metadata$reference_scheme to 'Common Average'", {
+  eeg    <- make_eeg()
+  result <- eeg_rereference(eeg, ref = "average")
+  
+  # new_eeg() creates $metadata as an empty list, so this field should exist
+  expect_equal(result$metadata$reference_scheme, "Common Average")
+})
+
+test_that("average ref appends to preprocessing_history", {
+  eeg    <- make_eeg()
+  result <- eeg_rereference(eeg, ref = "average")
+  
+  # Check that history was appended
+  expect_true(length(result$preprocessing_history) > 0)
+  
+  # Check that the last entry contains the reference info
+  last_entry <- result$preprocessing_history[[length(result$preprocessing_history)]]
+  expect_match(last_entry, "Re-referenced to: Common Average")
+})
+
+test_that("single channel ref sets eeg$reference to channel name", {
+  eeg    <- make_eeg(channel_names = c("Cz", "Pz", "M1", "M2"))
+  result <- eeg_rereference(eeg, ref = "M1")
+  
+  expect_equal(result$reference, "M1")
+  expect_equal(result$metadata$reference_scheme, "M1")
+})
+
+test_that("single channel ref appends to preprocessing_history", {
+  eeg    <- make_eeg(channel_names = c("Cz", "Pz", "M1", "M2"))
+  result <- eeg_rereference(eeg, ref = "M1")
+  
+  last_entry <- result$preprocessing_history[[length(result$preprocessing_history)]]
+  expect_match(last_entry, "Re-referenced to: M1")
+})
+
+test_that("linked ref sets eeg$reference to 'Ch1+Ch2' format", {
+  eeg    <- make_eeg(channel_names = c("Cz", "Pz", "M1", "M2"))
+  result <- eeg_rereference(eeg, ref = c("M1", "M2"))
+  
+  expect_equal(result$reference, "M1+M2")
+  expect_equal(result$metadata$reference_scheme, "M1+M2")
+})
+
+test_that("linked ref appends to preprocessing_history", {
+  eeg    <- make_eeg(channel_names = c("Cz", "Pz", "M1", "M2"))
+  result <- eeg_rereference(eeg, ref = c("M1", "M2"))
+  
+  last_entry <- result$preprocessing_history[[length(result$preprocessing_history)]]
+  expect_match(last_entry, "Re-referenced to: M1\\+M2")
+})
+
+test_that("metadata$reference_scheme is not created when metadata is NULL", {
+  # Create an eeg object without metadata
+  eeg <- make_eeg()
+  eeg$metadata <- NULL  # explicitly remove metadata
   
   result <- eeg_rereference(eeg, ref = "average")
   
-  expect_equal(result$meta$reference, "average")
+  # $reference should still be updated (always)
+  expect_equal(result$reference, "Common Average")
+  
+  # $metadata should still be NULL (function only updates if it exists)
+  expect_null(result$metadata)
 })
 
-test_that("named channel ref sets eeg$meta$reference to the channel name", {
-  eeg      <- make_eeg(channel_names = c("Cz", "Pz", "M1", "M2"))
-  eeg$meta <- list()
-  
-  result <- eeg_rereference(eeg, ref = "M1")
-  
-  expect_equal(result$meta$reference, "M1")
-})
-
-test_that("linked ref sets eeg$meta$reference to 'M1+M2'", {
-  eeg      <- make_eeg(channel_names = c("Cz", "Pz", "M1", "M2"))
-  eeg$meta <- list()
-  
-  result <- eeg_rereference(eeg, ref = c("M1", "M2"))
-  
-  expect_equal(result$meta$reference, "M1+M2")
-})
-
-test_that("function runs without error when eeg$meta is NULL (standard object)", {
-  # The !is.null guard prevents the update from failing on standard objects.
+test_that("preprocessing_history preserves previous entries", {
   eeg <- make_eeg()
+  eeg$preprocessing_history <- list("Step 1: Imported data",
+                                    "Step 2: Filtered 0.1-30 Hz")
   
-  expect_no_error(eeg_rereference(eeg, ref = "average"))
+  result <- eeg_rereference(eeg, ref = "average")
+  
+  # Should have 3 entries now
+  expect_equal(length(result$preprocessing_history), 3)
+  
+  # First two entries should be unchanged
+  expect_equal(result$preprocessing_history[[1]], "Step 1: Imported data")
+  expect_equal(result$preprocessing_history[[2]], "Step 2: Filtered 0.1-30 Hz")
+  
+  # Third entry should be the rereferencing log
+  expect_match(result$preprocessing_history[[3]], "Re-referenced to: Common Average")
 })
 
 
 # ============================================================================
-#                   TEST SUITE 9 – Edge Cases and Robustness
+# TEST SUITE 9 – Edge Cases and Robustness
 # ============================================================================
 
 test_that("single-channel eeg referenced to average becomes all zeros", {
@@ -617,4 +674,24 @@ test_that("single time-point matrix is handled without error", {
   expect_equal(result$data[1, 1], 10 - 5/3, tolerance = 1e-10)
   expect_equal(result$data[2, 1],  0 - 5/3, tolerance = 1e-10)
   expect_equal(result$data[3, 1], -5 - 5/3, tolerance = 1e-10)
+})
+
+test_that("rereferencing can be chained: average → specific channel", {
+  # WHAT THIS TESTS: Multiple rereferencing operations in sequence should
+  # work correctly, with each operation's history logged independently.
+  eeg <- make_eeg(n_channels = 4, channel_names = c("Cz", "Pz", "M1", "M2"))
+  
+  # First: average reference
+  step1 <- eeg_rereference(eeg, ref = "average")
+  expect_equal(step1$reference, "Common Average")
+  expect_equal(length(step1$preprocessing_history), 1)
+  
+  # Second: re-reference to M1
+  step2 <- eeg_rereference(step1, ref = "M1")
+  expect_equal(step2$reference, "M1")
+  expect_equal(length(step2$preprocessing_history), 2)
+  
+  # Check both history entries
+  expect_match(step2$preprocessing_history[[1]], "Re-referenced to: Common Average")
+  expect_match(step2$preprocessing_history[[2]], "Re-referenced to: M1")
 })

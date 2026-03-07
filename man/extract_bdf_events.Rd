@@ -47,15 +47,17 @@ BioSemi BDF STATUS Channel Structure (per BioSemi format spec):
 \item Bits 16-23: System status (CMS, battery, etc.)
 \item Each sample = 24-bit value (3 bytes, little-endian)
 }
-}
-\section{Reference: https://www.biosemi.com/faq/file_format.htm}{
+
+Reference: https://www.biosemi.com/faq/file_format.htm
+
+==============================================================================
+
 Extract EVENT codes from BDF file or EEG object
 
 Extracts trigger/event codes from either a BDF file path or an already-loaded
 EEG object. When a file path is provided, it uses \code{read_bdf_native()}
 internally. When an EEG object is provided, it extracts events directly.
 }
-
 \examples{
 \dontrun{
   # Option 1: Extract from file directly

@@ -56,6 +56,9 @@ make_eeg <- function(n_channels    = 4,
   set.seed(seed)
   if (is.null(channel_names)) {
     channel_names <- paste0("Ch", seq_len(n_channels))
+  } else {
+    # Update n_channels to match the provided channel_names
+    n_channels <- length(channel_names)
   }
   data_mat <- matrix(rnorm(n_channels * n_timepoints, mean = 50, sd = 10),
                      nrow = n_channels,

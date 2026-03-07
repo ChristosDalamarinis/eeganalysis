@@ -804,7 +804,7 @@ test_that("eeg_psd_welch() per_epoch=TRUE stores 3-D epoch_power", {
 # ----------------------------------------------------------------------------
 test_that("eeg_psd_welch() on eeg_evoked returns power as named list", {
   evoked <- make_mock_evoked()
-  spec   <- eeg_psd_welch(evoked, verbose = FALSE)
+  spec <- eeg_psd_welch(evoked, window_length = 0.5, verbose = FALSE)
   expect_true(is.list(spec$power))
   expect_equal(sort(names(spec$power)), sort(evoked$conditions))
 })
@@ -1147,7 +1147,7 @@ test_that("eeg_band_power() absolute power values are non-negative", {
 # list (one data frame per condition), matching the $conditions vector.
 test_that("eeg_band_power() on eeg_evoked returns a named list of data frames", {
   evoked <- make_mock_evoked()
-  bp     <- eeg_band_power(evoked, verbose = FALSE)
+  bp     <- eeg_band_power(evoked, window_length = 0.5, verbose = FALSE)
   
   expect_true(is.list(bp))
   expect_equal(sort(names(bp)), sort(evoked$conditions))
@@ -1163,7 +1163,7 @@ test_that("eeg_band_power() on eeg_evoked returns a named list of data frames", 
 test_that("eeg_band_power() evoked: each condition df has correct columns and rows", {
   n_ch   <- 2L
   evoked <- make_mock_evoked(n_channels = n_ch)
-  bp     <- eeg_band_power(evoked, verbose = FALSE)
+  bp     <- eeg_band_power(evoked, window_length = 0.5, verbose = FALSE)
   
   for (cond in evoked$conditions) {
     expect_equal(nrow(bp[[cond]]), n_ch,

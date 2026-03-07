@@ -64,7 +64,10 @@
   type <- match.arg(type)
   idx  <- 0:(n - 1)
   switch(type,
-         hann     = 0.5  * (1 - cos(2 * pi * idx / (n - 1))),
+         hann     = {
+           w <- 0.5 * (1 - cos(2 * pi * idx / (n - 1)))
+           w / max(w)                          # normalise to unit peak
+         },
          hamming  = 0.54 - 0.46 * cos(2 * pi * idx / (n - 1)),
          blackman = 0.42 - 0.50 * cos(2 * pi * idx / (n - 1)) +
            0.08 * cos(4 * pi * idx / (n - 1)),

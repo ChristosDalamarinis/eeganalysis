@@ -778,7 +778,9 @@ test_that("eeg_psd_welch() more segments give lower PSD variance", {
 # ----------------------------------------------------------------------------
 test_that("eeg_psd_welch() on eeg_epochs returns 'eeg_spectrum'", {
   ep   <- make_mock_epochs()
-  spec <- eeg_psd_welch(ep, verbose = FALSE)
+  expect_warning(
+    spec <- eeg_psd_welch(ep, verbose = FALSE),
+    regexp = "exceeds signal length")
   expect_s3_class(spec, "eeg_spectrum")
   expect_equal(spec$input_class, "eeg_epochs")
 })
@@ -789,8 +791,8 @@ test_that("eeg_psd_welch() on eeg_epochs returns 'eeg_spectrum'", {
 test_that("eeg_psd_welch() per_epoch=TRUE stores 3-D epoch_power", {
   n_ch <- 2L; n_ep <- 4L; n_samp <- 256L
   ep   <- make_mock_epochs(n_channels = n_ch, n_epochs = n_ep, n_samp = n_samp)
-  
-  spec   <- eeg_psd_welch(ep, per_epoch = TRUE, verbose = FALSE)
+
+  spec <- eeg_psd_welch(ep, per_epoch = TRUE, window_length = 0.5, verbose = FALSE)  
   n_half <- floor(n_samp / 2L) + 1L
   
   expect_false(is.null(spec$epoch_power))

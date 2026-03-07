@@ -203,7 +203,7 @@ peak_freq <- function(pwr_vec, freqs) freqs[which.max(pwr_vec)]
 test_that(".make_window() returns a vector of the requested length", {
   for (type in c("hann", "hamming", "blackman", "none")) {
     w <- eeganalysis:::.make_window(128L, type)
-    expect_length(w, 128L,
+    expect_length(length(w), 128L,
                   info = paste("window type:", type))
   }
 })

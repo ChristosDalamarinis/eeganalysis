@@ -59,12 +59,9 @@ $conditions    - condition names (eeg_evoked input only)
 \itemize{
 \item method-specific fields (window_length, overlap, time_bandwidth, etc.)
 }
-}
-\section{Date: March 2026
-Status: In development}{
 
+============================================================================
 }
-
 \section{============================================================================
 INTERNAL HELPER FUNCTIONS}{
 Generate a spectral window vector

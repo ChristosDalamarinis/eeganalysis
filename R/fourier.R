@@ -45,8 +45,8 @@
 #'   + method-specific fields (window_length, overlap, time_bandwidth, etc.)
 #'
 #  Author: Christos Dalamarinis
-#' Date: March 2026
-#' Status: In development
+#  Date: March 2026
+#  Status: In development
 #' ============================================================================
 #'
 #'

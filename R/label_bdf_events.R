@@ -144,12 +144,12 @@ label_bdf_events <- function(events, verbose = TRUE) {
     cat("\n")
   }
   
-  # ========== STEP 5: Interactive prompt — one code at a time ==========
+  # ========== STEP 5: Interactive prompt - one code at a time ==========
   
   # Use a plain character vector indexed by position during the loop.
   # Name-based assignment (mapping[code] <- value) can silently fail when
   # the code strings from events$type carry a different encoding than the
-  # names vector — positional indexing (labels[i] <- value) is always safe.
+  # names vector - positional indexing (labels[i] <- value) is always safe.
   labels <- character(n_codes)
   
   for (i in seq_len(n_codes)) {
@@ -163,10 +163,10 @@ label_bdf_events <- function(events, verbose = TRUE) {
     
     raw_input <- trimws(readline(prompt = prompt_str))
     
-    # Empty input → auto-assign "unknown"
+    # Empty input to auto-assign "unknown"
     if (nchar(raw_input) == 0L) {
       labels[i] <- "unknown"
-      if (verbose) cat("         → assigned: 'unknown'\n")
+      if (verbose) cat("         -> assigned: 'unknown'\n")
     } else {
       labels[i] <- raw_input
     }
@@ -175,9 +175,9 @@ label_bdf_events <- function(events, verbose = TRUE) {
   # Build the named mapping vector after all labels are collected
   mapping <- setNames(labels, unique_codes)
   
-  # ========== STEP 6: Apply mapping — add 'label' column ==========
+  # ========== STEP 6: Apply mapping - add 'label' column ==========
   
-  # Use match() for lookup — avoids encoding-based name mismatches that can
+  # Use match() for lookup - avoids encoding-based name mismatches that can
   # occur with direct named-vector indexing (mapping[events$type]).
   # unname() ensures a plain character column with no inherited vector names.
   events$label <- unname(labels[match(events$type, unique_codes)])
@@ -194,7 +194,7 @@ label_bdf_events <- function(events, verbose = TRUE) {
     cat("  ", strrep("-", 36), "\n", sep = "")
     cat(sprintf("  %-12s  %-20s\n", "Code", "Label"))
     cat("  ", strrep("-", 36), "\n", sep = "")
-    # Iterate positionally — avoids runaway output if NA names exist
+    # Iterate positionally - avoids runaway output if NA names exist
     for (i in seq_along(unique_codes)) {
       if (!is.na(unique_codes[i]) && !is.na(labels[i])) {
         cat(sprintf("  %-12s  %-20s\n", unique_codes[i], labels[i]))
@@ -241,7 +241,7 @@ label_bdf_events <- function(events, verbose = TRUE) {
 #'   events_p1 <- label_bdf_events(events_p1)
 #'   mapping   <- attr(events_p1, "trigger_labels")
 #'
-#'   # Re-use for participant 2 — no prompts needed
+#'   # Re-use for participant 2 - no prompts needed
 #'   events_p2 <- extract_bdf_events("sub-02_task_eeg.bdf")
 #'   events_p2 <- apply_trigger_labels(events_p2, mapping)
 #' }
@@ -283,18 +283,18 @@ apply_trigger_labels <- function(events,
     if (verbose) {
       cat("[apply_trigger_labels] WARNING: ",
           length(unmapped),
-          " code(s) not found in mapping — assigned '",
+          " code(s) not found in mapping - assigned '",
           unmapped_label, "':\n", sep = "")
       cat("  ", paste(unmapped, collapse = ", "), "\n\n", sep = "")
     }
-    # Extend mapping vectors positionally — avoids name-encoding issues
+    # Extend mapping vectors positionally - avoids name-encoding issues
     mapping_codes  <- c(mapping_codes,  unmapped)
     mapping_labels <- c(mapping_labels, rep(unmapped_label, length(unmapped)))
   }
   
   # ========== Apply ==========
   
-  # Use match() for lookup — same encoding-safe approach as label_bdf_events()
+  # Use match() for lookup - same encoding-safe approach as label_bdf_events()
   events$label <- unname(mapping_labels[match(events$type, mapping_codes)])
   
   attr(events, "trigger_labels") <- setNames(mapping_labels, mapping_codes)

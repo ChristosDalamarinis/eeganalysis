@@ -283,7 +283,7 @@ test_that(".compute_dpss() tapers are mutually orthogonal", {
   for (i in 1:3) {
     for (j in (i + 1):4) {
       dot <- abs(sum(tapers[, i] * tapers[, j]))
-      expect_true(dot, 1e-8,
+      expect_true(dot < 1e-8,
                 info = paste("tapers", i, "and", j, "are not orthogonal"))
     }
   }

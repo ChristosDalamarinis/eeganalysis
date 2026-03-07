@@ -8,6 +8,10 @@
 # Date: March 2026
 # ==============================================================================
 #'
+#' =============================================================================
+#' Label BDF events with user-friendly labels via interactive prompts.
+#' =============================================================================
+#' 
 #' Displays a summary table of all unique trigger codes found in an events
 #' data frame, then prompts the user to provide a plain-text label for each
 #' one. Pressing Enter without typing a label assigns \code{"unknown"} to that

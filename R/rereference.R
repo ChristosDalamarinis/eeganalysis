@@ -1,13 +1,13 @@
 #' ============================================================
-#'                  EEG Re-referencing Utilities  
-#' ============================================================  
-#'  
-#' This module provides functions to re-reference EEG recordings to  
-#' different reference schemes (e.g., common average or selected channels)  
+#'                  EEG Re-referencing Utilities
+#' ============================================================
+#'
+#' This module provides functions to re-reference EEG recordings to
+#' different reference schemes (e.g., common average or selected channels)
 #' within the eeganalysis framework for downstream preprocessing and analysis.
-#'  
-#' Author: Christos Dalamarinis  
-#' Date: Jan - 2026  
+#'
+#' Author: Christos Dalamarinis
+#' Date: Jan - 2026
 #' ============================================================
 #'
 #' Re-reference EEG data
@@ -58,22 +58,15 @@ eeg_rereference <- function(eeg,
     eeg_out <- eeg
   }
   
-  # ---- get data matrix and channel names (adapt to your class) ----
-  # Example assumptions:
-  #   - signal matrix: eeg_out$signals  (channels x time or time x channels; adapt)
-  #   - channel names: eeg_out$chan_info$name
-  #
-  # Replace these with the actual field names of your package.
-  signals <- eeg_out$data # assuming channels x time from the "eeg_class.R"
+  # ---- get data matrix and channel names ----
+  signals   <- eeg_out$data       # channels x time
   chan_names <- eeg_out$channels
   
-  # check dimensions and orientation
-  # Here assume signals is samples x channels
+  # ---- validate dimensions ----
   if (nrow(signals) != length(chan_names)) {
     stop("Number of columns in signals does not match number of channel names.")
   }
   
-  # determine which channels to use as reference and as contributors
   # ---- handle exclude ----
   if (!is.null(exclude)) {
     if (is.numeric(exclude)) {
@@ -112,14 +105,10 @@ eeg_rereference <- function(eeg,
     }
   }
   
-  # ---- compute reference signal (samples x 1) ----
+  # ---- compute reference signal (1 value per time point) ----
   ref_signal <- colMeans(signals[ref_idx, , drop = FALSE], na.rm = TRUE)
   
-  # ---- subtract reference from all channels except excluded? ----
-  # Common practice: subtract from all EEG channels (including ref channels),
-  # but typically still exclude non-EEG channels (EOG, triggers) from being modified.
-  # Here we only modify contrib_idx and ref_idx, not excluded channels.
-  # If you want to modify all, replace 'contrib_idx' with 'seq_along(chan_names)'.
+  # ---- subtract reference from all non-excluded channels ----
   apply_idx <- contrib_idx
   
   signals[apply_idx, ] <- sweep(signals[apply_idx, , drop = FALSE],
@@ -127,17 +116,29 @@ eeg_rereference <- function(eeg,
                                 ref_signal,
                                 FUN = "-")
   
-  # update signals in object
+  # ---- update signals in object ----
   eeg_out$data <- signals
   
-  # optionally update metadata about reference
-  if (!is.null(eeg_out$meta)) {
-    eeg_out$meta$reference <- if (identical(ref, "average")) {
-      "average"
-    } else {
-      paste(chan_names[ref_idx], collapse = "+")
-    }
+  # ---- build reference label ----
+  ref_label <- if (identical(ref, "average")) {
+    "Common Average"
+  } else {
+    paste(chan_names[ref_idx], collapse = "+")
   }
+  
+  # ---- update $reference field (read by print.eeg) ----
+  eeg_out$reference <- ref_label
+  
+  # ---- update metadata$reference_scheme if metadata exists ----
+  if (!is.null(eeg_out$metadata)) {
+    eeg_out$metadata$reference_scheme <- ref_label
+  }
+  
+  # ---- append to preprocessing history ----
+  eeg_out$preprocessing_history <- c(
+    eeg_out$preprocessing_history,
+    list(paste0("Re-referenced to: ", ref_label))
+  )
   
   eeg_out
 }

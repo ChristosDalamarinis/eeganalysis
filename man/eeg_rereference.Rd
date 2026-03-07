@@ -2,11 +2,7 @@
 % Please edit documentation in R/rereference.R
 \name{eeg_rereference}
 \alias{eeg_rereference}
-\title{============================================================EEG Re-referencing Utilities
-
-This module provides functions to re-reference EEG recordings to
-different reference schemes (e.g., common average or selected channels)
-within the eeganalysis framework for downstream preprocessing and analysis.Author: Christos DalamarinisDate: Jan - 2026}
+\title{============================================================EEG Re-referencing Utilities}
 \usage{
 eeg_rereference(eeg, ref = "average", exclude = NULL, copy = TRUE)
 }
@@ -27,9 +23,14 @@ exclude from computing the reference (e.g., EOG, EMG).}
 An EEG object with updated reference.
 }
 \description{
-Re-reference EEG data
+This module provides functions to re-reference EEG recordings to
+different reference schemes (e.g., common average or selected channels)
+within the eeganalysis framework for downstream preprocessing and analysis.
 }
-\details{
+\section{Author: Christos Dalamarinis
+Date: Jan - 2026}{
+Re-reference EEG data
+
 Change the reference of EEG signals to a new set of reference channels
 or to the common average across channels.
 
@@ -43,6 +44,7 @@ reference).
 When one or several channels are specified in \code{ref}, the reference
 signal is the mean of those channels at each time point.
 }
+
 \examples{
 \dontrun{
 # Common average reference

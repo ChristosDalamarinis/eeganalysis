@@ -203,7 +203,7 @@ peak_freq <- function(pwr_vec, freqs) freqs[which.max(pwr_vec)]
 test_that(".make_window() returns a vector of the requested length", {
   for (type in c("hann", "hamming", "blackman", "none")) {
     w <- eeganalysis:::.make_window(128L, type)
-    expect_length(length(w), 128L,
+    expect_equal(length(w), 128L,
                   info = paste("window type:", type))
   }
 })
@@ -283,7 +283,7 @@ test_that(".compute_dpss() tapers are mutually orthogonal", {
   for (i in 1:3) {
     for (j in (i + 1):4) {
       dot <- abs(sum(tapers[, i] * tapers[, j]))
-      expect_lt(dot, 1e-8,
+      expect_true(dot, 1e-8,
                 info = paste("tapers", i, "and", j, "are not orthogonal"))
     }
   }

@@ -69,8 +69,11 @@
            w / max(w)                          # normalise to unit peak
          },
          hamming  = 0.54 - 0.46 * cos(2 * pi * idx / (n - 1)),
-         blackman = 0.42 - 0.50 * cos(2 * pi * idx / (n - 1)) +
-           0.08 * cos(4 * pi * idx / (n - 1)),
+         blackman = {
+           w <- 0.42 - 0.50 * cos(2 * pi * idx / (n - 1)) +
+             0.08 * cos(4 * pi * idx / (n - 1))
+           pmax(w, 0)
+         },
          none     = rep(1.0, n)
   )
 }

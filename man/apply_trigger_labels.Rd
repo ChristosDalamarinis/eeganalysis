@@ -43,7 +43,7 @@ multiple participants without re-entering labels each time.
   events_p1 <- label_bdf_events(events_p1)
   mapping   <- attr(events_p1, "trigger_labels")
 
-  # Re-use for participant 2 — no prompts needed
+  # Re-use for participant 2 - no prompts needed
   events_p2 <- extract_bdf_events("sub-02_task_eeg.bdf")
   events_p2 <- apply_trigger_labels(events_p2, mapping)
 }

@@ -58,7 +58,7 @@ For 'eeg_evoked' input one spectrum is computed per condition.
   # Continuous EEG
   spec <- eeg_fft(eeg, window = "hann")
 
-  # Epoched data — per-epoch power (e.g. for induced oscillations)
+  # Epoched data - per-epoch power (e.g. for induced oscillations)
   spec <- eeg_fft(epochs, per_epoch = TRUE)
 
   # Evoked (condition-wise spectra)

@@ -44,7 +44,7 @@
 #'   $conditions    - condition names (eeg_evoked input only)
 #'   + method-specific fields (window_length, overlap, time_bandwidth, etc.)
 #'
-#' Author: Christos Dalamarinis
+#  Author: Christos Dalamarinis
 #' Date: March 2026
 #' Status: In development
 #' ============================================================================

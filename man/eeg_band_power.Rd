@@ -50,11 +50,11 @@ case a Welch PSD is computed internally).
 \details{
 Default frequency bands follow standard EEG conventions:
 \itemize{
-\item delta: 0.5–4 Hz
-\item theta: 4–8 Hz
-\item alpha: 8–13 Hz
-\item beta:  13–30 Hz
-\item gamma: 30–100 Hz
+\item delta: 0.5-4 Hz
+\item theta: 4-8 Hz
+\item alpha: 8-13 Hz
+\item beta:  13-30 Hz
+\item gamma: 30-100 Hz
 }
 Custom bands can be supplied as a named list of \code{c(low_hz, high_hz)} pairs.
 }

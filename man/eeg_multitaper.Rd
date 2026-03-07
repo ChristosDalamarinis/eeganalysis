@@ -19,7 +19,7 @@ eeg_multitaper(
 
 \item{time_bandwidth}{Numeric. Time-bandwidth product NW (default: 4).
 Controls bias-variance trade-off. Larger values = more smoothing.
-Typical EEG range: 2–8.}
+Typical EEG range: 2-8.}
 
 \item{n_tapers}{Integer or NULL. Number of tapers. NULL (default)
 uses 2 * time_bandwidth - 1, the maximum that maintains good spectral

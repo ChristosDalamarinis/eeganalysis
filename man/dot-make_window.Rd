@@ -60,8 +60,7 @@ $conditions    - condition names (eeg_evoked input only)
 \item method-specific fields (window_length, overlap, time_bandwidth, etc.)
 }
 }
-\section{Author: Christos Dalamarinis
-Date: March 2026
+\section{Date: March 2026
 Status: In development}{
 
 }

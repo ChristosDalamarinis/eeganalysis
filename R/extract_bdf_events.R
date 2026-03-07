@@ -1,5 +1,5 @@
 #' ==============================================================================
-#' Extract EVENT codes from BDF STATUS channel
+#'              Extract EVENT codes from BDF STATUS channel
 #' ==============================================================================
 #'
 #' Function to read BioSemi BDF files and extract trigger/event codes 
@@ -14,6 +14,9 @@
 #' - Each sample = 24-bit value (3 bytes, little-endian)
 #' 
 #' Reference: https://www.biosemi.com/faq/file_format.htm
+#' 
+#' 
+#' 
 #' ==============================================================================
 #'
 #' Extract EVENT codes from BDF file or EEG object

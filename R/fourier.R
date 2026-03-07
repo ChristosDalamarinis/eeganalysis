@@ -234,7 +234,7 @@
 #'   # Continuous EEG
 #'   spec <- eeg_fft(eeg, window = "hann")
 #'
-#'   # Epoched data — per-epoch power (e.g. for induced oscillations)
+#'   # Epoched data - per-epoch power (e.g. for induced oscillations)
 #'   spec <- eeg_fft(epochs, per_epoch = TRUE)
 #'
 #'   # Evoked (condition-wise spectra)
@@ -836,7 +836,7 @@ eeg_psd_welch <- function(input_obj,
 #' @param input_obj      An object of class 'eeg', 'eeg_epochs', or 'eeg_evoked'.
 #' @param time_bandwidth Numeric. Time-bandwidth product NW (default: 4).
 #'   Controls bias-variance trade-off. Larger values = more smoothing.
-#'   Typical EEG range: 2–8.
+#'   Typical EEG range: 2-8.
 #' @param n_tapers       Integer or NULL. Number of tapers. NULL (default)
 #'   uses 2 * time_bandwidth - 1, the maximum that maintains good spectral
 #'   concentration. Must be >= 1 and <= 2 * time_bandwidth - 1.
@@ -1131,11 +1131,11 @@ eeg_multitaper <- function(input_obj,
 #'
 #' Default frequency bands follow standard EEG conventions:
 #' \itemize{
-#'   \item delta: 0.5–4 Hz
-#'   \item theta: 4–8 Hz
-#'   \item alpha: 8–13 Hz
-#'   \item beta:  13–30 Hz
-#'   \item gamma: 30–100 Hz
+#'   \item delta: 0.5-4 Hz
+#'   \item theta: 4-8 Hz
+#'   \item alpha: 8-13 Hz
+#'   \item beta:  13-30 Hz
+#'   \item gamma: 30-100 Hz
 #' }
 #' Custom bands can be supplied as a named list of \code{c(low_hz, high_hz)} pairs.
 #'

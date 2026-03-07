@@ -1,5 +1,5 @@
 # ==============================================================================
-# label_bdf_events.R
+#                             Label EEG Events
 # ==============================================================================
 #
 # Interactive labeling of BDF trigger codes
@@ -7,8 +7,8 @@
 # Author: Christos Dalamarinis
 # Date: March 2026
 # ==============================================================================
-
-
+#
+#
 #' Interactively label BDF trigger codes
 #'
 #' Displays a summary table of all unique trigger codes found in an events
@@ -20,6 +20,10 @@
 #'
 #' Author: Christos Dalamarinis
 #' Date: March 2026
+#' 
+#' ============================================================================
+#' label_bdf_events()
+#' ============================================================================
 #'
 #' @param events  Data frame returned by \code{extract_bdf_events()}.
 #'   Must contain at minimum the columns \code{type} and \code{onset_time}.
@@ -200,8 +204,9 @@ label_bdf_events <- function(events, verbose = TRUE) {
 }
 
 
-# ==============================================================================
-#' Apply a pre-built trigger label mapping to an events data frame
+#' ==============================================================================
+#'        Apply a pre-built trigger label mapping to an events data frame
+#' ==============================================================================
 #'
 #' Non-interactive companion to \code{\link{label_bdf_events}}. Applies an
 #' existing code-to-label mapping (typically the \code{trigger_labels}

@@ -2,7 +2,7 @@
 % Please edit documentation in R/label_bdf_events.R
 \name{apply_trigger_labels}
 \alias{apply_trigger_labels}
-\title{Apply a pre-built trigger label mapping to an events data frame}
+\title{==============================================================================Apply a pre-built trigger label mapping to an events data frame}
 \usage{
 apply_trigger_labels(
   events,

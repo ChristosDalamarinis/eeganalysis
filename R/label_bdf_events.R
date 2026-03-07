@@ -274,8 +274,10 @@ apply_trigger_labels <- function(events,
   
   # ========== Detect any codes not covered by the mapping ==========
   
+  mapping_codes <- names(mapping)
+  mapping_labels <- unname(mapping)
   present_codes <- unique(events$type)
-  unmapped      <- setdiff(present_codes, names(mapping))
+  unmapped      <- present_codes[!present_codes %in% mapping_codes]
   
   if (length(unmapped) > 0) {
     if (verbose) {
@@ -285,17 +287,17 @@ apply_trigger_labels <- function(events,
           unmapped_label, "':\n", sep = "")
       cat("  ", paste(unmapped, collapse = ", "), "\n\n", sep = "")
     }
-    extra          <- setNames(rep(unmapped_label, length(unmapped)), unmapped)
-    full_mapping   <- c(mapping, extra)
-  } else {
-    full_mapping <- mapping
+    # Extend mapping vectors positionally — avoids name-encoding issues
+    mapping_codes  <- c(mapping_codes,  unmapped)
+    mapping_labels <- c(mapping_labels, rep(unmapped_label, length(unmapped)))
   }
   
   # ========== Apply ==========
   
-  events$label <- full_mapping[events$type]
+  # Use match() for lookup — same encoding-safe approach as label_bdf_events()
+  events$label <- unname(mapping_labels[match(events$type, mapping_codes)])
   
-  attr(events, "trigger_labels") <- full_mapping
+  attr(events, "trigger_labels") <- setNames(mapping_labels, mapping_codes)
   
   invisible(events)
 }

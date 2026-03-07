@@ -7,9 +7,6 @@
 # Author: Christos Dalamarinis
 # Date: March 2026
 # ==============================================================================
-#
-#
-#' Interactively label BDF trigger codes
 #'
 #' Displays a summary table of all unique trigger codes found in an events
 #' data frame, then prompts the user to provide a plain-text label for each
@@ -17,13 +14,7 @@
 #' code. The resulting labels are stored in a new \code{label} column and the
 #' full code-to-label mapping is attached as the \code{trigger_labels}
 #' attribute so it can be inspected or reused programmatically.
-#'
-#' Author: Christos Dalamarinis
-#' Date: March 2026
 #' 
-#' ============================================================================
-#' label_bdf_events()
-#' ============================================================================
 #'
 #' @param events  Data frame returned by \code{extract_bdf_events()}.
 #'   Must contain at minimum the columns \code{type} and \code{onset_time}.

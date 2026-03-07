@@ -100,7 +100,7 @@ eeganalysis
 │   │   └── print.eeg()                   ← Display eeg object nicely
 │   │
 │   ├── read_bdf_native.R                 ← BioSemi file import
-│   │   └── read_bdf_native()             ← Import .bdf files (main function)
+│   │   └── read_bdf_native()             ← Import .bdf files main function
 │   │
 │   ├── extract_bdf_events()
 │   │   ├── extract_bdf_events()          ← Parse trigger codes from status channel

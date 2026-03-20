@@ -236,6 +236,32 @@ read_bdf_native <- function(file_path, verbose = TRUE, chunk_records = 100) {
     cat("  Data records: ", header$nDataRecords, "\n", sep = "")
   }
   
+  # ========== HANDLE n_data_records = -1 ==========  <-  added on 20/03/2026 to account for;
+  # BDF/EDF spec allows n_data_records = -1 when the recording software crashed or was force-closed 
+  # before it could write the final record count back to the header. 
+  # Without this fix, n_samples_final becomes negative (e.g. 1024 * -1 = -1024), 
+  # causing matrix() to crash with "invalid ncol value (< 0)". 
+  # The actual EEG data in the file is intact -- we just recover the true record count 
+  # from the file size instead of trusting the header value.
+  if (header$nDataRecords == -1) {
+    bytes_per_record <- sum(header$nSamplesPerRecord) * 3L
+    file_size        <- file.info(file_path)$size
+    computed_records <- floor((file_size - header$headerBytes) / bytes_per_record)
+    
+    if (computed_records <= 0) {
+      stop("Could not recover n_data_records from file size. File may be corrupt.", 
+           call. = FALSE)
+    }
+    
+    header$nDataRecords <- computed_records
+    header$totalSamples <- header$nSamplesPerRecord * computed_records
+    
+    if (verbose) {
+      cat("  NOTE: n_data_records was -1 (file not properly finalised)\n")
+      cat("  Recovered from file size:", computed_records, "records\n")
+    }
+  }
+  
   # ========== IDENTIFY STATUS CHANNEL ==========
   status_idx <- which(tolower(header$labels) == "status")
   if (length(status_idx) == 0) {

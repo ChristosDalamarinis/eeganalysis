@@ -88,9 +88,39 @@ eeg_summary <- function(eeg_obj,
   # Status channel — always excluded from stats
   status_idx <- which(grepl("^status$", tolower(all_channels)))
   
-  # EXG channels — use existing detect_external_channels() from setexchannels.R
-  exg_names  <- detect_external_channels(all_channels)
-  exg_idx    <- which(all_channels %in% exg_names)
+  # EXG channels — two-pass detection:
+  #
+  # Pass 1: detect_external_channels() catches original names (e.g. "EXG1")
+  # Pass 2: regex fallback catches renamed channels where the original name
+  #         is preserved in parentheses by apply_external_labels(keep_original=TRUE)
+  #         e.g. "MASTOID LEFT (EXG5)", "EOG LEFT (EXG1)", "ECG (EXG3)"
+  #
+  # Known external name patterns to look for inside parentheses:
+  #   EXG1-EXG8, GSR1-GSR2, Plet, Temp, Resp, Erg1-Erg2
+  
+  exg_pattern <- paste0(
+    "\\(",                          # opening parenthesis
+    "(",                            # start capture group
+    "EXG[1-8]",                     # BioSemi external electrodes
+    "|GSR[12]",                     # Galvanic skin response
+    "|Plet",                        # Plethysmograph
+    "|Temp",                        # Temperature
+    "|Resp",                        # Respiration
+    "|Erg[12]",                     # Ergo/AUX
+    ")",                            # end capture group
+    "\\)"                           # closing parenthesis
+  )
+  
+  # Pass 1 — original names
+  exg_names_pass1 <- detect_external_channels(all_channels)
+  
+  # Pass 2 — renamed channels (keep_original = TRUE pattern)
+  exg_names_pass2 <- all_channels[grepl(exg_pattern, all_channels,
+                                        ignore.case = TRUE)]
+  
+  # Combine both passes, remove duplicates
+  exg_names <- unique(c(exg_names_pass1, exg_names_pass2))
+  exg_idx   <- which(all_channels %in% exg_names)
   
   # EEG channels — everything that is not Status and not EXG
   eeg_idx <- setdiff(seq_along(all_channels), c(status_idx, exg_idx))

@@ -245,7 +245,7 @@ eeg_summary <- function(eeg_obj,
   cat("  Amplitude range : ", round(min(eeg_stats$min_uv), 2),
       "  to  ", round(max(eeg_stats$max_uv), 2), "  µV\n", sep = "")
   cat("  Mean amplitude  : ", round(mean(eeg_stats$mean_uv), 2), "  µV\n", sep = "")
-  cat("  Global std      : ", global_std, "  µV  (all channels pooled — matches MNE)\n", sep = "")
+  cat("  Global std      : ", global_std, "  µV  (all channels pooled)\n", sep = "")
   cat("  Median std      : ", round(median(eeg_stats$std_uv), 2), "  µV  (median per-channel std)\n", sep = "")
   cat("  Std range       : ", round(min(eeg_stats$std_uv), 2),
       "  to  ", round(max(eeg_stats$std_uv), 2), "  µV\n", sep = "")

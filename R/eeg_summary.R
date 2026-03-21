@@ -14,7 +14,6 @@
 #'
 #' Author: Christos Dalamarinis
 #' Date: March 2026
-#' Status: Not tested with a testfile - Pending 21/03/2026
 #' ============================================================================
 #'
 #' Full Diagnostic Summary of an EEG Object
@@ -112,7 +111,7 @@ eeg_summary <- function(eeg_obj,
     "\\)"                           # closing parenthesis
   )
   
-  # Pass 1 - original names
+  # Pass 1 — original names
   exg_names_pass1 <- detect_external_channels(all_channels)
   
   # Pass 2 — renamed channels (keep_original = TRUE pattern)
@@ -158,6 +157,10 @@ eeg_summary <- function(eeg_obj,
   
   eeg_stats <- .channel_stats(eeg_obj$data, eeg_idx, all_channels)
   exg_stats <- .channel_stats(eeg_obj$data, exg_idx, all_channels)
+  
+  # Global std — all EEG channels and all timepoints treated as one pool
+  # This matches how MNE computes its "Std deviation" figure
+  global_std <- round(sd(as.vector(eeg_obj$data[eeg_idx, ])), 2)
   
   # ========== FLAG SUSPICIOUS EEG CHANNELS ==========
   
@@ -242,7 +245,8 @@ eeg_summary <- function(eeg_obj,
   cat("  Amplitude range : ", round(min(eeg_stats$min_uv), 2),
       "  to  ", round(max(eeg_stats$max_uv), 2), "  µV\n", sep = "")
   cat("  Mean amplitude  : ", round(mean(eeg_stats$mean_uv), 2), "  µV\n", sep = "")
-  cat("  Median std      : ", round(median(eeg_stats$std_uv), 2), "  µV\n", sep = "")
+  cat("  Global std      : ", global_std, "  µV  (all channels pooled — matches MNE)\n", sep = "")
+  cat("  Median std      : ", round(median(eeg_stats$std_uv), 2), "  µV  (median per-channel std)\n", sep = "")
   cat("  Std range       : ", round(min(eeg_stats$std_uv), 2),
       "  to  ", round(max(eeg_stats$std_uv), 2), "  µV\n", sep = "")
   

@@ -42,7 +42,7 @@ Higher values create a steeper roll-off but increase
 computation time and risk of edge artefacts.
 For bandpass, the effective order is doubled
 (highpass + lowpass applied sequentially).
-Typical range: 2 to 8. Default: 4.}
+Typical range: 2–8. Default: 4.}
 
 \item{channels}{Character or integer vector. Channel names or indices to
 filter. If \code{NULL} (default), all channels are filtered.
@@ -52,17 +52,17 @@ Example: \code{c("Cz", "Pz", "Oz")} or \code{1:64}.}
 
 \item{zero_phase}{Logical. If \code{TRUE} (default), uses forward-backward
 filtering (\code{filtfilt}) which produces zero phase
-distortion / essential for ERP latency measurements.
+distortion — essential for ERP latency measurements.
 If \code{FALSE}, uses one-pass causal filtering
 (\code{filter}), which is faster but introduces phase
 delay. Only use \code{FALSE} for exploratory inspection.}
 
 \item{method}{Character string specifying the filter design method:
 \describe{
-\item{"butter"}{(default) Butterworth filter is maximally
+\item{"butter"}{(default) Butterworth filter — maximally
 flat passband, no ripple. Recommended for
 all standard EEG analyses.}
-\item{"fir"}{Finite Impulse Response filter is linear phase
+\item{"fir"}{Finite Impulse Response filter — linear phase
 by design, no phase distortion even in
 one-pass mode. Computationally heavier.
 Requires the \code{signal} package.}
@@ -83,7 +83,7 @@ Applied after bandpass filtering.}
 
 \item{notch_bandwidth}{Numeric. Bandwidth in Hz around \code{notch_freq}
 to attenuate. Default: 2 (i.e., notch spans
-\code{notch_freq plus/minus 1 Hz}).
+\code{notch_freq ± 1 Hz}).
 Only used when \code{notch_freq} is not \code{NULL}.}
 
 \item{verbose}{Logical. If \code{TRUE} (default), prints a summary of
@@ -118,11 +118,11 @@ The module implements Butterworth filters (highpass, lowpass, bandpass, and
 notch) with zero-phase forward-backward filtering to preserve temporal
 accuracy of neural events. Filter parameters follow standard EEG analysis
 conventions and integrate seamlessly with the eeganalysis pipeline.
-
-============================================================================
 }
-\section{============================================================================
-Apply a Bandpass Filter to EEG Data}{
+\section{Author: Christos Dalamarinis
+Date: 2026}{
+Apply a Bandpass Filter to EEG Data
+
 Filters EEG data by attenuating frequencies outside a specified passband.
 Supports highpass-only, lowpass-only, or true bandpass filtering using a
 zero-phase Butterworth filter applied with forward-backward (filtfilt)
@@ -166,13 +166,13 @@ Increase padding when using high filter orders or very low cutoffs.
 
 \examples{
 \dontrun{
-  # Standard ERP bandpass (0.1 to 40 Hz)
+  # Standard ERP bandpass (0.1 – 40 Hz)
   eeg_filt <- eeg_bandpass(eeg, low_freq = 0.1, high_freq = 40)
 
-  # Highpass only removes DC drift
+  # Highpass only — remove DC drift
   eeg_filt <- eeg_bandpass(eeg, low_freq = 0.5, high_freq = NULL)
 
-  # Lowpass only smooths signal
+  # Lowpass only — smooth signal
   eeg_filt <- eeg_bandpass(eeg, low_freq = NULL, high_freq = 40)
 
   # Bandpass + 50 Hz notch for European line noise

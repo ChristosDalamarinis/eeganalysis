@@ -53,7 +53,8 @@ setexchannels.R. The Status channel is automatically excluded from
 all statistical computations.
 }
 \section{Author: Christos Dalamarinis
-Date: March 2026}{
+Date: March 2026
+Status: Not tested with a testfile - Pending 21/03/2026}{
 Full Diagnostic Summary of an EEG Object
 
 Produces a detailed report of an eeg object, split into a clean EEG

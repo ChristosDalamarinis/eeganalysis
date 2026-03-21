@@ -941,9 +941,11 @@ eeg_notch <- function(eeg_obj,
   return(notched_eeg)
 }
 
-# ============================================================================
-#
+#' ============================================================================
+#'
 #' Apply Bandpass and Optional Notch Filtering to EEG Data
+#' 
+#' ============================================================================
 #'
 #' A unified wrapper that combines \code{eeg_bandpass()} and \code{eeg_notch()}
 #' into a single call. Applies bandpass filtering first (to set the frequency

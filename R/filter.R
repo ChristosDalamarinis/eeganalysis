@@ -908,12 +908,10 @@ eeg_notch <- function(eeg_obj,
   return(notched_eeg)
 }
 
-#' ============================================================================
+# ============================================================================
+#
+#' Apply Bandpass and Optional Notch Filtering to EEG Data
 #'
-#'          Apply Bandpass and Optional Notch Filtering to EEG Data
-#'
-#' ============================================================================
-#' 
 #' A unified wrapper that combines \code{eeg_bandpass()} and \code{eeg_notch()}
 #' into a single call. Applies bandpass filtering first (to set the frequency
 #' window of interest), then optionally applies a notch filter (to remove line
@@ -946,6 +944,13 @@ eeg_notch <- function(eeg_obj,
 #' @param filter_order Integer. Order of the Butterworth filter applied for
 #'                     both bandpass and notch stages. Default: \code{4}.
 #'
+#' @param method Character string specifying the filter design method.
+#'               \code{"butter"} (default) uses a Butterworth filter —
+#'               smooth, flat passband, recommended for all standard EEG work.
+#'               \code{"fir"} uses a Finite Impulse Response filter.
+#'               Only applies to the bandpass stage — the notch always uses
+#'               Butterworth.
+#'
 #' @param channels Character or integer vector. Channel names or indices to
 #'                 filter. \code{NULL} (default) filters all channels.
 #'
@@ -961,7 +966,7 @@ eeg_notch <- function(eeg_obj,
 #'
 #' @return An object of class 'eeg' with filtered data and updated
 #'   \code{preprocessing_history}. If \code{notch_freq} is not \code{NULL},
-#'   the history will contain two entries, one for the bandpass and one for
+#'   the history will contain two entries — one for the bandpass and one for
 #'   the notch.
 #'
 #' @examples
@@ -972,7 +977,7 @@ eeg_notch <- function(eeg_obj,
 #'                           high_freq  = 40,
 #'                           notch_freq = 50)
 #'
-#'   # Bandpass only - no notch
+#'   # Bandpass only — no notch
 #'   eeg_clean <- eeg_filter(data4, low_freq = 0.1, high_freq = 40)
 #'
 #'   # Bandpass + notch + harmonics, EEG channels only
@@ -1003,6 +1008,7 @@ eeg_filter <- function(eeg_obj,
                        notch_bandwidth  = 2,
                        notch_harmonics  = FALSE,
                        filter_order     = 4,
+                       method           = c("butter", "fir"),
                        channels         = NULL,
                        zero_phase       = TRUE,
                        padding          = NULL,
@@ -1013,6 +1019,8 @@ eeg_filter <- function(eeg_obj,
   if (!inherits(eeg_obj, "eeg")) {
     stop("'eeg_obj' must be an object of class 'eeg'.", call. = FALSE)
   }
+  
+  method <- match.arg(method)
   
   if (is.null(low_freq) && is.null(high_freq) && is.null(notch_freq)) {
     stop("At least one of 'low_freq', 'high_freq', or 'notch_freq' must be ",
@@ -1028,6 +1036,7 @@ eeg_filter <- function(eeg_obj,
       low_freq     = low_freq,
       high_freq    = high_freq,
       filter_order = filter_order,
+      method       = method,
       channels     = channels,
       zero_phase   = zero_phase,
       padding      = padding,

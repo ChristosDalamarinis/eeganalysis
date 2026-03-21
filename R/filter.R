@@ -1040,7 +1040,7 @@ eeg_filter <- function(eeg_obj,
                        notch_freq       = NULL,
                        notch_bandwidth  = 2,
                        notch_harmonics  = FALSE,
-                       filter_order     = 4,
+                       filter_order     = 4,                   # Determines how sharp the frequency cut is at the edges of the filter window.
                        method           = c("butter", "fir"),
                        channels         = NULL,
                        zero_phase       = TRUE,

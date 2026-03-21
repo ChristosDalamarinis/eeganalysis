@@ -14,6 +14,7 @@
 #'
 #' Author: Christos Dalamarinis
 #' Date: March 2026
+#' Status: Not tested with a testfile - Pending 21/03/2026
 #' ============================================================================
 #'
 #' Full Diagnostic Summary of an EEG Object

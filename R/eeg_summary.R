@@ -111,7 +111,7 @@ eeg_summary <- function(eeg_obj,
     "\\)"                           # closing parenthesis
   )
   
-  # Pass 1 — original names
+  # Pass 1 - original names
   exg_names_pass1 <- detect_external_channels(all_channels)
   
   # Pass 2 — renamed channels (keep_original = TRUE pattern)

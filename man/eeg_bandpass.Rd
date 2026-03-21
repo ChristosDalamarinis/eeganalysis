@@ -120,7 +120,8 @@ accuracy of neural events. Filter parameters follow standard EEG analysis
 conventions and integrate seamlessly with the eeganalysis pipeline.
 }
 \section{Author: Christos Dalamarinis
-Date: 2026}{
+Date: Feb - 2026
+Status: Not tested with a testfile since i made changes on 21/03/2026}{
 Apply a Bandpass Filter to EEG Data
 
 Filters EEG data by attenuating frequencies outside a specified passband.

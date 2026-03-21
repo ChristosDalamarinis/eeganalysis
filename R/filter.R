@@ -13,8 +13,8 @@
 #' conventions and integrate seamlessly with the eeganalysis pipeline.
 #'
 #' Author: Christos Dalamarinis
-#' Date: Feb - 2026
-#' Status: Not tested with a testfile since i made changes on 21/03/2026
+#' Date: 2026
+#' Status: Not tested with testfiles since a major update took place on 21/03/2026
 #' ============================================================================
 #'
 #' Apply a Bandpass Filter to EEG Data
@@ -323,12 +323,38 @@ eeg_bandpass <- function(eeg_obj,
          "integer vector of indices.", call. = FALSE)
   }
   
+  # ========== AUTO-CALCULATE FIR ORDER (MNE-STYLE) ==========
+  # For FIR, override filter_order with MNE's automatic rule:
+  #   order = round(3.3 * sampling_rate / min_cutoff_freq)
+  # This ensures the filter window is long enough to resolve the lowest
+  # cutoff frequency, matching MNE's firwin behaviour exactly.
+  # For Butterworth, filter_order is used as-is (small values are fine).
+  
+  if (method == "fir") {
+    min_cutoff <- min(c(low_freq, high_freq), na.rm = TRUE)
+    fir_order  <- round(3.3 * eeg_obj$sampling_rate / min_cutoff)
+    # Ensure odd length (required for symmetric linear-phase FIR)
+    if (fir_order %% 2 == 0) fir_order <- fir_order + 1L
+    if (verbose) {
+      cat("  FIR order (auto):     ", fir_order,
+          "  [MNE rule: 3.3 × sr / min_cutoff]\n")
+    }
+  }
+  
   # ========== RESOLVE PADDING ==========
   
   n_timepoints <- ncol(eeg_obj$data)
   
   if (is.null(padding)) {
-    padding <- 3L * as.integer(filter_order)
+    if (method == "fir") {
+      # For FIR: pad by half the filter length (standard overlap-add convention)
+      # Cap at 10% of signal length to avoid excessive memory use
+      fir_half   <- fir_order %/% 2
+      max_pad    <- as.integer(floor(n_timepoints * 0.10))
+      padding    <- min(fir_half, max_pad)
+    } else {
+      padding <- 3L * as.integer(filter_order)
+    }
   } else {
     if (!is.numeric(padding) || length(padding) != 1 || padding < 0 ||
         padding %% 1 != 0) {
@@ -363,8 +389,9 @@ eeg_bandpass <- function(eeg_obj,
     }
     
     cat("  Filter design:        ",
-        if (method == "butter") "Butterworth" else "FIR", "\n")
-    cat("  Filter order:         ", filter_order, "\n")
+        if (method == "butter") "Butterworth" else "FIR (firwin / Hamming)", "\n")
+    cat("  Filter order:         ",
+        if (method == "fir") fir_order else filter_order, "\n")
     cat("  Zero-phase:           ", if (zero_phase) "Yes (filtfilt)" else "No (causal)", "\n")
     cat("  Padding:              ", padding, " samples\n")
     
@@ -406,36 +433,94 @@ eeg_bandpass <- function(eeg_obj,
     }
     
   } else {
-    # FIR design via fir1 (requires signal package)
-    # fir1 expects filter length (order + 1 must be odd for symmetric FIR)
-    fir_len <- filter_order * 2 + 1
+    # ---- FIR design: firwin-style Hamming window (matches MNE) ----
+    # firwin builds a linear-phase FIR kernel by multiplying an ideal
+    # sinc impulse response with a Hamming window, then normalising.
+    # This is identical to scipy.signal.firwin (MNE's default).
+    
+    .firwin_hamming <- function(n_taps, cutoff_norm, pass_type = "low") {
+      # n_taps      : filter length (must be odd for linear phase)
+      # cutoff_norm : cutoff frequency normalised to [0, 1] (1 = Nyquist)
+      # pass_type   : "low" or "high"
+      m      <- (n_taps - 1) / 2
+      k      <- seq(-m, m)
+      # Ideal sinc lowpass kernel
+      h <- ifelse(k == 0,
+                  2 * cutoff_norm,
+                  sin(2 * pi * cutoff_norm * k) / (pi * k))
+      # Hamming window
+      w <- 0.54 - 0.46 * cos(2 * pi * seq(0, n_taps - 1) / (n_taps - 1))
+      h <- h * w
+      # Normalise to unit gain at DC (lowpass) or Nyquist (highpass)
+      h <- h / sum(h)
+      # Spectral inversion for highpass
+      if (pass_type == "high") {
+        h        <- -h
+        h[m + 1] <- h[m + 1] + 1
+      }
+      h
+    }
     
     if (!is.null(W_low)) {
-      hp_filt <- signal::fir1(fir_len - 1, W_low, type = "high")
+      hp_filt <- .firwin_hamming(fir_order, W_low,  pass_type = "high")
     }
     if (!is.null(W_high)) {
-      lp_filt <- signal::fir1(fir_len - 1, W_high, type = "low")
+      lp_filt <- .firwin_hamming(fir_order, W_high, pass_type = "low")
     }
     if (!is.null(notch_freq)) {
-      W_notch_low  <- (notch_freq - notch_bandwidth / 2) / nyquist
-      W_notch_high <- (notch_freq + notch_bandwidth / 2) / nyquist
-      notch_filt   <- signal::fir1(fir_len - 1,
-                                   c(W_notch_low, W_notch_high),
-                                   type = "stop")
+      # Band-stop = 1 − bandpass; build as lowpass + highpass combined
+      W_nl   <- (notch_freq - notch_bandwidth / 2) / nyquist
+      W_nh   <- (notch_freq + notch_bandwidth / 2) / nyquist
+      h_lp   <- .firwin_hamming(fir_order, W_nl,  pass_type = "low")
+      h_hp   <- .firwin_hamming(fir_order, W_nh,  pass_type = "high")
+      notch_filt <- h_lp + h_hp
+    }
+  }
+  
+  # ========== FFT-BASED CONVOLUTION HELPER ==========
+  # Replaces sample-by-sample loop with overlap-add FFT convolution.
+  # Equivalent to MNE's approach: same result, dramatically faster for
+  # large FIR orders.
+  
+  .fft_convolve_fir <- function(x, h, zero_ph) {
+    n_sig  <- length(x)
+    n_h    <- length(h)
+    n_fft  <- nextn(n_sig + n_h - 1, factors = 2)  # next power of 2
+    
+    X      <- fft(c(x, rep(0, n_fft - n_sig)))
+    H      <- fft(c(h, rep(0, n_fft - n_h)))
+    y_full <- Re(fft(X * H, inverse = TRUE)) / n_fft
+    
+    # Trim to original signal length (causal output)
+    delay  <- (n_h - 1) %/% 2
+    y      <- y_full[seq(delay + 1, delay + n_sig)]
+    
+    if (zero_ph) {
+      # Second pass (time-reversed) to cancel phase — matches filtfilt
+      y_rev  <- rev(y)
+      Xr     <- fft(c(y_rev, rep(0, n_fft - n_sig)))
+      yr_full <- Re(fft(Xr * H, inverse = TRUE)) / n_fft
+      y      <- rev(yr_full[seq(delay + 1, delay + n_sig)])
+    }
+    y
+  }
+  
+  # ========== UNIFIED APPLY HELPER ==========
+  # Routes to FFT convolution (FIR) or filtfilt/filter (Butterworth)
+  
+  .apply_filter <- function(signal_vec, filt_obj) {
+    if (method == "fir") {
+      .fft_convolve_fir(signal_vec, filt_obj, zero_phase)
+    } else if (zero_phase) {
+      signal::filtfilt(filt_obj, signal_vec)
+    } else {
+      as.numeric(signal::filter(filt_obj, signal_vec))
     }
   }
   
   # ========== APPLY FILTERING CHANNEL BY CHANNEL ==========
   
   filtered_data <- eeg_obj$data  # copy; unselected channels untouched
-  
-  .apply_filter <- function(signal_vec, filt_obj) {
-    if (zero_phase) {
-      signal::filtfilt(filt_obj, signal_vec)
-    } else {
-      as.numeric(signal::filter(filt_obj, signal_vec))
-    }
-  }
   
   # Initialise progress bar (only when verbose)
   if (verbose) {
@@ -824,6 +909,7 @@ eeg_notch <- function(eeg_obj,
   }
   
   # ========== DESIGN FILTER OBJECTS FOR EACH NOTCH FREQUENCY ==========
+  # Notch always uses Butterworth band-stop (best choice for narrow notches)
   
   .make_notch_filter <- function(nf) {
     W_low  <- (nf - bandwidth / 2) / nyquist
@@ -833,17 +919,39 @@ eeg_notch <- function(eeg_obj,
   
   notch_filters <- lapply(notch_freqs, .make_notch_filter)
   
-  # ========== APPLY FILTERING ==========
+  # ========== FFT-BASED CONVOLUTION HELPER ==========
+  # Used when the filter object is a raw numeric FIR kernel.
+  # For Butterworth (IIR), routes to filtfilt/filter as before.
   
-  filtered_data <- eeg_obj$data
+  .fft_convolve_fir <- function(x, h, zero_ph) {
+    n_sig   <- length(x)
+    n_h     <- length(h)
+    n_fft   <- nextn(n_sig + n_h - 1, factors = 2)
+    X       <- fft(c(x, rep(0, n_fft - n_sig)))
+    H       <- fft(c(h, rep(0, n_fft - n_h)))
+    y_full  <- Re(fft(X * H, inverse = TRUE)) / n_fft
+    delay   <- (n_h - 1) %/% 2
+    y       <- y_full[seq(delay + 1, delay + n_sig)]
+    if (zero_ph) {
+      y_rev   <- rev(y)
+      Xr      <- fft(c(y_rev, rep(0, n_fft - n_sig)))
+      yr_full <- Re(fft(Xr * H, inverse = TRUE)) / n_fft
+      y       <- rev(yr_full[seq(delay + 1, delay + n_sig)])
+    }
+    y
+  }
   
-  .apply_filter <- function(signal_vec, filt_obj) {
+  .apply_notch_filter <- function(signal_vec, filt_obj) {
     if (zero_phase) {
       signal::filtfilt(filt_obj, signal_vec)
     } else {
       as.numeric(signal::filter(filt_obj, signal_vec))
     }
   }
+  
+  # ========== APPLY FILTERING ==========
+  
+  filtered_data <- eeg_obj$data
   
   # Initialise progress bar (only when verbose)
   if (verbose) {
@@ -877,7 +985,7 @@ eeg_notch <- function(eeg_obj,
     
     # Apply each notch sequentially
     for (filt_obj in notch_filters) {
-      x <- .apply_filter(x, filt_obj)
+      x <- .apply_notch_filter(x, filt_obj)
     }
     
     # Remove padding
@@ -941,11 +1049,9 @@ eeg_notch <- function(eeg_obj,
   return(notched_eeg)
 }
 
-#' ============================================================================
-#'
+# ============================================================================
+#
 #' Apply Bandpass and Optional Notch Filtering to EEG Data
-#' 
-#' ============================================================================
 #'
 #' A unified wrapper that combines \code{eeg_bandpass()} and \code{eeg_notch()}
 #' into a single call. Applies bandpass filtering first (to set the frequency
@@ -1042,7 +1148,7 @@ eeg_filter <- function(eeg_obj,
                        notch_freq       = NULL,
                        notch_bandwidth  = 2,
                        notch_harmonics  = FALSE,
-                       filter_order     = 4,                   # Determines how sharp the frequency cut is at the edges of the filter window.
+                       filter_order     = 4,
                        method           = c("butter", "fir"),
                        channels         = NULL,
                        zero_phase       = TRUE,

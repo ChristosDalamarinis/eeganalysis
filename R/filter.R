@@ -13,7 +13,8 @@
 #' conventions and integrate seamlessly with the eeganalysis pipeline.
 #'
 #' Author: Christos Dalamarinis
-#' Date: 2026
+#' Date: March 2026
+#' Status: Not tested with testthat yet!!
 #' ============================================================================
 #'
 #' Apply a Bandpass Filter to EEG Data

@@ -14,7 +14,6 @@
 #'
 #' Author: Christos Dalamarinis
 #' Date: 2026
-#' Status: Not tested with testfiles since a major update took place on 21/03/2026
 #' ============================================================================
 #'
 #' Apply a Bandpass Filter to EEG Data
@@ -331,13 +330,38 @@ eeg_bandpass <- function(eeg_obj,
   # For Butterworth, filter_order is used as-is (small values are fine).
   
   if (method == "fir") {
-    min_cutoff <- min(c(low_freq, high_freq), na.rm = TRUE)
-    fir_order  <- round(3.3 * eeg_obj$sampling_rate / min_cutoff)
-    # Ensure odd length (required for symmetric linear-phase FIR)
-    if (fir_order %% 2 == 0) fir_order <- fir_order + 1L
+    sr <- eeg_obj$sampling_rate
+    
+    # ---- Highpass FIR order (MNE transition-bandwidth rule) ----
+    if (!is.null(low_freq)) {
+      hp_trans_bw  <- min(max(low_freq * 0.25, 2.0), low_freq)
+      hp_fir_order <- round(3.3 * sr / hp_trans_bw)
+      if (hp_fir_order %% 2 == 0) hp_fir_order <- hp_fir_order + 1L
+    } else {
+      hp_fir_order <- NULL
+    }
+    
+    # ---- Lowpass FIR order (MNE transition-bandwidth rule) ----
+    if (!is.null(high_freq)) {
+      lp_trans_bw  <- min(max(high_freq * 0.25, 2.0), nyquist - high_freq)
+      lp_fir_order <- round(3.3 * sr / lp_trans_bw)
+      if (lp_fir_order %% 2 == 0) lp_fir_order <- lp_fir_order + 1L
+    } else {
+      lp_fir_order <- NULL
+    }
+    
+    # Max order drives padding
+    fir_order_max <- max(c(hp_fir_order, lp_fir_order), na.rm = TRUE)
+    
     if (verbose) {
-      cat("  FIR order (auto):     ", fir_order,
-          "  [MNE rule: 3.3 × sr / min_cutoff]\n")
+      if (!is.null(hp_fir_order)) {
+        cat("  FIR order (HP):       ", hp_fir_order,
+            "  [trans_bw = ", round(hp_trans_bw, 4), " Hz]\n", sep = "")
+      }
+      if (!is.null(lp_fir_order)) {
+        cat("  FIR order (LP):       ", lp_fir_order,
+            "  [trans_bw = ", round(lp_trans_bw, 4), " Hz]\n", sep = "")
+      }
     }
   }
   
@@ -349,7 +373,7 @@ eeg_bandpass <- function(eeg_obj,
     if (method == "fir") {
       # For FIR: pad by half the filter length (standard overlap-add convention)
       # Cap at 10% of signal length to avoid excessive memory use
-      fir_half   <- fir_order %/% 2
+      fir_half   <- fir_order_max %/% 2
       max_pad    <- as.integer(floor(n_timepoints * 0.10))
       padding    <- min(fir_half, max_pad)
     } else {
@@ -390,8 +414,11 @@ eeg_bandpass <- function(eeg_obj,
     
     cat("  Filter design:        ",
         if (method == "butter") "Butterworth" else "FIR (firwin / Hamming)", "\n")
-    cat("  Filter order:         ",
-        if (method == "fir") fir_order else filter_order, "\n")
+    if (method == "fir") {
+      cat("  Filter order (max):   ", fir_order_max, "\n")
+    } else {
+      cat("  Filter order:         ", filter_order, "\n")
+    }
     cat("  Zero-phase:           ", if (zero_phase) "Yes (filtfilt)" else "No (causal)", "\n")
     cat("  Padding:              ", padding, " samples\n")
     
@@ -462,46 +489,53 @@ eeg_bandpass <- function(eeg_obj,
     }
     
     if (!is.null(W_low)) {
-      hp_filt <- .firwin_hamming(fir_order, W_low,  pass_type = "high")
+      hp_filt <- .firwin_hamming(hp_fir_order, W_low,  pass_type = "high")
     }
     if (!is.null(W_high)) {
-      lp_filt <- .firwin_hamming(fir_order, W_high, pass_type = "low")
+      lp_filt <- .firwin_hamming(lp_fir_order, W_high, pass_type = "low")
     }
     if (!is.null(notch_freq)) {
-      # Band-stop = 1 − bandpass; build as lowpass + highpass combined
+      # Band-stop = 1 - bandpass; build as lowpass + highpass combined
+      # Use the lowpass FIR order for the notch (narrow band, LP order is fine)
       W_nl   <- (notch_freq - notch_bandwidth / 2) / nyquist
       W_nh   <- (notch_freq + notch_bandwidth / 2) / nyquist
-      h_lp   <- .firwin_hamming(fir_order, W_nl,  pass_type = "low")
-      h_hp   <- .firwin_hamming(fir_order, W_nh,  pass_type = "high")
+      notch_order <- if (!is.null(lp_fir_order)) lp_fir_order else hp_fir_order
+      h_lp   <- .firwin_hamming(notch_order, W_nl,  pass_type = "low")
+      h_hp   <- .firwin_hamming(notch_order, W_nh,  pass_type = "high")
       notch_filt <- h_lp + h_hp
     }
   }
   
   # ========== FFT-BASED CONVOLUTION HELPER ==========
-  # Replaces sample-by-sample loop with overlap-add FFT convolution.
-  # Equivalent to MNE's approach: same result, dramatically faster for
-  # large FIR orders.
+  # Single-pass FFT convolution matching MNE's phase='zero' approach.
   
   .fft_convolve_fir <- function(x, h, zero_ph) {
-    n_sig  <- length(x)
-    n_h    <- length(h)
-    n_fft  <- nextn(n_sig + n_h - 1, factors = 2)  # next power of 2
+    # Single-pass FFT convolution with delay compensation.
+    #
+    # zero_ph = TRUE  (MNE phase='zero'):
+    #   Apply symmetric FIR ONCE, shift left by group delay (N-1)/2.
+    #   Zero-phase because kernel is linear-phase.  Does NOT square
+    #   the magnitude response (unlike filtfilt / double-pass).
+    #
+    # zero_ph = FALSE (causal):
+    #   Apply once, no delay compensation.
+    
+    n_sig <- length(x)
+    n_h   <- length(h)
+    n_fft <- nextn(n_sig + n_h - 1, factors = 2)
     
     X      <- fft(c(x, rep(0, n_fft - n_sig)))
     H      <- fft(c(h, rep(0, n_fft - n_h)))
     y_full <- Re(fft(X * H, inverse = TRUE)) / n_fft
     
-    # Trim to original signal length (causal output)
-    delay  <- (n_h - 1) %/% 2
-    y      <- y_full[seq(delay + 1, delay + n_sig)]
-    
     if (zero_ph) {
-      # Second pass (time-reversed) to cancel phase — matches filtfilt
-      y_rev  <- rev(y)
-      Xr     <- fft(c(y_rev, rep(0, n_fft - n_sig)))
-      yr_full <- Re(fft(Xr * H, inverse = TRUE)) / n_fft
-      y      <- rev(yr_full[seq(delay + 1, delay + n_sig)])
+      # Group delay of symmetric FIR = (n_h - 1) / 2 samples
+      delay <- (n_h - 1) %/% 2
+      y     <- y_full[seq(delay + 1, delay + n_sig)]
+    } else {
+      y <- y_full[seq_len(n_sig)]
     }
+    
     y
   }
   
@@ -545,10 +579,11 @@ eeg_bandpass <- function(eeg_obj,
     
     x <- filtered_data[i, ]
     
-    # ---- Mirror padding ----
+    # ---- Reflect padding (matches numpy pad mode='reflect' / MNE) ----
     if (padding > 0) {
-      left_pad  <- rev(x[seq_len(padding)])
-      right_pad <- rev(x[seq(n_timepoints - padding + 1, n_timepoints)])
+      left_pad  <- rev(x[seq(2, min(padding + 1, n_timepoints))])
+      right_pad <- rev(x[seq(max(n_timepoints - padding, 1),
+                             n_timepoints - 1)])
       x <- c(left_pad, x, right_pad)
     }
     
@@ -976,10 +1011,11 @@ eeg_notch <- function(eeg_obj,
     
     x <- filtered_data[i, ]
     
-    # Mirror padding
+    # ---- Reflect padding (matches numpy pad mode='reflect' / MNE) ----
     if (padding > 0) {
-      left_pad  <- rev(x[seq_len(padding)])
-      right_pad <- rev(x[seq(n_timepoints - padding + 1, n_timepoints)])
+      left_pad  <- rev(x[seq(2, min(padding + 1, n_timepoints))])
+      right_pad <- rev(x[seq(max(n_timepoints - padding, 1),
+                             n_timepoints - 1)])
       x <- c(left_pad, x, right_pad)
     }
     

@@ -13,8 +13,7 @@
 #' conventions and integrate seamlessly with the eeganalysis pipeline.
 #'
 #' Author: Christos Dalamarinis
-#' Date: March 2026
-#' Status: Not tested with testthat yet!!
+#' Date: 2026
 #' ============================================================================
 #'
 #' Apply a Bandpass Filter to EEG Data
@@ -333,36 +332,40 @@ eeg_bandpass <- function(eeg_obj,
   if (method == "fir") {
     sr <- eeg_obj$sampling_rate
     
-    # ---- Highpass FIR order (MNE transition-bandwidth rule) ----
+    # ---- MNE transition-bandwidth rules (per-edge) ----
+    #   highpass: l_trans = min(max(l_freq * 0.25, 2.0), l_freq)
+    #   lowpass:  h_trans = min(max(h_freq * 0.25, 2.0), nyquist - h_freq)
+    # Filter length: N = round(3.3 * sr / min_transition_bw)
+    #
+    # Crucially, MNE uses the SAME (longest) kernel for the entire bandpass.
+    # The narrowest transition bandwidth drives the filter length for BOTH edges.
+    
+    hp_trans_bw <- NULL
+    lp_trans_bw <- NULL
+    
     if (!is.null(low_freq)) {
-      hp_trans_bw  <- min(max(low_freq * 0.25, 2.0), low_freq)
-      hp_fir_order <- round(3.3 * sr / hp_trans_bw)
-      if (hp_fir_order %% 2 == 0) hp_fir_order <- hp_fir_order + 1L
-    } else {
-      hp_fir_order <- NULL
+      hp_trans_bw <- min(max(low_freq * 0.25, 2.0), low_freq)
     }
-    
-    # ---- Lowpass FIR order (MNE transition-bandwidth rule) ----
     if (!is.null(high_freq)) {
-      lp_trans_bw  <- min(max(high_freq * 0.25, 2.0), nyquist - high_freq)
-      lp_fir_order <- round(3.3 * sr / lp_trans_bw)
-      if (lp_fir_order %% 2 == 0) lp_fir_order <- lp_fir_order + 1L
-    } else {
-      lp_fir_order <- NULL
+      lp_trans_bw <- min(max(high_freq * 0.25, 2.0), nyquist - high_freq)
     }
     
-    # Max order drives padding
-    fir_order_max <- max(c(hp_fir_order, lp_fir_order), na.rm = TRUE)
+    # Use the narrowest transition BW → longest kernel (matches MNE)
+    min_trans_bw <- min(c(hp_trans_bw, lp_trans_bw), na.rm = TRUE)
+    fir_order    <- round(3.3 * sr / min_trans_bw)
+    # Ensure odd length (required for symmetric linear-phase FIR)
+    if (fir_order %% 2 == 0) fir_order <- fir_order + 1L
     
     if (verbose) {
-      if (!is.null(hp_fir_order)) {
-        cat("  FIR order (HP):       ", hp_fir_order,
-            "  [trans_bw = ", round(hp_trans_bw, 4), " Hz]\n", sep = "")
+      if (!is.null(hp_trans_bw)) {
+        cat("  HP transition BW:     ", round(hp_trans_bw, 4), " Hz\n", sep = "")
       }
-      if (!is.null(lp_fir_order)) {
-        cat("  FIR order (LP):       ", lp_fir_order,
-            "  [trans_bw = ", round(lp_trans_bw, 4), " Hz]\n", sep = "")
+      if (!is.null(lp_trans_bw)) {
+        cat("  LP transition BW:     ", round(lp_trans_bw, 4), " Hz\n", sep = "")
       }
+      cat("  FIR order (shared):   ", fir_order,
+          "  [3.3 x sr / min_trans_bw = ", round(min_trans_bw, 4), " Hz]\n",
+          sep = "")
     }
   }
   
@@ -374,7 +377,7 @@ eeg_bandpass <- function(eeg_obj,
     if (method == "fir") {
       # For FIR: pad by half the filter length (standard overlap-add convention)
       # Cap at 10% of signal length to avoid excessive memory use
-      fir_half   <- fir_order_max %/% 2
+      fir_half   <- fir_order %/% 2
       max_pad    <- as.integer(floor(n_timepoints * 0.10))
       padding    <- min(fir_half, max_pad)
     } else {
@@ -415,11 +418,8 @@ eeg_bandpass <- function(eeg_obj,
     
     cat("  Filter design:        ",
         if (method == "butter") "Butterworth" else "FIR (firwin / Hamming)", "\n")
-    if (method == "fir") {
-      cat("  Filter order (max):   ", fir_order_max, "\n")
-    } else {
-      cat("  Filter order:         ", filter_order, "\n")
-    }
+    cat("  Filter order:         ",
+        if (method == "fir") fir_order else filter_order, "\n")
     cat("  Zero-phase:           ", if (zero_phase) "Yes (filtfilt)" else "No (causal)", "\n")
     cat("  Padding:              ", padding, " samples\n")
     
@@ -490,19 +490,17 @@ eeg_bandpass <- function(eeg_obj,
     }
     
     if (!is.null(W_low)) {
-      hp_filt <- .firwin_hamming(hp_fir_order, W_low,  pass_type = "high")
+      hp_filt <- .firwin_hamming(fir_order, W_low,  pass_type = "high")
     }
     if (!is.null(W_high)) {
-      lp_filt <- .firwin_hamming(lp_fir_order, W_high, pass_type = "low")
+      lp_filt <- .firwin_hamming(fir_order, W_high, pass_type = "low")
     }
     if (!is.null(notch_freq)) {
-      # Band-stop = 1 - bandpass; build as lowpass + highpass combined
-      # Use the lowpass FIR order for the notch (narrow band, LP order is fine)
+      # Band-stop = lowpass + highpass combined
       W_nl   <- (notch_freq - notch_bandwidth / 2) / nyquist
       W_nh   <- (notch_freq + notch_bandwidth / 2) / nyquist
-      notch_order <- if (!is.null(lp_fir_order)) lp_fir_order else hp_fir_order
-      h_lp   <- .firwin_hamming(notch_order, W_nl,  pass_type = "low")
-      h_hp   <- .firwin_hamming(notch_order, W_nh,  pass_type = "high")
+      h_lp   <- .firwin_hamming(fir_order, W_nl,  pass_type = "low")
+      h_hp   <- .firwin_hamming(fir_order, W_nh,  pass_type = "high")
       notch_filt <- h_lp + h_hp
     }
   }

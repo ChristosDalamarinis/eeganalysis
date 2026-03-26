@@ -14,6 +14,7 @@
 #'
 #' Author: Christos Dalamarinis
 #' Date: 2026
+#' Status: In development 
 #' ============================================================================
 #'
 #' Apply a Bandpass Filter to EEG Data

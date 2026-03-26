@@ -14,7 +14,8 @@
 #'
 #' Author: Christos Dalamarinis
 #' Date: 2026
-#' Status: In development!!!!!!!
+#' Status: In development!!!!!!! New filtering algorithm is on the making, will
+#'         deemed legacy script soon.
 #' ============================================================================
 #'
 #' Apply a Bandpass Filter to EEG Data

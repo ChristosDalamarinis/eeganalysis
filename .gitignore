@@ -6,4 +6,4 @@
 .httr-oauth
 .DS_Store
 .quarto
-.ipynb
+rest_filter_helpers.ipynb

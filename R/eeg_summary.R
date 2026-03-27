@@ -14,6 +14,7 @@
 #'
 #' Author: Christos Dalamarinis
 #' Date: March 2026
+#' Status: In development!!!!!!!!!
 #' ============================================================================
 #'
 #' Full Diagnostic Summary of an EEG Object

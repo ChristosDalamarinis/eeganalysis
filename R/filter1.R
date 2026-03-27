@@ -728,10 +728,12 @@ eeg_bandpass <- function(eeg_obj,
   )
 }
 
+
+
 # ----------------------------------------------------------------------------
 # eeg_notch()
 # ----------------------------------------------------------------------------
-
+#
 #' EEG Notch (Band-Stop) FIR Filter
 #'
 #' Removes narrow frequency bands from EEG data to eliminate electrical line
@@ -890,22 +892,25 @@ eeg_notch <- function(eeg_obj,
     
     # Build freq/gain arrays for bandstop (MNE lines 1552-1558)
     # Bandstop = gain 1 outside notch, gain 0 inside notch
-    # MNE passes (highs, lows) reversed → bandstop
-    # Equivalent freq/gain arrays:
-    #   [0, low_stop, low_pass, high_pass, high_stop, nyquist]
-    #   [1,        1,        0,         0,         1,       1]
+    #
+    # Correct monotonically-increasing freq/gain:
+    #   [0, f_p1, f_s1, f_s2, f_p2, nyquist]
+    #   [1,    1,    0,    0,    1,       1]
     # where:
-    #   low_stop  = low_edge  - tb_2  (stop band starts)
-    #   low_pass  = low_edge           (pass-to-stop edge)
-    #   high_pass = high_edge          (stop-to-pass edge)
-    #   high_stop = high_edge + tb_2  (stop band ends)
+    #   f_p1 = low_edge           (lower passband→stopband edge)
+    #   f_s1 = low_edge  + tb_2  (lower stopband start, transition inward)
+    #   f_s2 = high_edge - tb_2  (upper stopband end,   transition inward)
+    #   f_p2 = high_edge          (upper stopband→passband edge)
+    #
+    # This produces: h = delta - lowpass(midpoint_upper) + lowpass(midpoint_lower)
+    # = allpass - lowpass(50.375Hz) + lowpass(49.625Hz) = bandstop ✓
     
-    f_lp <- low_edge / nyquist
-    f_ls <- (low_edge  - tb_2) / nyquist
-    f_hs <- high_edge / nyquist
-    f_hp <- (high_edge + tb_2) / nyquist
+    f_p1 <- low_edge / nyquist
+    f_s1 <- (low_edge  + tb_2) / nyquist
+    f_s2 <- (high_edge - tb_2) / nyquist
+    f_p2 <- high_edge / nyquist
     
-    freq_arr <- c(0, f_ls, f_lp, f_hs, f_hp, 1)
+    freq_arr <- c(0, f_p1, f_s1, f_s2, f_p2, 1)
     gain_arr <- c(1,    1,    0,    0,    1, 1)
     
     # Clamp to [0, 1]

@@ -16,7 +16,7 @@
 #' Author: Christos Dalamarinis
 #' Date: March 2026
 #' Status: In development!!!!!!!!!! - Not tested
-#' An iteration of this script is being used to finalise bugs
+#' An iteration of this script is being used to finalise bugs - outside of this repo - and will be merged back here once stable.
 #' ============================================================================
 #
 #

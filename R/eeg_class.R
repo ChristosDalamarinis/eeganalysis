@@ -192,11 +192,34 @@ print.eeg <- function(x, ...) {
   cat("  Sampling rate:   ", x$sampling_rate, " Hz\n")
   
   # ========== DATA STATISTICS ==========
-  cat("\nDATA STATISTICS:\n")
-  cat("  Amplitude range: ", round(min(x$data), 2), " to ", 
-      round(max(x$data), 2), " microV\n", sep = "")
-  cat("  Mean amplitude:  ", round(mean(x$data), 2), " microV\n")
-  cat("  Std deviation:   ", round(sd(x$data), 2), " microV\n")
+  # Update: 30/03/2026 - Refined to focus on EEG channels only, excluding status and EXG channels.
+  # Stats are scoped to EEG channels only.
+  # Uses the same two-pass channel classification as eeg_summary():
+  #   Pass 1 - detect_external_channels() catches original EXG names (e.g. "EXG1")
+  #   Pass 2 - regex fallback catches renamed channels that kept the original
+  #             name in parentheses, e.g. "MASTOID LEFT (EXG5)"
+  # Status channel is always excluded.
+  
+  .all_ch     <- x$channels
+  .status_idx <- which(grepl("^status$", tolower(.all_ch)))
+  
+  .exg_pattern <- paste0(
+    "\\((",
+    "EXG[1-8]|GSR[12]|Plet|Temp|Resp|Erg[12]",
+    ")\\)"
+  )
+  .exg_pass1 <- detect_external_channels(.all_ch)
+  .exg_pass2 <- .all_ch[grepl(.exg_pattern, .all_ch, ignore.case = TRUE)]
+  .exg_idx   <- which(.all_ch %in% unique(c(.exg_pass1, .exg_pass2)))
+  .eeg_idx   <- setdiff(seq_along(.all_ch), c(.status_idx, .exg_idx))
+  
+  .eeg_data  <- x$data[.eeg_idx, , drop = FALSE]
+  
+  cat("\nDATA STATISTICS (EEG channels only):\n")
+  cat("  Amplitude range: ", round(min(.eeg_data), 2), " to ",
+      round(max(.eeg_data), 2), " microV\n", sep = "")
+  cat("  Mean amplitude:  ", round(mean(.eeg_data), 2), " microV\n")
+  cat("  Std deviation:   ", round(sd(.eeg_data), 2), " microV\n")
   
   # ========== REFERENCE INFORMATION ==========
   cat("\nREFERENCE:\n")

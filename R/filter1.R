@@ -2,14 +2,13 @@
 #'                       FIR Filtering Functions
 #' ============================================================================
 #'
-#' This module implements FIR (Finite Impulse Response) filtering for EEG
-#' data, designed to match MNE-Python's default filtering pipeline exactly.
+#' This module implements FIR (Finite Impulse Response) filtering for EEGndata.
 #'
 #' Both bandpass and notch filtering are implemented using:
-#'   - firwin / Hamming window kernel design (matches scipy.signal.firwin)
-#'   - reflect_limited padding  (matches MNE's default pad='reflect_limited')
-#'   - Overlap-add FFT convolution (matches MNE's _overlap_add_filter)
-#'   - Single-pass zero-phase correction (matches MNE's phase='zero')
+#'   - firwin / Hamming window kernel design (matching scipy.signal.firwin)
+#'   - reflect_limited padding
+#'   - Overlap-add FFT convolution 
+#'   - Single-pass zero-phase correction 
 #'
 #' Depends on: eeg_class.R (for eeg object structure)
 #'
@@ -30,14 +29,14 @@
 #'
 #' Returns the smallest integer >= target whose only prime factors are
 #' 2, 3, and 5 (a "5-smooth" or "regular" number). These are the sizes
-#' at which FFT is most efficient. Matches MNE's next_fast_len() exactly.
+#' at which FFT is most efficient.
 #'
 #' @param target Positive integer. The minimum size required.
 #' @return Integer. The smallest 5-smooth number >= target.
 #' @keywords internal
 .next_fast_len <- function(target) {
   
-  # Lookup table for targets <= 10000 (same as MNE / SciPy)
+  # Lookup table for targets <= 10000 (same as SciPy)
   hams <- c(
     8, 9, 10, 12, 15, 16, 18, 20, 24, 25, 27, 30, 32, 36, 40, 45, 48,
     50, 54, 60, 64, 72, 75, 80, 81, 90, 96, 100, 108, 120, 125, 128,
@@ -55,19 +54,19 @@
     8192, 8640, 8748, 9000, 9216, 9375, 9600, 9720, 10000
   )
   
-  # Trivial case: target <= 6, return as-is (MNE line 239)
+  # Trivial case: target <= 6, return as-is 
   if (target <= 6L) return(target)
   
-  # Already a power of 2? (MNE line 243: not (target & (target-1)))
+  # Already a power of 2
   if (bitwAnd(target, target - 1L) == 0L) return(target)
   
-  # Small target: binary search in lookup table (MNE line 247-248)
+  # Small target: binary search in lookup table 
   if (target <= hams[length(hams)]) {
     idx <- which(hams >= target)[1]
     return(hams[idx])
   }
   
-  # Large target: algorithmic search (MNE lines 250-276)
+  # Large target: algorithmic search 
   # Find smallest N = 2^a * 3^b * 5^c >= target
   
   # Helper: number of bits to represent n (Python's int.bit_length())
@@ -114,10 +113,10 @@
 # .auto_trans_bandwidth() - preparation helper
 # ----------------------------------------------------------------------------
 #
-#' Compute automatic transition bandwidths (MNE-style)
+#' Compute automatic transition bandwidths 
 #'
 #' Computes the transition bandwidth for highpass and/or lowpass edges
-#' using MNE's automatic rule (from _triage_filter_params, lines 2228, 2267).
+#' using an automatic rule.
 #'
 #' For the highpass edge:
 #'   l_trans_bw = min(max(0.25 * l_freq, 2.0), l_freq)
@@ -137,14 +136,14 @@
   
   nyquist <- sfreq / 2.0
   
-  # Highpass transition bandwidth (MNE line 2228)
+  # Highpass transition bandwidth
   l_trans_bw <- if (!is.null(l_freq)) {
     min(max(0.25 * l_freq, 2.0), l_freq)
   } else {
     NULL
   }
   
-  # Lowpass transition bandwidth (MNE line 2267)
+  # Lowpass transition bandwidth
   h_trans_bw <- if (!is.null(h_freq)) {
     min(max(0.25 * h_freq, 2.0), nyquist - h_freq)
   } else {
@@ -158,11 +157,10 @@
 # .auto_filter_length() - preparation helper
 # ----------------------------------------------------------------------------
 #
-#' Compute automatic FIR filter length (MNE-style)
+#' Compute automatic FIR filter length 
 #'
-#' Computes the filter kernel length from transition bandwidths using MNE's
-#' automatic rule (_triage_filter_params lines 2300-2318, _to_samples lines
-#' 2099-2125).
+#' Computes the filter kernel length from transition bandwidths using an
+#' automatic rule.
 #'
 #' Full chain:
 #'   1. min_trans_bw = min(l_trans_bw, h_trans_bw)   [narrowest edge drives length]
@@ -181,7 +179,7 @@
 .auto_filter_length <- function(l_trans_bw = NULL, h_trans_bw = NULL, sfreq,
                                 window = "hamming") {
 
-  # Collect non-NULL bandwidths and take the minimum (MNE lines 2302-2306)
+  # Collect non-NULL bandwidths and take the minimum
   bws <- c(l_trans_bw, h_trans_bw)
   if (length(bws) == 0) {
     stop("At least one of l_trans_bw or h_trans_bw must be non-NULL.",
@@ -189,7 +187,7 @@
   }
   min_trans_bw <- min(bws)
 
-  # Per-window length factors (MNE filter.py _length_factors dict)
+  # Per-window length factors
   # hamming=3.3, hann=3.1, blackman=5.0 — mult_fact=1.0 for firwin
   length_factor <- c(hamming = 3.3, hann = 3.1, blackman = 5.0)[window]
   if (is.na(length_factor)) {
@@ -197,11 +195,11 @@
          call. = FALSE)
   }
 
-  # Convert to duration in seconds, then to samples (MNE lines 2308, 2121)
+  # Convert to duration in seconds, then to samples
   duration_s <- length_factor / min_trans_bw
   n_samples  <- ceiling(duration_s * sfreq)
 
-  # Force odd length (MNE lines 2122-2123 in _to_samples)
+  # Force odd length 
   # (n - 1) %% 2 == 1 only when n is even → adds 1 to make it odd
   n_samples <- n_samples + (n_samples - 1L) %% 2L
 
@@ -245,7 +243,7 @@
   # Ideal sinc impulse response (lowpass)
   h <- cutoff_norm * .sinc_norm(cutoff_norm * alpha)
 
-  # Window function (coefficients from Ifeachor & Jervis, matches MNE)
+  # Window function (coefficients from Ifeachor & Jervis)
   w <- switch(window,
     hamming  = 0.54 - 0.46 * cos(2 * pi * n / (N - 1L)),
     hann     = 0.50 - 0.50 * cos(2 * pi * n / (N - 1L)),
@@ -263,11 +261,10 @@
 }
 
 
-#' Build FIR kernel from freq/gain arrays (MNE's _firwin_design equivalent)
+#' Build FIR kernel from freq/gain arrays
 #'
 #' Constructs a FIR kernel by combining lowpass firwin kernels, one per
-#' gain transition in the freq/gain specification. Matches MNE's
-#' _firwin_design() exactly.
+#' gain transition in the freq/gain specification.
 #'
 #' Algorithm (right-to-left sweep):
 #'   - When gain changes 0→1: ADD a lowpass kernel at the transition midpoint
@@ -293,7 +290,7 @@
   h      <- numeric(N)
   center <- N %/% 2L + 1L  # 1-indexed center (= Python's N//2)
   
-  # If gain at Nyquist == 1, start with "all pass" delta (MNE line 431)
+  # If gain at Nyquist == 1, start with "all pass" delta
   if (gain[length(gain)] == 1) {
     h[center] <- 1.0
   }
@@ -301,7 +298,7 @@
   prev_freq <- freq[length(freq)]
   prev_gain <- gain[length(gain)]
   
-  # Walk right to left, skipping the last element (MNE line 433)
+  # Walk right to left, skipping the last element 
   for (i in seq(length(freq) - 1L, 1L)) {
     
     this_freq <- freq[i]
@@ -309,10 +306,10 @@
     
     if (this_gain != prev_gain) {
       
-      # Half-width of transition band (MNE line 437)
+      # Half-width of transition band 
       transition <- (prev_freq - this_freq) / 2.0
       
-      # Per-transition kernel length — may be shorter than N (MNE line 438-439)
+      # Per-transition kernel length — may be shorter than N 
       length_factor <- switch(window,
                               hamming  = 3.3,
                               hann     = 3.1,
@@ -322,13 +319,13 @@
       this_N <- as.integer(round(length_factor / transition))
       this_N <- this_N + 1L - this_N %% 2L  # force odd
       
-      # Cutoff at midpoint of transition band (MNE line 449)
+      # Cutoff at midpoint of transition band 
       cutoff <- (prev_freq + this_freq) / 2.0
       
-      # Build lowpass kernel of length this_N (MNE line 447-453)
+      # Build lowpass kernel of length this_N 
       this_h <- .firwin_lowpass(this_N, cutoff, window)
       
-      # Embed this_h centered in h (MNE line 455-459)
+      # Embed this_h centered in h 
       offset <- (N - this_N) %/% 2L
       idx    <- seq(offset + 1L, offset + this_N)
       
@@ -350,9 +347,6 @@
 # .reflect_limited_pad() - preparation helper
 # ----------------------------------------------------------------------------
 
-#' Pad a signal using MNE's reflect_limited mode
-#'
-#' Replicates MNE's _smart_pad() from mne/cuda.py with pad='reflect_limited'.
 #'
 #' reflect_limited pads with an odd reflection anchored on the edge values,
 #' i.e.:  left pad  = 2*x[1]   - x[reversed inner samples]
@@ -382,7 +376,7 @@
   n <- length(x)
   
   # ---- Left padding ----
-  # Zero fill when n_left exceeds what reflection can provide (MNE line: l_z_pad)
+  # Zero fill when n_left exceeds what reflection can provide 
   l_z_pad <- rep(0.0, max(n_left - n + 1L, 0L))
   
   # Reflected samples: Python x[n_left:0:-1] → R indices min(n_left+1,n) down to 2
@@ -394,7 +388,7 @@
   }
   
   # ---- Right padding ----
-  # Zero fill when n_right exceeds what reflection can provide (MNE line: r_z_pad)
+  # Zero fill when n_right exceeds what reflection can provide 
   r_z_pad <- rep(0.0, max(n_right - n + 1L, 0L))
   
   # Reflected samples: Python x[-2:-n_right-2:-1] → R indices (n-1) down to max(n-n_right, 1)
@@ -413,10 +407,7 @@
 # .overlap_add_filter() - takes all above helper and does the filtering
 # ----------------------------------------------------------------------------
 
-#' Apply FIR filter via overlap-add FFT convolution (MNE equivalent)
-#'
-#' Replicates MNE's _overlap_add_filter() + _1d_overlap_filter() from
-#' mne/filter.py exactly, for a single 1-D signal vector.
+#' Apply FIR filter via overlap-add FFT convolution 
 #'
 #' Pipeline:
 #'   1. Compute padding length: n_edge = max(min(n_h, n_sig) - 1, 0)
@@ -438,7 +429,7 @@
   n_h     <- length(h)
   n_sig   <- length(x)
   
-  # ---- Trivial case: kernel of length 1 (MNE line 295-296) ----
+  # ---- Trivial case: kernel of length 1 ----
   if (n_h == 1L) return(x * h)
   
   # ---- Padding length (MNE line 297) ----

@@ -432,12 +432,12 @@
   # ---- Trivial case: kernel of length 1 ----
   if (n_h == 1L) return(x * h)
   
-  # ---- Padding length (MNE line 297) ----
+  # ---- Padding length ----
   # n_edge = max(min(n_h, n_sig) - 1, 0)
   n_edge <- max(min(n_h, n_sig) - 1L, 0L)
   n_x    <- n_sig + 2L * n_edge   # length of padded signal
   
-  # ---- Select FFT block size (MNE lines 305-326) ----
+  # ---- Select FFT block size ----
   # Use cost-minimising power of 2 in range [2*n_h-1, n_x]
   min_fft <- 2L * n_h - 1L
   
@@ -460,35 +460,35 @@
   h_padded <- c(h, rep(0.0, n_fft - n_h))
   H_fft    <- fft(h_padded)
 
-  # ---- Pad signal (MNE line 359) ----
+  # ---- Pad signal ----
   x_ext      <- .reflect_limited_pad(x, n_edge, n_edge)
   x_filtered <- rep(0.0, n_x)
 
-  # ---- Overlap-add parameters (MNE lines 363-365) ----
+  # ---- Overlap-add parameters ----
   n_seg      <- n_fft - n_h + 1L
   n_segments <- ceiling(n_x / n_seg)
 
-  # shift combines: zero-phase group delay + unpadding offset (MNE line 365)
+  # shift combines: zero-phase group delay + unpadding offset
   # phase="zero" → (n_h-1)//2, else 0
   group_delay <- if (startsWith(phase, "zero")) (n_h - 1L) %/% 2L else 0L
   shift       <- group_delay + n_edge
 
-  # ---- Overlap-add loop (MNE lines 369-381) ----
-  # All indexing kept in 0-based to match MNE exactly, converted to R at access
+  # ---- Overlap-add loop ----
+  # All indexing kept in 0-based 
   for (seg_idx in seq(0L, n_segments - 1L)) {
 
     # 0-indexed segment boundaries in x_ext
     start_0 <- seg_idx * n_seg
     stop_0  <- (seg_idx + 1L) * n_seg   # exclusive
 
-    # Extract segment and zero-pad to n_fft (MNE lines 372-373)
+    # Extract segment and zero-pad to n_fft 
     seg_r   <- x_ext[(start_0 + 1L) : min(stop_0, n_x)]
     seg_pad <- c(seg_r, rep(0.0, n_fft - length(seg_r)))
 
-    # FFT multiply (MNE line 375: _fft_multiply_repeated)
+    # FFT multiply 
     prod <- Re(fft(fft(seg_pad) * H_fft, inverse = TRUE)) / n_fft
     
-    # Output placement with shift (MNE lines 377-381)
+    # Output placement with shift 
     start_filt_0 <- max(0L, start_0 - shift)
     stop_filt_0  <- min(start_0 - shift + n_fft, n_x)  # exclusive
     start_prod_0 <- max(0L, shift - start_0)
@@ -501,7 +501,7 @@
     }
   }
   
-  # ---- Remove padding and return (MNE line 384) ----
+  # ---- Remove padding and return ----
   # x_filtered[:n_x - 2*n_edge] = x_filtered[:n_sig]
   x_filtered[seq_len(n_x - 2L * n_edge)]
 }
@@ -522,8 +522,7 @@
 
 #' EEG Bandpass / Highpass / Lowpass FIR Filter
 #'
-#' Applies a zero-phase FIR filter to EEG data, designed to match MNE-Python's
-#' default filtering pipeline exactly (method='fir', phase='zero',
+#' Applies a zero-phase FIR filter to EEG data, (method='fir', phase='zero',
 #' fir_window='hamming', fir_design='firwin', pad='reflect_limited').
 #'
 #' Supports highpass-only (h_freq=NULL), lowpass-only (l_freq=NULL),
@@ -547,11 +546,10 @@
 #'                         ceil(3.3 / min_trans_bw * sfreq), forced odd.
 #'                         Default: "auto".
 #' @param fir_window       Character. Window function for kernel design.
-#'                         Default: "hamming" (matches MNE).
+#'                         Default: "hamming".
 #' @param phase            Character. "zero" (default) applies single-pass
-#'                         with group delay correction (matches MNE phase='zero').
-#' @param pad              Character. Padding mode. Default: "reflect_limited"
-#'                         (matches MNE default).
+#'                         with group delay correction.
+#' @param pad              Character. Padding mode. Default: "reflect_limited".
 #' @param channels         Character or integer vector, or NULL. Channel names
 #'                         or indices to filter. NULL = all channels.
 #' @param verbose          Logical. Print filter parameters and progress.
@@ -659,7 +657,7 @@ eeg_bandpass <- function(eeg_obj,
     f_s2 <- (h_freq + h_trans_bw) / nyquist
     freq  <- c(f_s1, f_p1, f_p2, f_s2)
     gain  <- c(   0,    1,    1,    0)
-    # Conditionally add endpoints (MNE: only if not already at boundary)
+    # Conditionally add endpoints 
     if (f_s1 != 0) { freq <- c(0, freq); gain <- c(0, gain) }
     if (f_s2 != 1) { freq <- c(freq, 1); gain <- c(gain, 0) }
     filter_type <- paste0("Bandpass (", l_freq, " - ", h_freq, " Hz)")
@@ -769,8 +767,7 @@ eeg_bandpass <- function(eeg_obj,
 #' EEG Notch (Band-Stop) FIR Filter
 #'
 #' Removes narrow frequency bands from EEG data to eliminate electrical line
-#' noise. Designed to match MNE-Python's notch_filter() exactly
-#' (method='fir', phase='zero', fir_window='hamming', fir_design='firwin',
+#' noise (method='fir', phase='zero', fir_window='hamming', fir_design='firwin',
 #' pad='reflect_limited').
 #'
 #' Internally implements notch as a bandstop FIR filter, exactly as MNE does:
@@ -779,17 +776,17 @@ eeg_bandpass <- function(eeg_obj,
 #' Then builds a bandstop kernel (gain=0 in the notch, gain=1 elsewhere).
 #'
 #' Multiple frequencies (e.g. harmonics) are combined into a single multi-band
-#' FIR kernel and applied in one pass, matching MNE's notch_filter() exactly.
+#' FIR kernel and applied in one pass.
 #'
 #' @param eeg_obj          An object of class 'eeg'.
 #' @param freqs            Numeric vector. Frequencies to notch in Hz.
 #'                         E.g. c(50, 100, 150) for line noise + harmonics.
 #'                         Default: 50.
 #' @param notch_widths     Numeric or NULL. Width of the stop band in Hz
-#'                         centred at each freq. NULL uses MNE's default:
+#'                         centred at each freq. NULL uses:
 #'                         freq / 200. Default: NULL.
 #' @param trans_bandwidth  Numeric. Width of each transition band in Hz.
-#'                         Default: 1 (matches MNE default).
+#'                         Default: 1.
 #' @param filter_length    Integer or "auto". Kernel length in samples.
 #'                         "auto" uses MNE's formula. Default: "auto".
 #' @param fir_window       Character. Window function. Default: "hamming".
@@ -837,7 +834,7 @@ eeg_notch <- function(eeg_obj,
          nyquist, " Hz).", call. = FALSE)
   }
   
-  # ========== RESOLVE NOTCH WIDTHS (MNE line 1536-1537) ==========
+  # ========== RESOLVE NOTCH WIDTHS ==========
   # Default: freq / 200 per frequency
   
   if (is.null(notch_widths)) {
@@ -886,7 +883,7 @@ eeg_notch <- function(eeg_obj,
     cat(strrep("-", 70), "\n")
   }
   
-  # ========== BUILD ONE MULTI-BAND FREQ/GAIN ARRAY (MNE lines 1551-1570) ==========
+  # ========== BUILD ONE MULTI-BAND FREQ/GAIN ARRAY ==========
   # MNE computes lows/highs for all notch frequencies, passes them all to
   # filter_data() at once, which builds a single multi-band FIR kernel.
   # We replicate that here: collect all passband/stopband edges, sort them,
@@ -896,7 +893,7 @@ eeg_notch <- function(eeg_obj,
   tb_2          <- trans_bandwidth / 2.0
   history_parts <- character(0)
 
-  # --- Compute and validate all band edges (MNE lines 1552-1553) ---
+  # --- Compute and validate all band edges ---
   low_edges  <- freqs - notch_widths / 2.0 - tb_2   # lower passband edge per notch
   high_edges <- freqs + notch_widths / 2.0 + tb_2   # upper passband edge per notch
 
@@ -918,7 +915,7 @@ eeg_notch <- function(eeg_obj,
   # Per notch:  f_p1 = low_edge,        f_s1 = low_edge  + tb_2  (stop starts)
   #             f_s2 = high_edge - tb_2  (stop ends),    f_p2 = high_edge
   # Gains:      f_p1→1, f_s1→0, f_s2→0, f_p2→1
-  # Then sort all edges and prepend 0 / append Nyquist (matching MNE lines 1395-1410)
+  # Then sort all edges and prepend 0 / append Nyquist 
 
   f_p1_all <- low_edges / nyquist
   f_s1_all <- (low_edges  + tb_2) / nyquist
@@ -929,12 +926,12 @@ eeg_notch <- function(eeg_obj,
   inner_gain <- c(rep(1, length(freqs)), rep(0, length(freqs)),
                   rep(0, length(freqs)), rep(1, length(freqs)))
 
-  # Sort by frequency (MNE line 1402: order = np.argsort(freq))
+  # Sort by frequency 
   ord        <- order(inner_freq)
   inner_freq <- inner_freq[ord]
   inner_gain <- inner_gain[ord]
 
-  # Prepend 0 and append 1 (Nyquist) with gain = 1 (MNE lines 1405-1410)
+  # Prepend 0 and append 1 (Nyquist) with gain = 1 
   freq_arr <- c(0, inner_freq, 1)
   gain_arr <- c(1, inner_gain, 1)
 

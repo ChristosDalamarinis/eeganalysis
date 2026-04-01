@@ -27,10 +27,10 @@
 #' @param eeg_obj An object of class 'eeg'.
 #'
 #' @param flag_flat_threshold Numeric. Channels with std below this value
-#'   (in µV) are flagged as potentially flat / disconnected. Default: 0.5.
+#'   (in uV) are flagged as potentially flat / disconnected. Default: 0.5.
 #'
 #' @param flag_amplitude_threshold Numeric. Channels with any absolute
-#'   amplitude exceeding this value (in µV) are flagged as potentially
+#'   amplitude exceeding this value (in uV) are flagged as potentially
 #'   noisy or saturated. Default: 500.
 #'
 #' @param flag_outlier_sd_multiplier Numeric. A channel whose std exceeds
@@ -86,10 +86,10 @@ eeg_summary <- function(eeg_obj,
   
   all_channels <- eeg_obj$channels
   
-  # Status channel — always excluded from stats
+  # Status channel - always excluded from stats
   status_idx <- which(grepl("^status$", tolower(all_channels)))
   
-  # EXG channels — two-pass detection:
+  # EXG channels - two-pass detection:
   #
   # Pass 1: detect_external_channels() catches original names (e.g. "EXG1")
   # Pass 2: regex fallback catches renamed channels where the original name
@@ -112,10 +112,10 @@ eeg_summary <- function(eeg_obj,
     "\\)"                           # closing parenthesis
   )
   
-  # Pass 1 — original names
+  # Pass 1 - original names
   exg_names_pass1 <- detect_external_channels(all_channels)
   
-  # Pass 2 — renamed channels (keep_original = TRUE pattern)
+  # Pass 2 - renamed channels (keep_original = TRUE pattern)
   exg_names_pass2 <- all_channels[grepl(exg_pattern, all_channels,
                                         ignore.case = TRUE)]
   
@@ -123,7 +123,7 @@ eeg_summary <- function(eeg_obj,
   exg_names <- unique(c(exg_names_pass1, exg_names_pass2))
   exg_idx   <- which(all_channels %in% exg_names)
   
-  # EEG channels — everything that is not Status and not EXG
+  # EEG channels - everything that is not Status and not EXG
   eeg_idx <- setdiff(seq_along(all_channels), c(status_idx, exg_idx))
   
   if (length(eeg_idx) == 0) {
@@ -159,7 +159,7 @@ eeg_summary <- function(eeg_obj,
   eeg_stats <- .channel_stats(eeg_obj$data, eeg_idx, all_channels)
   exg_stats <- .channel_stats(eeg_obj$data, exg_idx, all_channels)
   
-  # Global std — all EEG channels and all timepoints treated as one pool
+  # Global std - all EEG channels and all timepoints treated as one pool
   # This matches how MNE computes its "Std deviation" figure
   global_std <- round(sd(as.vector(eeg_obj$data[eeg_idx, ])), 2)
   
@@ -185,8 +185,8 @@ eeg_summary <- function(eeg_obj,
       flags <- rbind(flags, data.frame(
         channel = ch,
         reason  = "Flat / possibly disconnected",
-        value   = paste0("std = ", std, " µV  (threshold: < ",
-                         flag_flat_threshold, " µV)"),
+        value   = paste0("std = ", std, " uV  (threshold: < ",
+                         flag_flat_threshold, " uV)"),
         stringsAsFactors = FALSE
       ))
     }
@@ -197,7 +197,7 @@ eeg_summary <- function(eeg_obj,
         channel = ch,
         reason  = "Excessive amplitude",
         value   = paste0("peak |amplitude| = ", round(amax, 2),
-                         " µV  (threshold: > ", flag_amplitude_threshold, " µV)"),
+                         " uV  (threshold: > ", flag_amplitude_threshold, " uV)"),
         stringsAsFactors = FALSE
       ))
     }
@@ -207,9 +207,9 @@ eeg_summary <- function(eeg_obj,
       flags <- rbind(flags, data.frame(
         channel = ch,
         reason  = "Outlier noise level",
-        value   = paste0("std = ", std, " µV  (", flag_outlier_sd_multiplier,
+        value   = paste0("std = ", std, " uV  (", flag_outlier_sd_multiplier,
                          " x median std = ",
-                         round(flag_outlier_sd_multiplier * median_std, 2), " µV)"),
+                         round(flag_outlier_sd_multiplier * median_std, 2), " uV)"),
         stringsAsFactors = FALSE
       ))
     }
@@ -244,17 +244,17 @@ eeg_summary <- function(eeg_obj,
   cat(strrep("-", 70), "\n")
   
   cat("  Amplitude range : ", round(min(eeg_stats$min_uv), 2),
-      "  to  ", round(max(eeg_stats$max_uv), 2), "  µV\n", sep = "")
-  cat("  Mean amplitude  : ", round(mean(eeg_stats$mean_uv), 2), "  µV\n", sep = "")
-  cat("  Global std      : ", global_std, "  µV  (all channels pooled)\n", sep = "")
-  cat("  Median std      : ", round(median(eeg_stats$std_uv), 2), "  µV  (median per-channel std)\n", sep = "")
+      "  to  ", round(max(eeg_stats$max_uv), 2), "  uV\n", sep = "")
+  cat("  Mean amplitude  : ", round(mean(eeg_stats$mean_uv), 2), "  uV\n", sep = "")
+  cat("  Global std      : ", global_std, "  uV  (all channels pooled)\n", sep = "")
+  cat("  Median std      : ", round(median(eeg_stats$std_uv), 2), "  uV  (median per-channel std)\n", sep = "")
   cat("  Std range       : ", round(min(eeg_stats$std_uv), 2),
-      "  to  ", round(max(eeg_stats$std_uv), 2), "  µV\n", sep = "")
+      "  to  ", round(max(eeg_stats$std_uv), 2), "  uV\n", sep = "")
   
   # ---- EEG per-channel table ----
   cat("\n  Per-channel breakdown:\n")
   cat(sprintf("  %-12s  %10s  %10s  %10s  %10s\n",
-              "Channel", "Min (µV)", "Max (µV)", "Mean (µV)", "Std (µV)"))
+              "Channel", "Min (uV)", "Max (uV)", "Mean (uV)", "Std (uV)"))
   cat("  ", strrep("-", 58), "\n", sep = "")
   for (i in seq_len(nrow(eeg_stats))) {
     cat(sprintf("  %-12s  %10.2f  %10.2f  %10.2f  %10.2f\n",
@@ -270,12 +270,12 @@ eeg_summary <- function(eeg_obj,
     cat("\n")
     cat(strrep("-", 70), "\n")
     cat("EXG CHANNEL STATISTICS  (n = ", length(exg_idx), " channels)\n", sep = "")
-    cat("  Note: stats reported for reference only — EXG channels are not\n")
+    cat("  Note: stats reported for reference only - EXG channels are not\n")
     cat("  included in EEG stats above and are not flagged below.\n")
     cat(strrep("-", 70), "\n")
     
     cat(sprintf("  %-30s  %10s  %10s  %10s  %10s\n",
-                "Channel", "Min (µV)", "Max (µV)", "Mean (µV)", "Std (µV)"))
+                "Channel", "Min (uV)", "Max (uV)", "Mean (uV)", "Std (uV)"))
     cat("  ", strrep("-", 74), "\n", sep = "")
     for (i in seq_len(nrow(exg_stats))) {
       cat(sprintf("  %-30s  %10.2f  %10.2f  %10.2f  %10.2f\n",
@@ -295,10 +295,10 @@ eeg_summary <- function(eeg_obj,
   cat("SUSPICIOUS CHANNEL FLAGS\n")
   cat(strrep("-", 70), "\n")
   cat("  Thresholds used:\n")
-  cat("    Flat            : std < ", flag_flat_threshold, " µV\n", sep = "")
-  cat("    Excessive amp.  : peak |amplitude| > ", flag_amplitude_threshold, " µV\n", sep = "")
+  cat("    Flat            : std < ", flag_flat_threshold, " uV\n", sep = "")
+  cat("    Excessive amp.  : peak |amplitude| > ", flag_amplitude_threshold, " uV\n", sep = "")
   cat("    Outlier noise   : std > ", flag_outlier_sd_multiplier,
-      " x median std (", round(flag_outlier_sd_multiplier * median_std, 2), " µV)\n", sep = "")
+      " x median std (", round(flag_outlier_sd_multiplier * median_std, 2), " uV)\n", sep = "")
   cat("\n")
   
   if (is.null(flags)) {

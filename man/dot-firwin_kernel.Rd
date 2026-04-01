@@ -2,7 +2,7 @@
 % Please edit documentation in R/filter1.R
 \name{.firwin_kernel}
 \alias{.firwin_kernel}
-\title{Build FIR kernel from freq/gain arrays (MNE's _firwin_design equivalent)}
+\title{Build FIR kernel from freq/gain arrays}
 \usage{
 .firwin_kernel(N, freq, gain, window = "hamming")
 }
@@ -19,18 +19,17 @@ same length as freq.}
 or "blackman". Default: "hamming".}
 }
 \value{
-Numeric vector of length N — the FIR kernel coefficients.
+Numeric vector of length N - the FIR kernel coefficients.
 }
 \description{
 Constructs a FIR kernel by combining lowpass firwin kernels, one per
-gain transition in the freq/gain specification. Matches MNE's
-_firwin_design() exactly.
+gain transition in the freq/gain specification.
 }
 \details{
 Algorithm (right-to-left sweep):
 \itemize{
-\item When gain changes 0→1: ADD a lowpass kernel at the transition midpoint
-\item When gain changes 1→0: SUBTRACT a lowpass kernel at the transition midpoint
+\item When gain changes 0->1: ADD a lowpass kernel at the transition midpoint
+\item When gain changes 1->0: SUBTRACT a lowpass kernel at the transition midpoint
 \item No change: skip
 }
 }

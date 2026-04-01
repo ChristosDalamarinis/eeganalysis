@@ -2,7 +2,7 @@
 % Please edit documentation in R/filter1.R
 \name{.overlap_add_filter}
 \alias{.overlap_add_filter}
-\title{Apply FIR filter via overlap-add FFT convolution (MNE equivalent)}
+\title{Apply FIR filter via overlap-add FFT convolution}
 \usage{
 .overlap_add_filter(x, h, phase = "zero", pad = "reflect_limited")
 }
@@ -16,13 +16,9 @@
 \item{pad}{Character. Padding mode. Default "reflect_limited".}
 }
 \value{
-Numeric vector of same length as x — the filtered signal.
+Numeric vector of same length as x - the filtered signal.
 }
 \description{
-Replicates MNE's _overlap_add_filter() + _1d_overlap_filter() from
-mne/filter.py exactly, for a single 1-D signal vector.
-}
-\details{
 Pipeline:
 \enumerate{
 \item Compute padding length: n_edge = max(min(n_h, n_sig) - 1, 0)

@@ -2,7 +2,10 @@
 % Please edit documentation in R/filter1.R
 \name{.reflect_limited_pad}
 \alias{.reflect_limited_pad}
-\title{Pad a signal using MNE's reflect_limited mode}
+\title{reflect_limited pads with an odd reflection anchored on the edge values,
+i.e.:  left pad  = 2\emph{x\link{1}   - x\link{reversed inner samples}
+right pad = 2}x\link{end} - x\link{reversed inner samples}
+If n_pad exceeds len(x)-1, zeros fill the remaining space.}
 \usage{
 .reflect_limited_pad(x, n_left, n_right)
 }
@@ -17,17 +20,10 @@
 Numeric vector of length length(x) + n_left + n_right.
 }
 \description{
-Replicates MNE's _smart_pad() from mne/cuda.py with pad='reflect_limited'.
-}
-\details{
-reflect_limited pads with an odd reflection anchored on the edge values,
-i.e.:  left pad  = 2\emph{x\link{1}   - x\link{reversed inner samples}
-right pad = 2}x\link{end} - x\link{reversed inner samples}
-If n_pad exceeds len(x)-1, zeros fill the remaining space.
-
 This differs from standard numpy 'reflect' (which excludes the edge value)
 and 'symmetric' (which includes the edge value but does not subtract).
-
+}
+\details{
 Python equivalent (mne/cuda.py):
 l_z_pad = zeros(max(n_pad\link{0} - len(x) + 1, 0))
 r_z_pad = zeros(max(n_pad\link{1} - len(x) + 1, 0))

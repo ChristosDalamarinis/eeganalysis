@@ -2,7 +2,7 @@
 % Please edit documentation in R/filter1.R
 \name{.auto_trans_bandwidth}
 \alias{.auto_trans_bandwidth}
-\title{Compute automatic transition bandwidths (MNE-style)}
+\title{Compute automatic transition bandwidths}
 \usage{
 .auto_trans_bandwidth(l_freq = NULL, h_freq = NULL, sfreq)
 }
@@ -20,7 +20,7 @@ A named list with:
 }
 \description{
 Computes the transition bandwidth for highpass and/or lowpass edges
-using MNE's automatic rule (from _triage_filter_params, lines 2228, 2267).
+using an automatic rule.
 }
 \details{
 For the highpass edge:

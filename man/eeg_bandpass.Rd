@@ -43,13 +43,12 @@ ceil(3.3 / min_trans_bw * sfreq), forced odd.
 Default: "auto".}
 
 \item{fir_window}{Character. Window function for kernel design.
-Default: "hamming" (matches MNE).}
+Default: "hamming".}
 
 \item{phase}{Character. "zero" (default) applies single-pass
-with group delay correction (matches MNE phase='zero').}
+with group delay correction.}
 
-\item{pad}{Character. Padding mode. Default: "reflect_limited"
-(matches MNE default).}
+\item{pad}{Character. Padding mode. Default: "reflect_limited".}
 
 \item{channels}{Character or integer vector, or NULL. Channel names
 or indices to filter. NULL = all channels.}
@@ -62,8 +61,7 @@ An object of class 'eeg' with filtered data and updated
 preprocessing_history.
 }
 \description{
-Applies a zero-phase FIR filter to EEG data, designed to match MNE-Python's
-default filtering pipeline exactly (method='fir', phase='zero',
+Applies a zero-phase FIR filter to EEG data, (method='fir', phase='zero',
 fir_window='hamming', fir_design='firwin', pad='reflect_limited').
 }
 \details{

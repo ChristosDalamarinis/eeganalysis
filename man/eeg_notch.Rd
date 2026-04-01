@@ -25,11 +25,11 @@ E.g. c(50, 100, 150) for line noise + harmonics.
 Default: 50.}
 
 \item{notch_widths}{Numeric or NULL. Width of the stop band in Hz
-centred at each freq. NULL uses MNE's default:
+centred at each freq. NULL uses:
 freq / 200. Default: NULL.}
 
 \item{trans_bandwidth}{Numeric. Width of each transition band in Hz.
-Default: 1 (matches MNE default).}
+Default: 1.}
 
 \item{filter_length}{Integer or "auto". Kernel length in samples.
 "auto" uses MNE's formula. Default: "auto".}
@@ -53,8 +53,7 @@ preprocessing_history.
 }
 \description{
 Removes narrow frequency bands from EEG data to eliminate electrical line
-noise. Designed to match MNE-Python's notch_filter() exactly
-(method='fir', phase='zero', fir_window='hamming', fir_design='firwin',
+noise (method='fir', phase='zero', fir_window='hamming', fir_design='firwin',
 pad='reflect_limited').
 }
 \details{
@@ -64,5 +63,5 @@ highs = freq + notch_width/2 + trans_bandwidth/2
 Then builds a bandstop kernel (gain=0 in the notch, gain=1 elsewhere).
 
 Multiple frequencies (e.g. harmonics) are combined into a single multi-band
-FIR kernel and applied in one pass, matching MNE's notch_filter() exactly.
+FIR kernel and applied in one pass.
 }

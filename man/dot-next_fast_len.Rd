@@ -13,28 +13,27 @@
 Integer. The smallest 5-smooth number >= target.
 }
 \description{
-This module implements FIR (Finite Impulse Response) filtering for EEG
-data, designed to match MNE-Python's default filtering pipeline exactly.
+This module implements FIR (Finite Impulse Response) filtering for EEGndata.
 }
 \details{
 Both bandpass and notch filtering are implemented using:
 \itemize{
-\item firwin / Hamming window kernel design (matches scipy.signal.firwin)
-\item reflect_limited padding  (matches MNE's default pad='reflect_limited')
-\item Overlap-add FFT convolution (matches MNE's _overlap_add_filter)
-\item Single-pass zero-phase correction (matches MNE's phase='zero')
+\item firwin / Hamming window kernel design (matching scipy.signal.firwin)
+\item reflect_limited padding
+\item Overlap-add FFT convolution
+\item Single-pass zero-phase correction
 }
 
 Depends on: eeg_class.R (for eeg object structure)
 }
 \section{Author: Christos Dalamarinis
 Date: March 2026
-Status: In development}{
+Status: In development - not tested}{
 Find the next fast FFT length (5-smooth number)
 
 Returns the smallest integer >= target whose only prime factors are
 2, 3, and 5 (a "5-smooth" or "regular" number). These are the sizes
-at which FFT is most efficient. Matches MNE's next_fast_len() exactly.
+at which FFT is most efficient.
 }
 
 \keyword{internal}

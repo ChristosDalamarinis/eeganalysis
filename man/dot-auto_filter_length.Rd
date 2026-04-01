@@ -2,7 +2,7 @@
 % Please edit documentation in R/filter1.R
 \name{.auto_filter_length}
 \alias{.auto_filter_length}
-\title{Compute automatic FIR filter length (MNE-style)}
+\title{Compute automatic FIR filter length}
 \usage{
 .auto_filter_length(
   l_trans_bw = NULL,
@@ -25,9 +25,8 @@
 Integer. Filter kernel length in samples (always odd).
 }
 \description{
-Computes the filter kernel length from transition bandwidths using MNE's
-automatic rule (_triage_filter_params lines 2300-2318, _to_samples lines
-2099-2125).
+Computes the filter kernel length from transition bandwidths using an
+automatic rule.
 }
 \details{
 Full chain:

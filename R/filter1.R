@@ -188,7 +188,7 @@
   min_trans_bw <- min(bws)
 
   # Per-window length factors
-  # hamming=3.3, hann=3.1, blackman=5.0 — mult_fact=1.0 for firwin
+  # hamming=3.3, hann=3.1, blackman=5.0 - mult_fact=1.0 for firwin
   length_factor <- c(hamming = 3.3, hann = 3.1, blackman = 5.0)[window]
   if (is.na(length_factor)) {
     stop("Unknown window '", window, "'. Use 'hamming', 'hann', or 'blackman'.",
@@ -200,7 +200,7 @@
   n_samples  <- ceiling(duration_s * sfreq)
 
   # Force odd length 
-  # (n - 1) %% 2 == 1 only when n is even → adds 1 to make it odd
+  # (n - 1) %% 2 == 1 only when n is even -> adds 1 to make it odd
   n_samples <- n_samples + (n_samples - 1L) %% 2L
 
   as.integer(n_samples)
@@ -267,8 +267,8 @@
 #' gain transition in the freq/gain specification.
 #'
 #' Algorithm (right-to-left sweep):
-#'   - When gain changes 0→1: ADD a lowpass kernel at the transition midpoint
-#'   - When gain changes 1→0: SUBTRACT a lowpass kernel at the transition midpoint
+#'   - When gain changes 0->1: ADD a lowpass kernel at the transition midpoint
+#'   - When gain changes 1->0: SUBTRACT a lowpass kernel at the transition midpoint
 #'   - No change: skip
 #'
 #' @param N      Integer. Total kernel length (must be odd).
@@ -279,7 +279,7 @@
 #' @param window Character. Window function. One of "hamming", "hann",
 #'               or "blackman". Default: "hamming".
 #'
-#' @return Numeric vector of length N — the FIR kernel coefficients.
+#' @return Numeric vector of length N - the FIR kernel coefficients.
 #' @keywords internal
 .firwin_kernel <- function(N, freq, gain, window = "hamming") {
   
@@ -309,7 +309,7 @@
       # Half-width of transition band 
       transition <- (prev_freq - this_freq) / 2.0
       
-      # Per-transition kernel length — may be shorter than N 
+      # Per-transition kernel length - may be shorter than N 
       length_factor <- switch(window,
                               hamming  = 3.3,
                               hann     = 3.1,
@@ -330,9 +330,9 @@
       idx    <- seq(offset + 1L, offset + this_N)
       
       if (this_gain == 0L) {
-        h[idx] <- h[idx] - this_h  # subtract → removes that band
+        h[idx] <- h[idx] - this_h  # subtract -> removes that band
       } else {
-        h[idx] <- h[idx] + this_h  # add → passes that band
+        h[idx] <- h[idx] + this_h  # add -> passes that band
       }
     }
     
@@ -379,7 +379,7 @@
   # Zero fill when n_left exceeds what reflection can provide 
   l_z_pad <- rep(0.0, max(n_left - n + 1L, 0L))
   
-  # Reflected samples: Python x[n_left:0:-1] → R indices min(n_left+1,n) down to 2
+  # Reflected samples: Python x[n_left:0:-1] -> R indices min(n_left+1,n) down to 2
   if (n_left > 0L) {
     left_idx     <- seq(from = min(n_left + 1L, n), to = 2L, by = -1L)
     left_reflect <- 2.0 * x[1L] - x[left_idx]
@@ -391,7 +391,7 @@
   # Zero fill when n_right exceeds what reflection can provide 
   r_z_pad <- rep(0.0, max(n_right - n + 1L, 0L))
   
-  # Reflected samples: Python x[-2:-n_right-2:-1] → R indices (n-1) down to max(n-n_right, 1)
+  # Reflected samples: Python x[-2:-n_right-2:-1] -> R indices (n-1) down to max(n-n_right, 1)
   if (n_right > 0L) {
     right_idx     <- seq(from = n - 1L, to = max(n - n_right, 1L), by = -1L)
     right_reflect <- 2.0 * x[n] - x[right_idx]
@@ -422,7 +422,7 @@
 #' @param phase Character. "zero" (default) for zero-phase single-pass.
 #' @param pad   Character. Padding mode. Default "reflect_limited".
 #'
-#' @return Numeric vector of same length as x — the filtered signal.
+#' @return Numeric vector of same length as x - the filtered signal.
 #' @keywords internal
 .overlap_add_filter <- function(x, h, phase = "zero", pad = "reflect_limited") {
   
@@ -452,7 +452,7 @@
       4e-5 * N * n_x
     n_fft  <- N[which.min(cost)]
   } else {
-    # Signal too short for multiple blocks — use one block
+    # Signal too short for multiple blocks - use one block
     n_fft <- .next_fast_len(min_fft)
   }
   
@@ -469,7 +469,7 @@
   n_segments <- ceiling(n_x / n_seg)
 
   # shift combines: zero-phase group delay + unpadding offset
-  # phase="zero" → (n_h-1)//2, else 0
+  # phase="zero" -> (n_h-1)//2, else 0
   group_delay <- if (startsWith(phase, "zero")) (n_h - 1L) %/% 2L else 0L
   shift       <- group_delay + n_edge
 
@@ -907,14 +907,14 @@ eeg_notch <- function(eeg_obj,
            nyquist, " Hz) for freq=", freqs[fi], " Hz.", call. = FALSE)
     }
     history_parts <- c(history_parts,
-                       paste0(freqs[fi], " Hz (±",
+                       paste0(freqs[fi], " Hz (\u00B1", # plus/minus symbol
                               round(notch_widths[fi] / 2 + tb_2, 4), " Hz)"))
   }
 
   # --- Build interleaved passband/stopband edges for all notches ---
   # Per notch:  f_p1 = low_edge,        f_s1 = low_edge  + tb_2  (stop starts)
   #             f_s2 = high_edge - tb_2  (stop ends),    f_p2 = high_edge
-  # Gains:      f_p1→1, f_s1→0, f_s2→0, f_p2→1
+  # Gains:      f_p1->1, f_s1->0, f_s2->0, f_p2->1
   # Then sort all edges and prepend 0 / append Nyquist 
 
   f_p1_all <- low_edges / nyquist

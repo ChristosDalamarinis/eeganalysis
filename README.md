@@ -44,7 +44,13 @@ library(eeganalysis)
 eeg_data <- read_bdf_native("path/to/your/file.bdf")
 ```
 
-### Downsample to 256 Hz
+### Inspect channels and events before preprocessing
+``` r  
+inspect_bdf_channels("path/to/your/file.bdf")
+inspect_triggers(eeg_data)
+```
+
+### Downsample to 256 Hz (optional)
 
 ``` r
 eeg_data <- downsample(eeg_data, target_srate = 256)

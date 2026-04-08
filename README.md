@@ -56,6 +56,12 @@ inspect_triggers(eeg_data)
 eeg_data <- downsample(eeg_data, target_srate = 256)
 ```
 
+### Filter: highpass at 0.1 Hz, lowpass at 40 Hz, remove 50 Hz line noise
+``` r  
+eeg_data <- eeg_bandpass(eeg_data, l_freq = 0.1, h_freq = 40)
+eeg_data <- eeg_notch(eeg_data, freqs = 50)
+```
+
 ### Rereference to average
 
 ``` r

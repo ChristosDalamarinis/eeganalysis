@@ -26,7 +26,7 @@ Current code reads .bdf and .edf files. Scripts include functions for assisting 
 
 -   "signal" -\> Signal processing and filtering
 
--   "ggplot2" -\> Data visualization
+-   "graphics" -\> Powers all visualization (base R)
 
 -   "dplyr" -\> Data manipulation
 

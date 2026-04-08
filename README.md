@@ -41,7 +41,7 @@ library(eeganalysis)
 ### Import BioSemi data
 
 ``` r
-eeg_data <- read_biosemi("path/to/your/file.bdf")
+eeg_data <- read_bdf_native("path/to/your/file.bdf")
 ```
 
 ### Downsample to 256 Hz

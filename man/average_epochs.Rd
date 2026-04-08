@@ -56,7 +56,7 @@ The module supports common ERP analysis workflows including:
 }
 \section{Author: Christos Dalamarinis
 Date: February 2026
-Status: In development}{
+Status: In development!!!!!!!!!}{
 ======================= AVERAGE EPOCHS FUNCTION ==========================
 Average Epochs to Create ERPs
 

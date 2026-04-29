@@ -31,8 +31,8 @@ automatic rule.
 \details{
 Full chain:
 \enumerate{
-\item min_trans_bw = min(l_trans_bw, h_trans_bw)   \link{narrowest edge drives length}
-\item duration_s   = 3.3 / min_trans_bw             \link{3.3 = hamming length factor}
+\item min_trans_bw = min(l_trans_bw, h_trans_bw)   (narrowest edge drives length)
+\item duration_s   = 3.3 / min_trans_bw             (3.3 = hamming length factor)
 \item n_samples    = ceil(duration_s x sfreq)
 \item force odd    = if even, add 1
 }

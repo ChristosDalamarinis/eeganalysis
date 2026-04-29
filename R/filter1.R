@@ -163,8 +163,8 @@
 #' automatic rule.
 #'
 #' Full chain:
-#'   1. min_trans_bw = min(l_trans_bw, h_trans_bw)   [narrowest edge drives length]
-#'   2. duration_s   = 3.3 / min_trans_bw             [3.3 = hamming length factor]
+#'   1. min_trans_bw = min(l_trans_bw, h_trans_bw)   (narrowest edge drives length)
+#'   2. duration_s   = 3.3 / min_trans_bw             (3.3 = hamming length factor)
 #'   3. n_samples    = ceil(duration_s x sfreq)
 #'   4. force odd    = if even, add 1
 #'

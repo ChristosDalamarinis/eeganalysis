@@ -5,4 +5,8 @@
 #' @importFrom graphics barplot contour hist image polygon text
 #' @importFrom grDevices rainbow
 #' @importFrom grid grid 
+#' @importFrom stats fft setNames
+#' @importFrom utils txtProgressBar setTxtProgressBar
+#' @importFrom graphics grid
+
 NULL

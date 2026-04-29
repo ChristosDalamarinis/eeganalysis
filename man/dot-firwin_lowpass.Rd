@@ -9,7 +9,7 @@
 \arguments{
 \item{N}{Integer. Number of taps (must be odd).}
 
-\item{cutoff_norm}{Numeric. Normalized cutoff in \link{0, 1} where 1 = Nyquist.}
+\item{cutoff_norm}{Numeric. Normalized cutoff in {0, 1} where 1 = Nyquist.}
 
 \item{window}{Character. One of "hamming", "hann", or "blackman".}
 }

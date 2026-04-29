@@ -230,7 +230,7 @@
 #' window=window, pass_zero=True, fs=2.0) exactly.
 #'
 #' @param N           Integer. Number of taps (must be odd).
-#' @param cutoff_norm Numeric. Normalized cutoff in [0, 1] where 1 = Nyquist.
+#' @param cutoff_norm Numeric. Normalized cutoff in {0, 1} where 1 = Nyquist.
 #' @param window      Character. One of "hamming", "hann", or "blackman".
 #' @return Numeric vector of length N.
 #' @keywords internal

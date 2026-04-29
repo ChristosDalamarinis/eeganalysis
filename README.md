@@ -86,6 +86,12 @@ eeg_data <- eeg_rereference(eeg_data, ref_type = "average")
 epochs <- epoch_eeg(eeg_data, events = c(1, 2), time_window = c(-0.2, 0.8))
 ```
 
+## Preprocessing Scripts
+
+``` r 
+filter1.R
+```
+
 # Analysis Pipeline
 
 The analysis pipeline implemented in the package includes the following steps:

@@ -89,7 +89,7 @@ epochs <- epoch_eeg(eeg_data, events = c(1, 2), time_window = c(-0.2, 0.8))
 ## Preprocessing Scripts
 
 ``` r 
-filter1.R
+###filter1.R
 ```
 
 # Analysis Pipeline

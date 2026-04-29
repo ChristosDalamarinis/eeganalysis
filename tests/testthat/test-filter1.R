@@ -28,7 +28,7 @@ new_eeg <- function(data, channels, sampling_rate, times = NULL,
   )
 }
 
-source("C:/Users/dalam/OneDrive/R Projects/R Package/eeganalysis/R/filter1.R")
+library(eeganalysis)
 
 #REF      <- "C:/Users/dalam/OneDrive/R Projects/R Package/translating/mne_reference"
 load_ref <- function(name) scan(file.path(REF, name), quiet = TRUE)

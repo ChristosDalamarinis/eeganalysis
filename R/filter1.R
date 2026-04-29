@@ -272,7 +272,7 @@
 #'   - No change: skip
 #'
 #' @param N      Integer. Total kernel length (must be odd).
-#' @param freq   Numeric vector. Normalized frequencies in [0, 1] starting at 0
+#' @param freq   Numeric vector. Normalized frequencies in {0, 1} starting at 0
 #'               and ending at 1 (Nyquist). E.g. c(0, 0.1, 0.2, 0.9, 1).
 #' @param gain   Numeric vector. Gain at each frequency (0 or 1 only),
 #'               same length as freq.

@@ -22,6 +22,15 @@ Current code reads .bdf and .edf files. Scripts include functions for assisting 
 -   **plot_electrode_3d()**: 3D visualization of electrode positions on a head model (helper function).
 -   **plot_electrode_3d_spherical()**: 3D visualization of electrode positions on a spherical head model (helper function).
 
+## Installation
+
+You can install the *eeganalysis* package from GitHub using the following command:
+
+``` r
+# install.packages("devtools") # Uncomment if devtools is not installed
+devtools::install_github("dalamarinischristos/eeganalysis")
+```
+
 ## Dependencies
 
 -   "signal" -\> Signal processing and filtering
@@ -45,7 +54,8 @@ eeg_data <- read_bdf_native("path/to/your/file.bdf")
 ```
 
 ### Inspect channels and events before preprocessing
-``` r  
+
+``` r
 inspect_bdf_channels("path/to/your/file.bdf")
 inspect_triggers(eeg_data)
 ```
@@ -57,7 +67,8 @@ eeg_data <- downsample(eeg_data, target_srate = 256)
 ```
 
 ### Filter: highpass at 0.1 Hz, lowpass at 40 Hz, remove 50 Hz line noise
-``` r  
+
+``` r
 eeg_data <- eeg_bandpass(eeg_data, l_freq = 0.1, h_freq = 40)
 eeg_data <- eeg_notch(eeg_data, freqs = 50)
 ```
@@ -88,14 +99,6 @@ The analysis pipeline implemented in the package includes the following steps:
 
 -   5.Visualization: Functions to create visualizations of the EEG data and analysis results (e.g., topographic maps, time-frequency plots).
 
-## Installation
-
-You can install the *eeganalysis* package from GitHub using the following command:
-
-``` r
-# install.packages("devtools") # Uncomment if devtools is not installed
-devtools::install_github("dalamarinischristos/eeganalysis")
-```
 
 ## Contributing
 

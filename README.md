@@ -107,7 +107,48 @@ Implementation Details:
 
 ## downsample.R
 
-Purpose: 
+Purpose: Reduces sampling rate pf EEG data
+
+Key function:
+
+- **downsample()**: 
+  - Applies an anti-alising Butterworth low-pass filter before decimating
+  - Handles event onset recualculation after downsampling
+  - Validates frequency band presentation
+
+## rereference.R
+
+Purpose: Changes the reference electrode scheme
+
+Key function:
+
+- **eeg_rereference()**:
+  - Supports common average reference
+  - SUpports single or linked channel reference 
+  - Allows exclusing channels from the reference computation
+
+## epoch2.R
+
+Purpose: Segments continous EEG data into time-locked epochs around events.
+
+Key functions:
+
+- **epoch_eeg()**: Core epoching function; extracts epochs, applies baseline correction, and optionally rejects bad epochs.Biosemi-aware trigger filtering using a 0xFFFF bitmask to separate experimetnal triggers (bits 0-15) from system status codes (16-23)
+
+- **inspect_triggers()**: Diagnostic function to examine and valodate event triggers before epoching.
+
+## setexchannels.R
+
+Purpose: Manages external (non-EEG) channels before preprocessing.
+
+Key functions:
+
+- **identify_external_channels()**: Interactive function to label external channels (e.g EOG, EMG, ECG, GSR)
+
+- **detect_external_channels()**: Autoamted detenction of external channels
+
+- **apply_external_labels()**: Applies user-defined labels to the data
+
 
 # Analysis Pipeline
 

@@ -12,7 +12,7 @@ Contact: [[dalamarinischristos\@gmail.com](mailto:dalamarinischristos@gmail.com)
 
 <!-- badges: end -->
 
-## Installation
+# Installation
 
 You can install the *eeganalysis* package from GitHub using the following command:
 

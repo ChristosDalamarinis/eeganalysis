@@ -205,7 +205,7 @@ eeganalysis
 │   ├── rereference.R                     ← Re-referencing utilities
 │   │   └── eeg_rereference()             ← Change reference scheme (average/custom)
 │   │
-│   ├── filter.R                          ← Filtering utilities
+│   ├── filter1.R                          ← Filtering utilities
 │   │   ├── eeg_bandpass()                ← Attenuate frequencies outside a specified passband.
 │   │   ├── eeg_notch()                   ← Remove powerline noise with notch filter
 │   │   └── eeg_filter()                  ← Unified function combining both in one go

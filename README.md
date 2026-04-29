@@ -12,6 +12,15 @@ Contact: [[dalamarinischristos\@gmail.com](mailto:dalamarinischristos@gmail.com)
 
 <!-- badges: end -->
 
+## Installation
+
+You can install the *eeganalysis* package from GitHub using the following command:
+
+``` r
+# install.packages("devtools") # Uncomment if devtools is not installed
+devtools::install_github("dalamarinischristos/eeganalysis")
+```
+
 # Version: 0.0.0.9000 (under development)
 
 Current code reads .bdf and .edf files. Scripts include functions for assisting the researcher in importing, down-sampling, and referencing the data.
@@ -22,14 +31,6 @@ Current code reads .bdf and .edf files. Scripts include functions for assisting 
 -   **plot_electrode_3d()**: 3D visualization of electrode positions on a head model (helper function).
 -   **plot_electrode_3d_spherical()**: 3D visualization of electrode positions on a spherical head model (helper function).
 
-## Installation
-
-You can install the *eeganalysis* package from GitHub using the following command:
-
-``` r
-# install.packages("devtools") # Uncomment if devtools is not installed
-devtools::install_github("dalamarinischristos/eeganalysis")
-```
 
 ## Dependencies
 

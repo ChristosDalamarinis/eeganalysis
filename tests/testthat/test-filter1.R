@@ -30,17 +30,22 @@ new_eeg <- function(data, channels, sampling_rate, times = NULL,
 
 library(eeganalysis)
 
-#REF      <- "C:/Users/dalam/OneDrive/R Projects/R Package/eeganalysis/tests/testthat/mne_reference"
-REF <- testthat::test_path("mne_reference")
+REF      <- "C:/Users/dalam/OneDrive/R Projects/R Package/translating/mne_reference"
 load_ref <- function(name) scan(file.path(REF, name), quiet = TRUE)
 
-raw_signal <- load_ref("raw_signal.csv")
+load_ref <- function(name) scan(file.path(REF, name), quiet = TRUE)
 
-eeg1ch <- new_eeg(
-  data          = matrix(raw_signal, nrow = 1L),
-  channels      = "CH1",
-  sampling_rate = 256L
-)
+# Guard: skip all MNE reference tests if files are missing
+.ref_available <- file.exists(file.path(REF, "raw_signal.csv"))
+
+if (.ref_available) {
+  raw_signal <- load_ref("raw_signal.csv")
+  eeg1ch <- new_eeg(
+    data          = matrix(raw_signal, nrow = 1L),
+    channels      = "CH1",
+    sampling_rate = 256L
+  )
+}
 
 # ─── .next_fast_len() ────────────────────────────────────────────────────────
 

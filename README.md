@@ -31,7 +31,6 @@ Current code reads .bdf and .edf files. Scripts include functions for assisting 
 -   **plot_electrode_3d()**: 3D visualization of electrode positions on a head model (helper function).
 -   **plot_electrode_3d_spherical()**: 3D visualization of electrode positions on a spherical head model (helper function).
 
-
 ## Dependencies
 
 -   "signal" -\> Signal processing and filtering
@@ -86,11 +85,29 @@ eeg_data <- eeg_rereference(eeg_data, ref_type = "average")
 epochs <- epoch_eeg(eeg_data, events = c(1, 2), time_window = c(-0.2, 0.8))
 ```
 
-## Preprocessing Scripts
+# Preprocessing Scripts
 
-``` r 
-###filter1.R
-```
+## filter1.R
+
+Purpose: FIR filtering to remove unwanted frequency content.
+
+Key functions: 
+
+- **eeg_bandpass()**: Bandpass filter using a Hamming-window FIR kernel (built-in). Attenuates frequencies outside the specified passband.
+
+- **eeg_notch()**: Notch (band-stop) filter to remove line noise (e.g., 50 Hz and harmonics). Builds a multi-band FIR kernel in a single pass, matching MNE's implementation.
+
+Implementation Details:
+
+- Uses overlap-add FFT convolution
+
+- Zero-phase single-pass correction
+
+- Channel-selective filtering supported
+
+## downsample.R
+
+Purpose: 
 
 # Analysis Pipeline
 
@@ -105,7 +122,6 @@ The analysis pipeline implemented in the package includes the following steps:
 -   4.Statistical Analysis: Functions to perform statistical tests on the extracted features.
 
 -   5.Visualization: Functions to create visualizations of the EEG data and analysis results (e.g., topographic maps, time-frequency plots).
-
 
 ## Contributing
 

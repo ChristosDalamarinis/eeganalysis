@@ -347,22 +347,22 @@
 # .reflect_limited_pad() - preparation helper
 # ----------------------------------------------------------------------------
 
-#'
+#' 
 #' reflect_limited pads with an odd reflection anchored on the edge values,
-#' i.e.:  left pad  = 2*x[1]   - x[reversed inner samples]
-#'         right pad = 2*x[end] - x[reversed inner samples]
+#' i.e.:  left pad  = 2*x\[1\]   - x\[reversed inner samples\]
+#'         right pad = 2*x\[end\] - x\[reversed inner samples\]
 #' If n_pad exceeds len(x)-1, zeros fill the remaining space.
 #'
 #' This differs from standard numpy 'reflect' (which excludes the edge value)
 #' and 'symmetric' (which includes the edge value but does not subtract).
 #'
 #' Python equivalent (mne/cuda.py):
-#'   l_z_pad = zeros(max(n_pad[0] - len(x) + 1, 0))
-#'   r_z_pad = zeros(max(n_pad[1] - len(x) + 1, 0))
+#'   l_z_pad = zeros(max(n_pad\[0\] - len(x) + 1, 0))
+#'   r_z_pad = zeros(max(n_pad\[1\] - len(x) + 1, 0))
 #'   out = [l_z_pad,
-#'          2*x[0] - x[n_pad[0]:0:-1],
+#'          2*x\[0\] - x\[n_pad\[0\]:0:-1\],
 #'          x,
-#'          2*x[-1] - x[-2:-n_pad[1]-2:-1],
+#'          2*x\[-1\] - x\[-2:-n_pad\[1\]-2:-1\],
 #'          r_z_pad]
 #'
 #' @param x       Numeric vector. The signal to pad.

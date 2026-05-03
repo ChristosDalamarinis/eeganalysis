@@ -51,7 +51,7 @@ inspect_triggers <- function(eeg_obj,                             # EEG object w
                              plot = FALSE,                        # Logical - Controls whether to generate diagnostic plots. If enabled, it creates a trigger timeline and frequency distribution plot.
                              plot_timeline = TRUE,                # Logical - Show timeline plot of trigger occurrences over time. Only applies if plot=TRUE.
                              plot_frequencies = TRUE,             # Logical - Show barplot of trigger frequencies. Only applies if plot=TRUE.
-                             export_csv = NULL) {                 # Specifies file path to export cleaned events as a CSV file. If provided, it saves the filtered event data to the specified location.s
+                             export_csv = NULL) {                 # Specifies file path to export cleaned events as a CSV file. If provided, it saves the filtered event data to the specified locations
   
   mode <- match.arg(mode)
   

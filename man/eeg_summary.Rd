@@ -16,10 +16,10 @@ eeg_summary(
 \item{eeg_obj}{An object of class 'eeg'.}
 
 \item{flag_flat_threshold}{Numeric. Channels with std below this value
-(in µV) are flagged as potentially flat / disconnected. Default: 0.5.}
+(in uV) are flagged as potentially flat / disconnected. Default: 0.5.}
 
 \item{flag_amplitude_threshold}{Numeric. Channels with any absolute
-amplitude exceeding this value (in µV) are flagged as potentially
+amplitude exceeding this value (in uV) are flagged as potentially
 noisy or saturated. Default: 500.}
 
 \item{flag_outlier_sd_multiplier}{Numeric. A channel whose std exceeds

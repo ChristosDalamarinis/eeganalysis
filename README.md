@@ -21,7 +21,7 @@ You can install the *eeganalysis* package from GitHub using the following comman
 devtools::install_github("dalamarinischristos/eeganalysis")
 ```
 
-# Version: 0.0.0.9000 (under development)
+# Version: 0.0.0.9000 (under development) 
 
 Current code reads .bdf and .edf files. Scripts include functions for assisting the researcher in importing, down-sampling, and referencing the data.
 

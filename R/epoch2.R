@@ -474,15 +474,16 @@ epoch_eeg <- function(eeg_obj,                                           # Loade
     epoch_id = integer(0),
     event_type = character(0),
     event_time = numeric(0),
+    channel = character(0),
     reason = character(0),
     stringsAsFactors = FALSE
   )
-  
+
   for (i in seq_len(n_trials)) {
     event_onset <- selected_events$onset[i]
     epoch_start <- event_onset + smin
     epoch_end <- event_onset + smax
-    
+
     # Check boundaries
     if (epoch_start < 1 || epoch_end > n_timepoints) {
       valid_epochs[i] <- FALSE
@@ -490,16 +491,17 @@ epoch_eeg <- function(eeg_obj,                                           # Loade
         epoch_id = i,
         event_type = selected_events$type[i],
         event_time = selected_events$onset_time[i],
+        channel = NA_character_,
         reason = "Extends beyond data boundaries",
         stringsAsFactors = FALSE
       ))
       next
     }
-    
+
     # Extract epoch data
     if (preload) {
       epoch_data <- eeg_obj$data[, epoch_start:epoch_end, drop = FALSE]
-      
+
       # Apply baseline correction
       if (!is.null(baseline)) {
         for (ch in 1:n_channels) {
@@ -511,21 +513,27 @@ epoch_eeg <- function(eeg_obj,                                           # Loade
           epoch_data[ch, ] <- epoch_data[ch, ] - baseline_value
         }
       }
-      
-      # Check rejection threshold (peak-to-peak per epoch) - 4/5/2026
+
+      # Check rejection threshold (peak-to-peak per channel)
       if (!is.null(reject_threshold)) {
-        epoch_p2p <- max(epoch_data, na.rm = TRUE) - min(epoch_data, na.rm = TRUE)
-        if (epoch_p2p > reject_threshold) {
-          valid_epochs[i] <- FALSE
-          rejection_log <- rbind(rejection_log, data.frame(
-            epoch_id = i,
-            event_type = selected_events$type[i],
-            event_time = selected_events$onset_time[i],
-            reason = paste0("Peak-to-peak amplitude exceeds threshold (", round(epoch_p2p, 1), " microV)"),
-            stringsAsFactors = FALSE
-          ))
-          next
+        rejected_epoch <- FALSE
+        for (ch in seq_len(n_channels)) {
+          ch_p2p <- max(epoch_data[ch, ], na.rm = TRUE) - min(epoch_data[ch, ], na.rm = TRUE)
+          if (ch_p2p > reject_threshold) {
+            valid_epochs[i] <- FALSE
+            rejection_log <- rbind(rejection_log, data.frame(
+              epoch_id = i,
+              event_type = selected_events$type[i],
+              event_time = selected_events$onset_time[i],
+              channel = eeg_obj$channels[ch],
+              reason = paste0("Peak-to-peak amplitude exceeds threshold (", round(ch_p2p, 1), " microV)"),
+              stringsAsFactors = FALSE
+            ))
+            rejected_epoch <- TRUE
+            break
+          }
         }
+        if (rejected_epoch) next
       }
       
       epoch_array[, , i] <- epoch_data

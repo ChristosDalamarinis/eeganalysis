@@ -49,7 +49,9 @@ of the epoch is used when checking rejection and flat thresholds. Set to NULL to
 \item{reject_tmax}{Numeric. End of the rejection window in seconds. Only this portion
 of the epoch is used when checking rejection and flat thresholds. Set to NULL to use tmax (default: NULL)}
 
-\item{preload}{Logical. If TRUE, extract all epoch data into memory (default: TRUE)}
+\item{preload}{Logical. If TRUE, extract all epoch data into memory (default: TRUE).
+Must be TRUE for reject_threshold and flat_threshold to work. A warning is issued if
+thresholds are set but preload is FALSE.}
 
 \item{verbose}{Logical. Print progress messages (default: TRUE)}
 }

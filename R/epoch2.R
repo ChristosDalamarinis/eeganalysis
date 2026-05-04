@@ -362,7 +362,9 @@ inspect_triggers <- function(eeg_obj,                             # EEG object w
 #'   of the epoch is used when checking rejection and flat thresholds. Set to NULL to use tmin (default: NULL)
 #' @param reject_tmax Numeric. End of the rejection window in seconds. Only this portion
 #'   of the epoch is used when checking rejection and flat thresholds. Set to NULL to use tmax (default: NULL)
-#' @param preload Logical. If TRUE, extract all epoch data into memory (default: TRUE)
+#' @param preload Logical. If TRUE, extract all epoch data into memory (default: TRUE).
+#'   Must be TRUE for reject_threshold and flat_threshold to work. A warning is issued if
+#'   thresholds are set but preload is FALSE.
 #' @param verbose Logical. Print progress messages (default: TRUE)
 #'
 #' @return A list of class 'eeg_epochs' containing:

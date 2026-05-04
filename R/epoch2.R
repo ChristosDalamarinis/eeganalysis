@@ -512,7 +512,7 @@ epoch_eeg <- function(eeg_obj,                                           # Loade
         }
       }
       
-      # Check rejection threshold (peak-to-peak per epoch)
+      # Check rejection threshold (peak-to-peak per epoch) - 4/5/2026
       if (!is.null(reject_threshold)) {
         epoch_p2p <- max(epoch_data, na.rm = TRUE) - min(epoch_data, na.rm = TRUE)
         if (epoch_p2p > reject_threshold) {

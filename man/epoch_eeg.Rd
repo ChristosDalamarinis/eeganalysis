@@ -13,6 +13,7 @@ epoch_eeg(
   baseline = c(-0.2, 0),
   baseline_method = c("mean", "median", "none"),
   reject_threshold = NULL,
+  flat_threshold = NULL,
   preload = TRUE,
   verbose = TRUE
 )

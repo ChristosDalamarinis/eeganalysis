@@ -58,7 +58,8 @@ industry standards. This approach eliminates the need for dataset-specific
 tuning and works universally across all BioSemi recordings.
 }
 \section{Author: Christos Dalamarinis
-Date: Jan - 2026}{
+Date: Jan - 2026
+Status: In development}{
 ======================= INSPECT TRIGGERS FUNCTION ==========================
 Inspect Event Triggers in EEG Data
 

@@ -385,6 +385,8 @@ epoch_eeg <- function(eeg_obj,                                           # Loade
                       baseline_method = c("mean", "median", "none"),     # Different ways to compute what gets subtracted. 
                       reject_threshold = NULL,                           # Automatically rejects trials with extreme voltages (artifacts)
                       flat_threshold = NULL,                             # Rejects trials where a channel is too flat (dead/disconnected electrode)
+                      reject_tmin = NULL,                                # Start of the rejection window in seconds. NULL = use tmin
+                      reject_tmax = NULL,                                # End of the rejection window in seconds. NULL = use tmax
                       preload = TRUE,                                    # Whether to load all epoch data into memory immediately
                       verbose = TRUE) {                                  # Shows you what's happening during epoching
   
@@ -414,6 +416,16 @@ epoch_eeg <- function(eeg_obj,                                           # Loade
   
   if (baseline_method == "none") {
     baseline <- NULL
+  }
+
+  if (!is.null(reject_tmin) && (reject_tmin < tmin || reject_tmin >= tmax)) {
+    stop("reject_tmin must be within the epoch window [", tmin, ", ", tmax, "]", call. = FALSE)
+  }
+  if (!is.null(reject_tmax) && (reject_tmax > tmax || reject_tmax <= tmin)) {
+    stop("reject_tmax must be within the epoch window [", tmin, ", ", tmax, "]", call. = FALSE)
+  }
+  if (!is.null(reject_tmin) && !is.null(reject_tmax) && reject_tmin >= reject_tmax) {
+    stop("reject_tmin (", reject_tmin, ") must be less than reject_tmax (", reject_tmax, ")", call. = FALSE)
   }
   
   # ========== FILTER EXPERIMENTAL TRIGGERS ==========
@@ -462,6 +474,11 @@ epoch_eeg <- function(eeg_obj,                                           # Loade
   } else {
     baseline_indices <- NULL
   }
+
+  # ========== CALCULATE REJECTION WINDOW INDICES ==========
+  reject_idx_min <- if (!is.null(reject_tmin)) which.min(abs(epoch_times - reject_tmin)) else 1L
+  reject_idx_max <- if (!is.null(reject_tmax)) which.min(abs(epoch_times - reject_tmax)) else length(epoch_times)
+  rejection_indices <- reject_idx_min:reject_idx_max
   
   # ========== EXTRACT EPOCHS ==========
   if (verbose) cat("Extracting epochs...\n")
@@ -522,7 +539,7 @@ epoch_eeg <- function(eeg_obj,                                           # Loade
       if (!is.null(reject_threshold) || !is.null(flat_threshold)) {
         rejected_epoch <- FALSE
         for (ch in seq_len(n_channels)) {
-          ch_p2p <- max(epoch_data[ch, ], na.rm = TRUE) - min(epoch_data[ch, ], na.rm = TRUE)
+          ch_p2p <- max(epoch_data[ch, rejection_indices], na.rm = TRUE) - min(epoch_data[ch, rejection_indices], na.rm = TRUE)
 
           if (!is.null(reject_threshold) && ch_p2p > reject_threshold) {
             valid_epochs[i] <- FALSE

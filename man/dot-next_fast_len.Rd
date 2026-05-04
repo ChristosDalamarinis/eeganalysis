@@ -28,7 +28,7 @@ Depends on: eeg_class.R (for eeg object structure)
 }
 \section{Author: Christos Dalamarinis
 Date: March 2026
-Status: In development - not tested}{
+Status: Tested}{
 Find the next fast FFT length (5-smooth number)
 
 Returns the smallest integer >= target whose only prime factors are

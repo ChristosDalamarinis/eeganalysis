@@ -512,16 +512,16 @@ epoch_eeg <- function(eeg_obj,                                           # Loade
         }
       }
       
-      # Check rejection threshold
+      # Check rejection threshold (peak-to-peak per epoch)
       if (!is.null(reject_threshold)) {
-        epoch_max <- max(abs(epoch_data), na.rm = TRUE)
-        if (epoch_max > reject_threshold) {
+        epoch_p2p <- max(epoch_data, na.rm = TRUE) - min(epoch_data, na.rm = TRUE)
+        if (epoch_p2p > reject_threshold) {
           valid_epochs[i] <- FALSE
           rejection_log <- rbind(rejection_log, data.frame(
             epoch_id = i,
             event_type = selected_events$type[i],
             event_time = selected_events$onset_time[i],
-            reason = paste0("Amplitude exceeds threshold (", round(epoch_max, 1), " microV)"),
+            reason = paste0("Peak-to-peak amplitude exceeds threshold (", round(epoch_p2p, 1), " microV)"),
             stringsAsFactors = FALSE
           ))
           next

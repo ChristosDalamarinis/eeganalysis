@@ -381,6 +381,7 @@ epoch_eeg <- function(eeg_obj,                                           # Loade
                       baseline = c(-0.2, 0),                             # Determines time window (range) that will be used as the baseline, in seconds.
                       baseline_method = c("mean", "median", "none"),     # Different ways to compute what gets subtracted. 
                       reject_threshold = NULL,                           # Automatically rejects trials with extreme voltages (artifacts)
+                      flat_threshold = NULL,                             # Rejects trials where a channel is too flat (dead/disconnected electrode)
                       preload = TRUE,                                    # Whether to load all epoch data into memory immediately
                       verbose = TRUE) {                                  # Shows you what's happening during epoching
   
@@ -514,12 +515,13 @@ epoch_eeg <- function(eeg_obj,                                           # Loade
         }
       }
 
-      # Check rejection threshold (peak-to-peak per channel)
-      if (!is.null(reject_threshold)) {
+      # Check rejection and flat thresholds (peak-to-peak per channel)
+      if (!is.null(reject_threshold) || !is.null(flat_threshold)) {
         rejected_epoch <- FALSE
         for (ch in seq_len(n_channels)) {
           ch_p2p <- max(epoch_data[ch, ], na.rm = TRUE) - min(epoch_data[ch, ], na.rm = TRUE)
-          if (ch_p2p > reject_threshold) {
+
+          if (!is.null(reject_threshold) && ch_p2p > reject_threshold) {
             valid_epochs[i] <- FALSE
             rejection_log <- rbind(rejection_log, data.frame(
               epoch_id = i,
@@ -527,6 +529,20 @@ epoch_eeg <- function(eeg_obj,                                           # Loade
               event_time = selected_events$onset_time[i],
               channel = eeg_obj$channels[ch],
               reason = paste0("Peak-to-peak amplitude exceeds threshold (", round(ch_p2p, 1), " microV)"),
+              stringsAsFactors = FALSE
+            ))
+            rejected_epoch <- TRUE
+            break
+          }
+
+          if (!is.null(flat_threshold) && ch_p2p < flat_threshold) {
+            valid_epochs[i] <- FALSE
+            rejection_log <- rbind(rejection_log, data.frame(
+              epoch_id = i,
+              event_type = selected_events$type[i],
+              event_time = selected_events$onset_time[i],
+              channel = eeg_obj$channels[ch],
+              reason = paste0("Flat signal detected (", round(ch_p2p, 2), " microV peak-to-peak)"),
               stringsAsFactors = FALSE
             ))
             rejected_epoch <- TRUE

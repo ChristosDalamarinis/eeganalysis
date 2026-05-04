@@ -422,6 +422,11 @@ epoch_eeg <- function(eeg_obj,                                           # Loade
     baseline <- NULL
   }
 
+  if (!preload && (!is.null(reject_threshold) || !is.null(flat_threshold))) {
+    warning("reject_threshold and flat_threshold require preload = TRUE. ",
+            "Rejection will be skipped.", call. = FALSE)
+  }
+
   if (!is.null(reject_tmin) && (reject_tmin < tmin || reject_tmin >= tmax)) {
     stop("reject_tmin must be within the epoch window [", tmin, ", ", tmax, "]", call. = FALSE)
   }

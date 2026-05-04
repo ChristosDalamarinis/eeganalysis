@@ -14,6 +14,8 @@ epoch_eeg(
   baseline_method = c("mean", "median", "none"),
   reject_threshold = NULL,
   flat_threshold = NULL,
+  reject_tmin = NULL,
+  reject_tmax = NULL,
   preload = TRUE,
   verbose = TRUE
 )
@@ -40,6 +42,12 @@ Set to NULL to disable (default: NULL)}
 
 \item{flat_threshold}{Numeric. Minimum peak-to-peak amplitude in microV. Epochs where
 any channel falls below this value are rejected as flat/dead. Set to NULL to disable (default: NULL)}
+
+\item{reject_tmin}{Numeric. Start of the rejection window in seconds. Only this portion
+of the epoch is used when checking rejection and flat thresholds. Set to NULL to use tmin (default: NULL)}
+
+\item{reject_tmax}{Numeric. End of the rejection window in seconds. Only this portion
+of the epoch is used when checking rejection and flat thresholds. Set to NULL to use tmax (default: NULL)}
 
 \item{preload}{Logical. If TRUE, extract all epoch data into memory (default: TRUE)}
 

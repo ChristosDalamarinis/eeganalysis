@@ -358,6 +358,10 @@ inspect_triggers <- function(eeg_obj,                             # EEG object w
 #'   Set to NULL to disable (default: NULL)
 #' @param flat_threshold Numeric. Minimum peak-to-peak amplitude in microV. Epochs where
 #'   any channel falls below this value are rejected as flat/dead. Set to NULL to disable (default: NULL)
+#' @param reject_tmin Numeric. Start of the rejection window in seconds. Only this portion
+#'   of the epoch is used when checking rejection and flat thresholds. Set to NULL to use tmin (default: NULL)
+#' @param reject_tmax Numeric. End of the rejection window in seconds. Only this portion
+#'   of the epoch is used when checking rejection and flat thresholds. Set to NULL to use tmax (default: NULL)
 #' @param preload Logical. If TRUE, extract all epoch data into memory (default: TRUE)
 #' @param verbose Logical. Print progress messages (default: TRUE)
 #'

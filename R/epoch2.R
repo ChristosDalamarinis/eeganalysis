@@ -356,6 +356,8 @@ inspect_triggers <- function(eeg_obj,                             # EEG object w
 #' @param baseline_method Character: "mean", "median", or "none" (default: "mean")
 #' @param reject_threshold Numeric. Amplitude threshold in microV for epoch rejection.
 #'   Set to NULL to disable (default: NULL)
+#' @param flat_threshold Numeric. Minimum peak-to-peak amplitude in microV. Epochs where
+#'   any channel falls below this value are rejected as flat/dead. Set to NULL to disable (default: NULL)
 #' @param preload Logical. If TRUE, extract all epoch data into memory (default: TRUE)
 #' @param verbose Logical. Print progress messages (default: TRUE)
 #'
@@ -371,7 +373,7 @@ inspect_triggers <- function(eeg_obj,                             # EEG object w
 #'     \item{baseline}{Baseline correction window used}
 #'     \item{n_epochs}{Total number of epochs extracted}
 #'     \item{rejected}{Logical vector indicating rejected epochs}
-#'     \item{rejection_log}{Data frame with rejection reasons}
+#'     \item{rejection_log}{Data frame with rejection reasons, including the channel name that triggered each rejection}
 #'   }
 #'
 #' @export

@@ -38,6 +38,9 @@ window in seconds. Set to NULL to skip baseline correction (default: c(-0.2, 0))
 \item{reject_threshold}{Numeric. Amplitude threshold in microV for epoch rejection.
 Set to NULL to disable (default: NULL)}
 
+\item{flat_threshold}{Numeric. Minimum peak-to-peak amplitude in microV. Epochs where
+any channel falls below this value are rejected as flat/dead. Set to NULL to disable (default: NULL)}
+
 \item{preload}{Logical. If TRUE, extract all epoch data into memory (default: TRUE)}
 
 \item{verbose}{Logical. Print progress messages (default: TRUE)}
@@ -55,7 +58,7 @@ A list of class 'eeg_epochs' containing:
 \item{baseline}{Baseline correction window used}
 \item{n_epochs}{Total number of epochs extracted}
 \item{rejected}{Logical vector indicating rejected epochs}
-\item{rejection_log}{Data frame with rejection reasons}
+\item{rejection_log}{Data frame with rejection reasons, including the channel name that triggered each rejection}
 }
 }
 \description{

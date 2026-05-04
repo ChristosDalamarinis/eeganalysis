@@ -15,7 +15,7 @@
 # ============================================================================
 
 library(testthat)
-skip("Temporarily disabled while fixing epoch_eeg amplitude rejection logic")
+skip("Temporarily disabled while developing epoch2.R script")
 library(eeganalysis)
 
 # ============================================================================

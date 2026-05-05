@@ -21,7 +21,7 @@
 #'
 #' Author: Christos Dalamarinis
 #' Date: Jan - 2026 
-#' Status: In development
+#' Status: Tested -  stable
 #' ============================================================================
 #'
 #' ======================= INSPECT TRIGGERS FUNCTION ==========================

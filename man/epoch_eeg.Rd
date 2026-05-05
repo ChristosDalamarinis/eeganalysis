@@ -16,6 +16,7 @@ epoch_eeg(
   flat_threshold = NULL,
   reject_tmin = NULL,
   reject_tmax = NULL,
+  detrend = NULL,
   event_repeated = c("warn", "error", "drop"),
   on_missing = c("warn", "error", "ignore"),
   preload = TRUE,
@@ -50,6 +51,9 @@ of the epoch is used when checking rejection and flat thresholds. Set to NULL to
 
 \item{reject_tmax}{Numeric. End of the rejection window in seconds. Only this portion
 of the epoch is used when checking rejection and flat thresholds. Set to NULL to use tmax (default: NULL)}
+
+\item{detrend}{Numeric or NULL. Detrending applied to each epoch per channel before baseline
+correction. NULL = off (default), 0 = mean removal, 1 = linear detrending.}
 
 \item{event_repeated}{Character. How to handle duplicate events at the same sample index.
 "warn" keeps the first and warns (default), "drop" keeps the first silently, "error" stops.}

@@ -362,6 +362,8 @@ inspect_triggers <- function(eeg_obj,                             # EEG object w
 #'   of the epoch is used when checking rejection and flat thresholds. Set to NULL to use tmin (default: NULL)
 #' @param reject_tmax Numeric. End of the rejection window in seconds. Only this portion
 #'   of the epoch is used when checking rejection and flat thresholds. Set to NULL to use tmax (default: NULL)
+#' @param detrend Numeric or NULL. Detrending applied to each epoch per channel before baseline
+#'   correction. NULL = off (default), 0 = mean removal, 1 = linear detrending.
 #' @param event_repeated Character. How to handle duplicate events at the same sample index.
 #'   "warn" keeps the first and warns (default), "drop" keeps the first silently, "error" stops.
 #' @param on_missing Character. What to do when requested event codes are not found in the data.
@@ -397,6 +399,7 @@ epoch_eeg <- function(eeg_obj,                                           # Loade
                       flat_threshold = NULL,                             # Rejects trials where a channel is too flat (dead/disconnected electrode)
                       reject_tmin = NULL,                                # Start of the rejection window in seconds. NULL = use tmin
                       reject_tmax = NULL,                                # End of the rejection window in seconds. NULL = use tmax
+                      detrend = NULL,                                    # Detrending mode: NULL = off, 0 = mean removal, 1 = linear detrend
                       event_repeated = c("warn", "error", "drop"),       # How to handle duplicate events at the same sample
                       on_missing = c("warn", "error", "ignore"),          # What to do when requested event codes are not found
                       preload = TRUE,                                    # Whether to load all epoch data into memory immediately
@@ -430,6 +433,10 @@ epoch_eeg <- function(eeg_obj,                                           # Loade
   
   if (baseline_method == "none") {
     baseline <- NULL
+  }
+
+  if (!is.null(detrend) && !detrend %in% c(0, 1)) {
+    stop("detrend must be NULL, 0 (mean removal), or 1 (linear detrending)", call. = FALSE)
   }
 
   if (!preload && (!is.null(reject_threshold) || !is.null(flat_threshold))) {
@@ -565,6 +572,21 @@ epoch_eeg <- function(eeg_obj,                                           # Loade
     # Extract epoch data
     if (preload) {
       epoch_data <- eeg_obj$data[, epoch_start:epoch_end, drop = FALSE]
+
+      # Apply detrending
+      if (!is.null(detrend)) {
+        for (ch in seq_len(n_channels)) {
+          if (detrend == 0) {
+            epoch_data[ch, ] <- epoch_data[ch, ] - mean(epoch_data[ch, ], na.rm = TRUE)
+          } else if (detrend == 1) {
+            x <- seq_len(n_samples_epoch)
+            x_c <- x - mean(x)
+            slope <- sum(x_c * epoch_data[ch, ], na.rm = TRUE) / sum(x_c^2)
+            intercept <- mean(epoch_data[ch, ], na.rm = TRUE) - slope * mean(x)
+            epoch_data[ch, ] <- epoch_data[ch, ] - (intercept + slope * x)
+          }
+        }
+      }
 
       # Apply baseline correction
       if (!is.null(baseline)) {

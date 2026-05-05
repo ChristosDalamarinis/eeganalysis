@@ -362,6 +362,10 @@ inspect_triggers <- function(eeg_obj,                             # EEG object w
 #'   of the epoch is used when checking rejection and flat thresholds. Set to NULL to use tmin (default: NULL)
 #' @param reject_tmax Numeric. End of the rejection window in seconds. Only this portion
 #'   of the epoch is used when checking rejection and flat thresholds. Set to NULL to use tmax (default: NULL)
+#' @param event_repeated Character. How to handle duplicate events at the same sample index.
+#'   "warn" keeps the first and warns (default), "drop" keeps the first silently, "error" stops.
+#' @param on_missing Character. What to do when requested event codes are not found in the data.
+#'   "warn" continues with a warning (default), "error" stops, "ignore" continues silently.
 #' @param preload Logical. If TRUE, extract all epoch data into memory (default: TRUE).
 #'   Must be TRUE for reject_threshold and flat_threshold to work. A warning is issued if
 #'   thresholds are set but preload is FALSE.
@@ -393,11 +397,15 @@ epoch_eeg <- function(eeg_obj,                                           # Loade
                       flat_threshold = NULL,                             # Rejects trials where a channel is too flat (dead/disconnected electrode)
                       reject_tmin = NULL,                                # Start of the rejection window in seconds. NULL = use tmin
                       reject_tmax = NULL,                                # End of the rejection window in seconds. NULL = use tmax
+                      event_repeated = c("warn", "error", "drop"),       # How to handle duplicate events at the same sample
+                      on_missing = c("warn", "error", "ignore"),          # What to do when requested event codes are not found
                       preload = TRUE,                                    # Whether to load all epoch data into memory immediately
                       verbose = TRUE) {                                  # Shows you what's happening during epoching
   
   baseline_method <- match.arg(baseline_method)
-  
+  event_repeated  <- match.arg(event_repeated)
+  on_missing      <- match.arg(on_missing)
+
   # ========== INPUT VALIDATION ==========
   if (!inherits(eeg_obj, "eeg")) {
     stop("Input must be an object of class 'eeg'", call. = FALSE)
@@ -455,13 +463,37 @@ epoch_eeg <- function(eeg_obj,                                           # Loade
   if (is.character(events) && length(events) == 1 && events == "all") {
     selected_events <- valid_events
   } else {
+    missing_codes <- events[!events %in% valid_events$type]
+    if (length(missing_codes) > 0) {
+      msg <- paste0("Event code(s) not found in data: ", paste(missing_codes, collapse = ", "))
+      if (on_missing == "error") {
+        stop(msg, call. = FALSE)
+      } else if (on_missing == "warn") {
+        warning(msg, call. = FALSE)
+      }
+    }
     selected_events <- valid_events[valid_events$type %in% events, ]
   }
-  
+
   if (nrow(selected_events) == 0) {
     stop("No events matched the selection criteria: ", paste(events, collapse = ", "), call. = FALSE)
   }
-  
+
+  # ========== HANDLE DUPLICATE EVENTS ==========
+  duplicate_mask <- duplicated(selected_events$onset)
+  if (any(duplicate_mask)) {
+    n_duplicates <- sum(duplicate_mask)
+    msg <- paste0(n_duplicates, " duplicate event(s) found at the same sample. ",
+                  "Keeping first occurrence, dropping the rest.")
+    if (event_repeated == "error") {
+      stop(paste0(n_duplicates, " duplicate event(s) found at the same sample. ",
+                  "Use event_repeated = 'drop' or 'warn' to handle them."), call. = FALSE)
+    } else if (event_repeated == "warn") {
+      warning(msg, call. = FALSE)
+    }
+    selected_events <- selected_events[!duplicate_mask, ]
+  }
+
   if (verbose) {
     cat("Selected", nrow(selected_events), "events for epoching\n")
   }

@@ -15,7 +15,6 @@
 # ============================================================================
 
 library(testthat)
-skip("Temporarily disabled while developing epoch2.R script")
 library(eeganalysis)
 
 # ============================================================================
@@ -129,6 +128,7 @@ make_mock_epochs <- function(n_channels = 2,
       rejection_log    = data.frame(epoch_id   = integer(0),
                                     event_type = character(0),
                                     event_time = numeric(0),
+                                    channel    = character(0),
                                     reason     = character(0),
                                     stringsAsFactors = FALSE),
       metadata         = list()
@@ -787,10 +787,12 @@ test_that("epoch_eeg rejects epochs with amplitude exceeding threshold", {
   
   # Build data so that the epoch centred at onset=300 contains an artifact
   data_clean    <- matrix(rnorm(2 * 2000, mean = 0, sd = 1), nrow = 2)
-  # Inject a large spike into the window of the first event (onset=300)
+  # Inject a large swing into the window of the first event (onset=300)
+  # peak-to-peak requires a swing (max - min), not a constant value
   epoch_start   <- 300 + smin   # 300 - 26 = 274
   epoch_end     <- 300 + smax   # 300 + 102 = 402
-  data_clean[1, epoch_start:epoch_end] <- 1000   # far above any threshold
+  data_clean[1, epoch_start] <-  500   # large positive spike
+  data_clean[1, epoch_end]   <- -500   # large negative spike → p2p = 1000
   
   eeg <- make_mock_eeg(
     n_channels   = 2,
@@ -809,7 +811,7 @@ test_that("epoch_eeg rejects epochs with amplitude exceeding threshold", {
   
   # Epoch 1 (the artifact) must be rejected; epoch 2 must survive
   expect_equal(epochs$n_epochs, 1)
-  expect_true(any(grepl("Amplitude", epochs$rejection_log$reason)))
+  expect_true(any(grepl("Peak-to-peak", epochs$rejection_log$reason)))
 })
 
 # ----------------------------------------------------------------------------
@@ -1109,8 +1111,414 @@ test_that("epoch_eeg rejection_log is a data frame with correct columns", {
                       baseline = NULL, verbose = FALSE)
   
   expect_true(is.data.frame(epochs$rejection_log))
-  expected_cols <- c("epoch_id", "event_type", "event_time", "reason")
+  expected_cols <- c("epoch_id", "event_type", "event_time", "channel", "reason")
   expect_true(all(expected_cols %in% names(epochs$rejection_log)))
+})
+
+
+# ============================================================================
+# TEST SUITE 2B: New features — rejection, detrending, event handling
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# Test 2.28: flat_threshold rejects epochs with flat channels
+# ----------------------------------------------------------------------------
+test_that("epoch_eeg rejects epochs with flat signal below flat_threshold", {
+  sr   <- 256
+  tmin <- -0.1
+  tmax <-  0.4
+  smin <- round(tmin * sr)
+  smax <- round(tmax * sr)
+
+  data_clean <- matrix(rnorm(2 * 2000, mean = 0, sd = 10), nrow = 2)
+  # Inject a flat signal (near zero) into epoch 1, channel 1
+  epoch_start <- 300 + smin
+  epoch_end   <- 300 + smax
+  data_clean[1, epoch_start:epoch_end] <- 0.001   # essentially flat
+
+  eeg <- make_mock_eeg(
+    n_channels   = 2,
+    n_timepoints = 2000,
+    sr           = sr,
+    event_onsets = c(300L, 700L),
+    event_types  = c("1", "1"),
+    data_values  = data_clean
+  )
+
+  epochs <- epoch_eeg(eeg, events = "all",
+                      tmin = tmin, tmax = tmax,
+                      baseline = NULL,
+                      flat_threshold = 1,
+                      verbose = FALSE)
+
+  expect_equal(epochs$n_epochs, 1)
+  expect_true(any(grepl("Flat signal", epochs$rejection_log$reason)))
+})
+
+# ----------------------------------------------------------------------------
+# Test 2.29: rejection_log records the channel that caused rejection
+# ----------------------------------------------------------------------------
+test_that("epoch_eeg rejection_log records the offending channel name", {
+  sr   <- 256
+  tmin <- -0.1
+  tmax <-  0.4
+  smin <- round(tmin * sr)
+  smax <- round(tmax * sr)
+
+  data_clean <- matrix(rnorm(2 * 2000, mean = 0, sd = 1), nrow = 2)
+  epoch_start <- 300 + smin
+  epoch_end   <- 300 + smax
+  data_clean[1, epoch_start] <-  500   # large positive spike
+  data_clean[1, epoch_end]   <- -500   # large negative spike → p2p = 1000
+
+  eeg <- make_mock_eeg(
+    n_channels   = 2,
+    n_timepoints = 2000,
+    sr           = sr,
+    event_onsets = c(300L, 700L),
+    event_types  = c("1", "1"),
+    data_values  = data_clean
+  )
+
+  epochs <- epoch_eeg(eeg, events = "all",
+                      tmin = tmin, tmax = tmax,
+                      baseline = NULL,
+                      reject_threshold = 200,
+                      verbose = FALSE)
+
+  expect_true("channel" %in% names(epochs$rejection_log))
+  expect_equal(epochs$rejection_log$channel[1], "Ch1")
+})
+
+# ----------------------------------------------------------------------------
+# Test 2.30: boundary rejection logs NA for channel
+# ----------------------------------------------------------------------------
+test_that("epoch_eeg boundary rejection logs NA in channel column", {
+  eeg <- make_mock_eeg(
+    n_timepoints = 2000,
+    sr           = 256,
+    event_onsets = c(5L, 500L),
+    event_types  = c("1", "1")
+  )
+
+  epochs <- epoch_eeg(eeg, events = "all",
+                      tmin = -0.2, tmax = 0.4,
+                      baseline = NULL, verbose = FALSE)
+
+  boundary_rows <- epochs$rejection_log[grepl("boundaries", epochs$rejection_log$reason), ]
+  expect_true(is.na(boundary_rows$channel[1]))
+})
+
+# ----------------------------------------------------------------------------
+# Test 2.31: reject_tmin/reject_tmax validation
+# ----------------------------------------------------------------------------
+test_that("epoch_eeg rejects invalid reject_tmin/reject_tmax", {
+  eeg <- make_mock_eeg(n_timepoints = 2000)
+
+  expect_error(
+    epoch_eeg(eeg, tmin = -0.2, tmax = 0.5,
+              reject_tmin = -0.5, verbose = FALSE),
+    "reject_tmin"
+  )
+  expect_error(
+    epoch_eeg(eeg, tmin = -0.2, tmax = 0.5,
+              reject_tmax = 1.0, verbose = FALSE),
+    "reject_tmax"
+  )
+  expect_error(
+    epoch_eeg(eeg, tmin = -0.2, tmax = 0.5,
+              reject_tmin = 0.3, reject_tmax = 0.1, verbose = FALSE),
+    "reject_tmin"
+  )
+})
+
+# ----------------------------------------------------------------------------
+# Test 2.32: reject_tmin/reject_tmax restricts the rejection window
+# ----------------------------------------------------------------------------
+test_that("epoch_eeg reject_tmin/reject_tmax only checks specified window", {
+  sr   <- 256
+  tmin <- -0.2
+  tmax <-  0.5
+  smin <- round(tmin * sr)
+  smax <- round(tmax * sr)
+
+  data_clean <- matrix(rnorm(2 * 2000, mean = 0, sd = 1), nrow = 2)
+  # Inject artifact ONLY in the baseline window of epoch 1
+  epoch_start <- 400 + smin
+  epoch_end   <- 400 + round(-0.05 * sr)   # only in pre-stimulus
+  data_clean[1, epoch_start:epoch_end] <- 1000
+
+  eeg <- make_mock_eeg(
+    n_channels   = 2,
+    n_timepoints = 2000,
+    sr           = sr,
+    event_onsets = c(400L, 900L),
+    event_types  = c("1", "1"),
+    data_values  = data_clean
+  )
+
+  # Checking only post-stimulus: artifact in baseline should NOT trigger rejection
+  epochs <- epoch_eeg(eeg, events = "all",
+                      tmin = tmin, tmax = tmax,
+                      baseline = NULL,
+                      reject_threshold = 200,
+                      reject_tmin = 0, reject_tmax = 0.5,
+                      verbose = FALSE)
+
+  expect_equal(epochs$n_epochs, 2)
+})
+
+# ----------------------------------------------------------------------------
+# Test 2.33: preload = FALSE with thresholds issues a warning
+# ----------------------------------------------------------------------------
+test_that("epoch_eeg warns when thresholds set but preload = FALSE", {
+  eeg <- make_mock_eeg(n_timepoints = 2000)
+
+  expect_warning(
+    epoch_eeg(eeg, events = "all",
+              tmin = -0.1, tmax = 0.4,
+              baseline = NULL,
+              reject_threshold = 150,
+              preload = FALSE,
+              verbose = FALSE),
+    "Rejection will be skipped"
+  )
+})
+
+# ----------------------------------------------------------------------------
+# Test 2.34: event_repeated = "error" stops on duplicate events
+# ----------------------------------------------------------------------------
+test_that("epoch_eeg stops on duplicate events when event_repeated = 'error'", {
+  eeg <- make_mock_eeg(
+    n_timepoints = 2000,
+    event_onsets = c(300L, 300L, 700L),   # onset 300 is duplicated
+    event_types  = c("1", "1", "1")
+  )
+
+  expect_error(
+    epoch_eeg(eeg, events = "all",
+              tmin = -0.1, tmax = 0.4,
+              baseline = NULL,
+              event_repeated = "error",
+              verbose = FALSE),
+    "duplicate"
+  )
+})
+
+# ----------------------------------------------------------------------------
+# Test 2.35: event_repeated = "warn" warns and drops duplicates
+# ----------------------------------------------------------------------------
+test_that("epoch_eeg warns and drops duplicates when event_repeated = 'warn'", {
+  eeg <- make_mock_eeg(
+    n_timepoints = 2000,
+    event_onsets = c(300L, 300L, 700L),
+    event_types  = c("1", "1", "1")
+  )
+
+  expect_warning(
+    epochs <- epoch_eeg(eeg, events = "all",
+                        tmin = -0.1, tmax = 0.4,
+                        baseline = NULL,
+                        event_repeated = "warn",
+                        verbose = FALSE),
+    "duplicate"
+  )
+  expect_equal(epochs$n_epochs, 2)
+})
+
+# ----------------------------------------------------------------------------
+# Test 2.36: event_repeated = "drop" silently drops duplicates
+# ----------------------------------------------------------------------------
+test_that("epoch_eeg silently drops duplicates when event_repeated = 'drop'", {
+  eeg <- make_mock_eeg(
+    n_timepoints = 2000,
+    event_onsets = c(300L, 300L, 700L),
+    event_types  = c("1", "1", "1")
+  )
+
+  expect_no_warning(
+    epochs <- epoch_eeg(eeg, events = "all",
+                        tmin = -0.1, tmax = 0.4,
+                        baseline = NULL,
+                        event_repeated = "drop",
+                        verbose = FALSE)
+  )
+  expect_equal(epochs$n_epochs, 2)
+})
+
+# ----------------------------------------------------------------------------
+# Test 2.37: on_missing = "error" stops when event code not found
+# ----------------------------------------------------------------------------
+test_that("epoch_eeg stops when event code missing and on_missing = 'error'", {
+  eeg <- make_mock_eeg(event_types = c("1", "2", "1"))
+
+  expect_error(
+    epoch_eeg(eeg, events = 99,
+              tmin = -0.1, tmax = 0.4,
+              baseline = NULL,
+              on_missing = "error",
+              verbose = FALSE),
+    "not found"
+  )
+})
+
+# ----------------------------------------------------------------------------
+# Test 2.38: on_missing = "warn" warns but continues with available events
+# ----------------------------------------------------------------------------
+test_that("epoch_eeg warns but continues when on_missing = 'warn'", {
+  eeg <- make_mock_eeg(
+    n_timepoints = 2000,
+    event_onsets = c(200L, 500L, 800L),
+    event_types  = c("1", "2", "1")
+  )
+
+  expect_warning(
+    epochs <- epoch_eeg(eeg, events = c(1, 99),
+                        tmin = -0.1, tmax = 0.4,
+                        baseline = NULL,
+                        on_missing = "warn",
+                        verbose = FALSE),
+    "not found"
+  )
+  expect_equal(epochs$n_epochs, 2)
+})
+
+# ----------------------------------------------------------------------------
+# Test 2.39: on_missing = "ignore" continues silently
+# ----------------------------------------------------------------------------
+test_that("epoch_eeg continues silently when on_missing = 'ignore'", {
+  eeg <- make_mock_eeg(
+    n_timepoints = 2000,
+    event_onsets = c(200L, 500L, 800L),
+    event_types  = c("1", "2", "1")
+  )
+
+  expect_no_warning(
+    epochs <- epoch_eeg(eeg, events = c(1, 99),
+                        tmin = -0.1, tmax = 0.4,
+                        baseline = NULL,
+                        on_missing = "ignore",
+                        verbose = FALSE)
+  )
+  expect_equal(epochs$n_epochs, 2)
+})
+
+# ----------------------------------------------------------------------------
+# Test 2.40: detrend = NULL leaves signal unchanged
+# ----------------------------------------------------------------------------
+test_that("epoch_eeg detrend = NULL does not modify signal", {
+  sr   <- 256
+  tmin <- -0.1
+  tmax <-  0.4
+  smin <- round(tmin * sr)
+  smax <- round(tmax * sr)
+
+  set.seed(42)
+  raw_data <- matrix(rnorm(2 * 2000), nrow = 2)
+
+  eeg <- make_mock_eeg(
+    n_channels   = 2,
+    n_timepoints = 2000,
+    sr           = sr,
+    event_onsets = c(400L),
+    event_types  = c("1"),
+    data_values  = raw_data
+  )
+
+  epochs <- epoch_eeg(eeg, events = "all",
+                      tmin = tmin, tmax = tmax,
+                      baseline = NULL,
+                      detrend = NULL,
+                      verbose = FALSE)
+
+  expected <- raw_data[1, (400 + smin):(400 + smax)]
+  expect_equal(as.vector(epochs$data[1, , 1]), expected)
+})
+
+# ----------------------------------------------------------------------------
+# Test 2.41: detrend = 0 drives epoch mean to zero
+# ----------------------------------------------------------------------------
+test_that("epoch_eeg detrend = 0 drives each channel epoch mean to zero", {
+  sr   <- 256
+  tmin <- -0.1
+  tmax <-  0.4
+  n_tp <- 2000
+
+  data_const      <- matrix(0, nrow = 2, ncol = n_tp)
+  data_const[1, ] <- 8.0
+  data_const[2, ] <- -4.0
+
+  eeg <- make_mock_eeg(
+    n_channels   = 2,
+    n_timepoints = n_tp,
+    sr           = sr,
+    event_onsets = c(400L),
+    event_types  = c("1"),
+    data_values  = data_const
+  )
+
+  epochs <- epoch_eeg(eeg, events = "all",
+                      tmin = tmin, tmax = tmax,
+                      baseline = NULL,
+                      detrend = 0,
+                      verbose = FALSE)
+
+  for (ch in 1:2) {
+    expect_lt(abs(mean(epochs$data[ch, , 1])), 1e-9)
+  }
+})
+
+# ----------------------------------------------------------------------------
+# Test 2.42: detrend = 1 removes linear trend
+# ----------------------------------------------------------------------------
+test_that("epoch_eeg detrend = 1 removes linear drift leaving near-zero trend", {
+  sr      <- 256
+  tmin    <- -0.1
+  tmax    <-  0.4
+  smin    <- round(tmin * sr)
+  smax    <- round(tmax * sr)
+  n_samp  <- smax - smin + 1
+  n_tp    <- 2000
+
+  # Build a purely linear signal so after detrending residual should be ~0
+  raw_data      <- matrix(0, nrow = 2, ncol = n_tp)
+  onset         <- 400L
+  epoch_cols    <- (onset + smin):(onset + smax)
+  raw_data[1, epoch_cols] <- seq(0, 50, length.out = n_samp)   # linear ramp
+
+  eeg <- make_mock_eeg(
+    n_channels   = 2,
+    n_timepoints = n_tp,
+    sr           = sr,
+    event_onsets = c(onset),
+    event_types  = c("1"),
+    data_values  = raw_data
+  )
+
+  epochs <- epoch_eeg(eeg, events = "all",
+                      tmin = tmin, tmax = tmax,
+                      baseline = NULL,
+                      detrend = 1,
+                      verbose = FALSE)
+
+  # After removing a linear trend from a linear signal, residual should be ~0
+  expect_lt(max(abs(epochs$data[1, , 1])), 1e-6)
+})
+
+# ----------------------------------------------------------------------------
+# Test 2.43: detrend validation rejects invalid values
+# ----------------------------------------------------------------------------
+test_that("epoch_eeg rejects invalid detrend values", {
+  eeg <- make_mock_eeg(n_timepoints = 2000)
+
+  expect_error(
+    epoch_eeg(eeg, events = "all",
+              tmin = -0.1, tmax = 0.4,
+              baseline = NULL,
+              detrend = 2,
+              verbose = FALSE),
+    "detrend"
+  )
 })
 
 

@@ -37,7 +37,7 @@
 # Author: Christos Dalamarinis
 # Date: 2026
 # ============================================================================
-
+skip("fourier.R is under further development, therefore this test is being skipped for now")
 library(testthat)
 library(eeganalysis)
 

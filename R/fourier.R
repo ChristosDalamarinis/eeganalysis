@@ -79,6 +79,30 @@
 }
 
 
+#' Validate and resolve fmin / fmax against the Nyquist frequency - added 15/5/2026
+#'
+#' @param fmin Numeric. Lower frequency bound in Hz (>= 0).
+#' @param fmax Numeric or NULL. Upper frequency bound. NULL defaults to Nyquist.
+#' @param sr   Numeric. Sampling rate in Hz.
+#' @return Numeric vector c(fmin, fmax) with fmax resolved and clamped.
+#' @keywords internal
+.check_freq_range <- function(fmin, fmax, sr) {
+  if (!is.numeric(fmin) || length(fmin) != 1L || fmin < 0)
+    stop("fmin must be a single non-negative number.", call. = FALSE)
+  if (is.null(fmax)) fmax <- sr / 2
+  if (!is.numeric(fmax) || length(fmax) != 1L || fmax <= 0)
+    stop("fmax must be a single positive number.", call. = FALSE)
+  if (fmax > sr / 2) {
+    warning("fmax (", fmax, " Hz) exceeds Nyquist (", sr / 2, " Hz). ",
+            "Clamping to Nyquist.", call. = FALSE)
+    fmax <- sr / 2
+  }
+  if (fmin >= fmax)
+    stop("fmin (", fmin, ") must be less than fmax (", fmax, ").", call. = FALSE)
+  c(fmin, fmax)
+}
+
+
 #' Compute one-sided FFT amplitude, power, and phase for a single channel
 #'
 #' The amplitude spectrum is corrected for the one-sided representation
@@ -249,6 +273,8 @@ eeg_fft <- function(input_obj,
                     n_fft     = NULL,
                     window    = c("hann", "hamming", "blackman", "none"),
                     per_epoch = FALSE,
+                    fmin      = 0,
+                    fmax      = NULL,
                     verbose   = TRUE) {
   
   window      <- match.arg(window)
@@ -304,6 +330,13 @@ eeg_fft <- function(input_obj,
       phase_mat[i, ] <- res$phase
     }
     
+    ff        <- .check_freq_range(fmin, fmax, sr)
+    freq_idx  <- which(freqs >= ff[1] & freqs <= ff[2])
+    freqs     <- freqs[freq_idx]
+    pwr_mat   <- pwr_mat[,   freq_idx, drop = FALSE]
+    amp_mat   <- amp_mat[,   freq_idx, drop = FALSE]
+    phase_mat <- phase_mat[, freq_idx, drop = FALSE]
+
     return(structure(
       list(
         power         = pwr_mat,
@@ -323,7 +356,7 @@ eeg_fft <- function(input_obj,
       class = "eeg_spectrum"
     ))
   }
-  
+
   # ========== DISPATCH: eeg_epochs ==========
   if (input_class == "eeg_epochs") {
     
@@ -397,6 +430,17 @@ eeg_fft <- function(input_obj,
       epoch_pwr <- NULL
     }
     
+    ff       <- .check_freq_range(fmin, fmax, sr)
+    freq_idx <- which(freqs >= ff[1] & freqs <= ff[2])
+    freqs    <- freqs[freq_idx]
+    pwr_mat  <- pwr_mat[, freq_idx, drop = FALSE]
+    amp_mat  <- amp_mat[, freq_idx, drop = FALSE]
+    if (per_epoch) {
+      epoch_pwr <- epoch_pwr[, freq_idx, , drop = FALSE]
+    } else {
+      phase_mat <- phase_mat[, freq_idx, drop = FALSE]
+    }
+
     return(structure(
       list(
         power         = pwr_mat,
@@ -417,7 +461,7 @@ eeg_fft <- function(input_obj,
       class = "eeg_spectrum"
     ))
   }
-  
+
   # ========== DISPATCH: eeg_evoked ==========
   if (input_class == "eeg_evoked") {
     
@@ -468,6 +512,13 @@ eeg_fft <- function(input_obj,
       phase_list[[cond]] <- phase_c
     }
     
+    ff         <- .check_freq_range(fmin, fmax, sr)
+    freq_idx   <- which(freqs >= ff[1] & freqs <= ff[2])
+    freqs      <- freqs[freq_idx]
+    pwr_list   <- lapply(pwr_list,   function(m) m[, freq_idx, drop = FALSE])
+    amp_list   <- lapply(amp_list,   function(m) m[, freq_idx, drop = FALSE])
+    phase_list <- lapply(phase_list, function(m) m[, freq_idx, drop = FALSE])
+
     return(structure(
       list(
         power         = pwr_list,
@@ -551,6 +602,8 @@ eeg_psd_welch <- function(input_obj,
                           window        = c("hann", "hamming", "blackman", "none"),
                           n_fft         = NULL,
                           per_epoch     = FALSE,
+                          fmin          = 0,
+                          fmax          = NULL,
                           verbose       = TRUE) {
   
   window      <- match.arg(window)
@@ -652,12 +705,18 @@ eeg_psd_welch <- function(input_obj,
                                      s$win_samp, s$step, s$win_vec, s$n_fft_w)
     }
     
+    ff       <- .check_freq_range(fmin, fmax, sr)
+    freqs    <- s$freqs
+    freq_idx <- which(freqs >= ff[1] & freqs <= ff[2])
+    freqs    <- freqs[freq_idx]
+    psd_mat  <- psd_mat[, freq_idx, drop = FALSE]
+
     return(structure(
       list(
         power         = psd_mat,
         amplitude     = sqrt(psd_mat),
         phase         = NULL,
-        frequencies   = s$freqs,
+        frequencies   = freqs,
         channels      = chan_names,
         sampling_rate = sr,
         method        = "welch",
@@ -674,7 +733,7 @@ eeg_psd_welch <- function(input_obj,
       class = "eeg_spectrum"
     ))
   }
-  
+
   # ========== DISPATCH: eeg_epochs ==========
   if (input_class == "eeg_epochs") {
     
@@ -729,12 +788,19 @@ eeg_psd_welch <- function(input_obj,
       epoch_pwr <- NULL
     }
     
+    ff       <- .check_freq_range(fmin, fmax, sr)
+    freqs    <- s$freqs
+    freq_idx <- which(freqs >= ff[1] & freqs <= ff[2])
+    freqs    <- freqs[freq_idx]
+    psd_mat  <- psd_mat[, freq_idx, drop = FALSE]
+    if (per_epoch) epoch_pwr <- epoch_pwr[, freq_idx, , drop = FALSE]
+
     return(structure(
       list(
         power         = psd_mat,
         amplitude     = sqrt(psd_mat),
         phase         = NULL,
-        frequencies   = s$freqs,
+        frequencies   = freqs,
         channels      = chan_names,
         sampling_rate = sr,
         method        = "welch",
@@ -752,7 +818,7 @@ eeg_psd_welch <- function(input_obj,
       class = "eeg_spectrum"
     ))
   }
-  
+
   # ========== DISPATCH: eeg_evoked ==========
   if (input_class == "eeg_evoked") {
     
@@ -785,12 +851,18 @@ eeg_psd_welch <- function(input_obj,
       psd_list[[cond]] <- psd_c
     }
     
+    ff       <- .check_freq_range(fmin, fmax, sr)
+    freqs    <- s$freqs
+    freq_idx <- which(freqs >= ff[1] & freqs <= ff[2])
+    freqs    <- freqs[freq_idx]
+    psd_list <- lapply(psd_list, function(m) m[, freq_idx, drop = FALSE])
+
     return(structure(
       list(
         power         = psd_list,
         amplitude     = lapply(psd_list, sqrt),
         phase         = NULL,
-        frequencies   = s$freqs,
+        frequencies   = freqs,
         channels      = chan_names,
         sampling_rate = sr,
         method        = "welch",
@@ -880,6 +952,8 @@ eeg_multitaper <- function(input_obj,
                            segment_length = 2.0,
                            overlap        = 0.5,
                            per_epoch      = FALSE,
+                           fmin           = 0,
+                           fmax           = NULL,
                            verbose        = TRUE) {
   
   valid_cls   <- c("eeg", "eeg_epochs", "eeg_evoked")
@@ -959,6 +1033,11 @@ eeg_multitaper <- function(input_obj,
       psd_mat[i, ] <- seg_acc / length(starts)
     }
     
+    ff       <- .check_freq_range(fmin, fmax, sr)
+    freq_idx <- which(freqs >= ff[1] & freqs <= ff[2])
+    freqs    <- freqs[freq_idx]
+    psd_mat  <- psd_mat[, freq_idx, drop = FALSE]
+
     return(structure(
       list(
         power          = psd_mat,
@@ -983,7 +1062,7 @@ eeg_multitaper <- function(input_obj,
       class = "eeg_spectrum"
     ))
   }
-  
+
   # ========== DISPATCH: eeg_epochs ==========
   if (input_class == "eeg_epochs") {
     
@@ -1037,6 +1116,12 @@ eeg_multitaper <- function(input_obj,
       epoch_pwr <- NULL
     }
     
+    ff       <- .check_freq_range(fmin, fmax, sr)
+    freq_idx <- which(freqs >= ff[1] & freqs <= ff[2])
+    freqs    <- freqs[freq_idx]
+    psd_mat  <- psd_mat[, freq_idx, drop = FALSE]
+    if (per_epoch) epoch_pwr <- epoch_pwr[, freq_idx, , drop = FALSE]
+
     return(structure(
       list(
         power          = psd_mat,
@@ -1059,7 +1144,7 @@ eeg_multitaper <- function(input_obj,
       class = "eeg_spectrum"
     ))
   }
-  
+
   # ========== DISPATCH: eeg_evoked ==========
   if (input_class == "eeg_evoked") {
     
@@ -1094,6 +1179,11 @@ eeg_multitaper <- function(input_obj,
       psd_list[[cond]] <- psd_c
     }
     
+    ff       <- .check_freq_range(fmin, fmax, sr)
+    freq_idx <- which(freqs >= ff[1] & freqs <= ff[2])
+    freqs    <- freqs[freq_idx]
+    psd_list <- lapply(psd_list, function(m) m[, freq_idx, drop = FALSE])
+
     return(structure(
       list(
         power          = psd_list,

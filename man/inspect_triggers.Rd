@@ -59,7 +59,7 @@ tuning and works universally across all BioSemi recordings.
 }
 \section{Author: Christos Dalamarinis
 Date: Jan - 2026
-Status: In development}{
+Status: Tested -  stable}{
 ======================= INSPECT TRIGGERS FUNCTION ==========================
 Inspect Event Triggers in EEG Data
 

@@ -11,6 +11,8 @@ eeg_multitaper(
   segment_length = 2,
   overlap = 0.5,
   per_epoch = FALSE,
+  fmin = 0,
+  fmax = NULL,
   verbose = TRUE
 )
 }

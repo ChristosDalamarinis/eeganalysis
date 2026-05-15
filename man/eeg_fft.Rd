@@ -9,6 +9,8 @@ eeg_fft(
   n_fft = NULL,
   window = c("hann", "hamming", "blackman", "none"),
   per_epoch = FALSE,
+  fmin = 0,
+  fmax = NULL,
   verbose = TRUE
 )
 }

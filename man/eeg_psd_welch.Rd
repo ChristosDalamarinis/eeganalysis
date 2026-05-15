@@ -11,6 +11,8 @@ eeg_psd_welch(
   window = c("hann", "hamming", "blackman", "none"),
   n_fft = NULL,
   per_epoch = FALSE,
+  fmin = 0,
+  fmax = NULL,
   verbose = TRUE
 )
 }

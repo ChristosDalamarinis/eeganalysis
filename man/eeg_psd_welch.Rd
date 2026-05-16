@@ -13,6 +13,7 @@ eeg_psd_welch(
   per_epoch = FALSE,
   fmin = 0,
   fmax = NULL,
+  remove_dc = TRUE,
   verbose = TRUE
 )
 }
@@ -39,6 +40,17 @@ segment, interpolating the spectrum (does not increase resolution).}
 \item{per_epoch}{Logical. Only for 'eeg_epochs'. Compute Welch PSD per epoch
 then average, rather than averaging epochs in the time domain first.
 Default: FALSE.}
+
+\item{fmin}{Numeric. Lower frequency bound in Hz for the returned
+spectrum (default: 0). Must be >= 0 and less than fmax.}
+
+\item{fmax}{Numeric or NULL. Upper frequency bound in Hz. NULL
+(default) retains all frequencies up to the Nyquist limit. Values above
+Nyquist are clamped with a warning.}
+
+\item{remove_dc}{Logical. If TRUE (default), subtract the segment mean
+before applying the window on every Welch segment. Prevents DC energy
+from leaking into adjacent low-frequency bins.}
 
 \item{verbose}{Logical. Print processing summary. Default: TRUE.}
 }

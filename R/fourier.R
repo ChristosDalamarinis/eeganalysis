@@ -247,6 +247,14 @@
 #' @param per_epoch Logical. Only relevant for 'eeg_epochs' input. If TRUE,
 #'                  compute FFT per epoch and store results in $epoch_power.
 #'                  Default: FALSE.
+#' @param fmin      Numeric. Lower frequency bound in Hz for the returned
+#'                  spectrum (default: 0). Must be >= 0 and less than fmax.
+#' @param fmax      Numeric or NULL. Upper frequency bound in Hz. NULL
+#'                  (default) retains all frequencies up to the Nyquist limit.
+#'                  Values above Nyquist are clamped with a warning.
+#' @param remove_dc Logical. If TRUE (default), subtract the channel mean
+#'                  before applying the window. This prevents DC energy from
+#'                  leaking into adjacent low-frequency bins.
 #' @param verbose   Logical. Print a processing summary. Default: TRUE.
 #'
 #' @return An object of class 'eeg_spectrum'. See module header for full field
@@ -275,6 +283,7 @@ eeg_fft <- function(input_obj,
                     per_epoch = FALSE,
                     fmin      = 0,
                     fmax      = NULL,
+                    remove_dc = TRUE,
                     verbose   = TRUE) {
   
   window      <- match.arg(window)
@@ -324,7 +333,9 @@ eeg_fft <- function(input_obj,
                         dimnames = list(chan_names, NULL))
     
     for (i in seq_len(n_ch)) {
-      res              <- .fft_one_sided(data_mat[i, ] * win_vec, sr, n_fft_use)
+      sig <- data_mat[i, ]
+      if (remove_dc) sig <- sig - mean(sig)
+      res              <- .fft_one_sided(sig * win_vec, sr, n_fft_use)
       pwr_mat[i, ]   <- res$power
       amp_mat[i, ]   <- res$amplitude
       phase_mat[i, ] <- res$phase
@@ -398,8 +409,9 @@ eeg_fft <- function(input_obj,
       
       for (ep in seq_len(n_ep)) {
         for (i in seq_len(n_ch)) {
-          res                    <- .fft_one_sided(data_arr[i, , ep] * win_vec,
-                                                   sr, n_fft_use)
+          sig <- data_arr[i, , ep]
+          if (remove_dc) sig <- sig - mean(sig)
+          res                    <- .fft_one_sided(sig * win_vec, sr, n_fft_use)
           epoch_pwr[i, , ep]   <- res$power
           epoch_amp[i, , ep]   <- res$amplitude
           epoch_phase[i, , ep] <- res$phase
@@ -422,7 +434,9 @@ eeg_fft <- function(input_obj,
                           dimnames = list(chan_names, NULL))
       
       for (i in seq_len(n_ch)) {
-        res              <- .fft_one_sided(avg_data[i, ] * win_vec, sr, n_fft_use)
+        sig <- avg_data[i, ]
+        if (remove_dc) sig <- sig - mean(sig)
+        res              <- .fft_one_sided(sig * win_vec, sr, n_fft_use)
         pwr_mat[i, ]   <- res$power
         amp_mat[i, ]   <- res$amplitude
         phase_mat[i, ] <- res$phase
@@ -501,7 +515,9 @@ eeg_fft <- function(input_obj,
                           dimnames = list(chan_names, NULL))
       
       for (i in seq_len(n_ch)) {
-        res            <- .fft_one_sided(cond_data[i, ] * win_vec, sr, n_fft_use)
+        sig <- cond_data[i, ]
+        if (remove_dc) sig <- sig - mean(sig)
+        res            <- .fft_one_sided(sig * win_vec, sr, n_fft_use)
         pwr_c[i, ]   <- res$power
         amp_c[i, ]   <- res$amplitude
         phase_c[i, ] <- res$phase
@@ -576,6 +592,14 @@ eeg_fft <- function(input_obj,
 #' @param per_epoch Logical. Only for 'eeg_epochs'. Compute Welch PSD per epoch
 #'   then average, rather than averaging epochs in the time domain first.
 #'   Default: FALSE.
+#' @param fmin      Numeric. Lower frequency bound in Hz for the returned
+#'   spectrum (default: 0). Must be >= 0 and less than fmax.
+#' @param fmax      Numeric or NULL. Upper frequency bound in Hz. NULL
+#'   (default) retains all frequencies up to the Nyquist limit. Values above
+#'   Nyquist are clamped with a warning.
+#' @param remove_dc Logical. If TRUE (default), subtract the segment mean
+#'   before applying the window on every Welch segment. Prevents DC energy
+#'   from leaking into adjacent low-frequency bins.
 #' @param verbose   Logical. Print processing summary. Default: TRUE.
 #'
 #' @return An object of class 'eeg_spectrum'. \code{$power} contains the PSD
@@ -604,6 +628,7 @@ eeg_psd_welch <- function(input_obj,
                           per_epoch     = FALSE,
                           fmin          = 0,
                           fmax          = NULL,
+                          remove_dc     = TRUE,
                           verbose       = TRUE) {
   
   window      <- match.arg(window)
@@ -641,7 +666,9 @@ eeg_psd_welch <- function(input_obj,
     acc <- numeric(n_half)
     
     for (s in starts) {
-      seg <- x[s:(s + win_samp - 1L)] * win_vec
+      seg <- x[s:(s + win_samp - 1L)]
+      if (remove_dc) seg <- seg - mean(seg)
+      seg <- seg * win_vec
       if (n_fft_w > win_samp) seg <- c(seg, rep(0.0, n_fft_w - win_samp))
       
       X   <- fft(seg)[seq_len(n_half)]
@@ -918,6 +945,14 @@ eeg_psd_welch <- function(input_obj,
 #'   for 'eeg' input (default: 0.5). Ignored for epochs/evoked.
 #' @param per_epoch      Logical. For 'eeg_epochs': compute multitaper PSD per
 #'   epoch then average (TRUE), or average epochs first (FALSE). Default: FALSE.
+#' @param fmin           Numeric. Lower frequency bound in Hz for the returned
+#'   spectrum (default: 0). Must be >= 0 and less than fmax.
+#' @param fmax           Numeric or NULL. Upper frequency bound in Hz. NULL
+#'   (default) retains all frequencies up to the Nyquist limit. Values above
+#'   Nyquist are clamped with a warning.
+#' @param remove_dc      Logical. If TRUE (default), subtract the segment mean
+#'   before applying tapers on every analysis segment. Prevents DC energy from
+#'   leaking into adjacent low-frequency bins.
 #' @param verbose        Logical. Print processing summary. Default: TRUE.
 #'
 #' @return An object of class 'eeg_spectrum'. Output units are uV^2/Hz.
@@ -954,6 +989,7 @@ eeg_multitaper <- function(input_obj,
                            per_epoch      = FALSE,
                            fmin           = 0,
                            fmax           = NULL,
+                           remove_dc      = TRUE,
                            verbose        = TRUE) {
   
   valid_cls   <- c("eeg", "eeg_epochs", "eeg_evoked")
@@ -1027,12 +1063,13 @@ eeg_multitaper <- function(input_obj,
     for (i in seq_len(n_ch)) {
       seg_acc <- numeric(n_half)
       for (s_start in starts) {
-        seg      <- data_mat[i, s_start:(s_start + win_samp - 1L)]
+        seg <- data_mat[i, s_start:(s_start + win_samp - 1L)]
+        if (remove_dc) seg <- seg - mean(seg)
         seg_acc  <- seg_acc + .mtaper_psd(seg, sr, tapers)
       }
       psd_mat[i, ] <- seg_acc / length(starts)
     }
-    
+
     ff       <- .check_freq_range(fmin, fmax, sr)
     freq_idx <- which(freqs >= ff[1] & freqs <= ff[2])
     freqs    <- freqs[freq_idx]
@@ -1099,7 +1136,9 @@ eeg_multitaper <- function(input_obj,
       
       for (ep in seq_len(n_ep)) {
         for (i in seq_len(n_ch)) {
-          epoch_pwr[i, , ep] <- .mtaper_psd(data_arr[i, , ep], sr, tapers)
+          seg <- data_arr[i, , ep]
+          if (remove_dc) seg <- seg - mean(seg)
+          epoch_pwr[i, , ep] <- .mtaper_psd(seg, sr, tapers)
         }
       }
       
@@ -1111,7 +1150,9 @@ eeg_multitaper <- function(input_obj,
       psd_mat  <- matrix(0, nrow = n_ch, ncol = n_half,
                          dimnames = list(chan_names, NULL))
       for (i in seq_len(n_ch)) {
-        psd_mat[i, ] <- .mtaper_psd(avg_data[i, ], sr, tapers)
+        sig <- avg_data[i, ]
+        if (remove_dc) sig <- sig - mean(sig)
+        psd_mat[i, ] <- .mtaper_psd(sig, sr, tapers)
       }
       epoch_pwr <- NULL
     }
@@ -1174,7 +1215,9 @@ eeg_multitaper <- function(input_obj,
       psd_c       <- matrix(0, nrow = n_ch, ncol = n_half,
                             dimnames = list(chan_names, NULL))
       for (i in seq_len(n_ch)) {
-        psd_c[i, ] <- .mtaper_psd(cond_data[i, ], sr, tapers)
+        sig <- cond_data[i, ]
+        if (remove_dc) sig <- sig - mean(sig)
+        psd_c[i, ] <- .mtaper_psd(sig, sr, tapers)
       }
       psd_list[[cond]] <- psd_c
     }

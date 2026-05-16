@@ -155,37 +155,79 @@
 #' @param n  Integer. Signal length.
 #' @param nw Numeric. Time-bandwidth product (e.g. 4 gives NW=4).
 #' @param k  Integer. Number of tapers to return (k <= 2*nw - 1 recommended).
-#' @return Numeric matrix of dimensions \[n x k]. Columns are the tapers,
-#'         normalised to unit energy. Sign convention: first element positive.
+#' @return A named list with two elements:
+#'   \describe{
+#'     \item{tapers}{Numeric matrix \[n x k]. Columns are the DPSS tapers,
+#'       normalised to unit energy. Sign convention: first element positive.}
+#'     \item{eigenvalues}{Numeric vector of length k. Spectral concentration
+#'       eigenvalue for each taper (values in (0, 1]). Higher is better;
+#'       tapers with eigenvalue < 0.9 have meaningful spectral leakage.}
+#'   }
 #' @keywords internal
 .compute_dpss <- function(n, nw, k) {
   W <- nw / n           # normalised half-bandwidth
-  
+
   # Diagonal and off-diagonal elements of the tridiagonal commuting matrix
   i_main  <- 0L:(n - 1L)
   d_main  <- ((n - 1L - 2L * i_main) / 2)^2 * cos(2 * pi * W)
   i_off   <- seq_len(n - 1L)
   d_off   <- i_off * (n - i_off) / 2
-  
+
   # Build full symmetric tridiagonal matrix
   T_mat <- diag(d_main)
   for (i in i_off) {
     T_mat[i, i + 1L] <- d_off[i]
     T_mat[i + 1L, i] <- d_off[i]
   }
-  
+
   # Eigen-decomposition (symmetric); take the k vectors with largest |eigenvalue|
   eig    <- eigen(T_mat, symmetric = TRUE)
   ord    <- order(abs(eig$values), decreasing = TRUE)
   tapers <- eig$vectors[, ord[seq_len(k)], drop = FALSE]
-  
+
   # Normalise each taper: unit energy, positive first element (sign convention)
   for (j in seq_len(k)) {
     if (tapers[1L, j] < 0) tapers[, j] <- -tapers[, j]
     tapers[, j] <- tapers[, j] / sqrt(sum(tapers[, j]^2))
   }
-  
-  tapers   # [n x k]
+
+  list(tapers = tapers, eigenvalues = .dpss_eigenvalues(n, nw, tapers))
+}
+
+
+#' Compute spectral concentration eigenvalues for DPSS tapers
+#'
+#' For each taper, the eigenvalue lambda measures what fraction of the taper's
+#' energy falls inside the target bandwidth [-W, W].  Lambda = 1 means perfect
+#' concentration (zero leakage); values below ~0.9 indicate meaningful leakage
+#' from outside the band.  The computation uses the exact sinc inner-product
+#' formula: lambda_k = v_k^T B v_k, where B[i,j] = sin(2*pi*W*(i-j))/(pi*(i-j))
+#' and B[i,i] = 2*W.
+#'
+#' @param n      Integer. Signal length (number of samples).
+#' @param nw     Numeric. Time-bandwidth product (same as passed to
+#'               \code{.compute_dpss}).
+#' @param tapers Numeric matrix \[n x k] of normalised DPSS tapers.
+#' @return Numeric vector of length k with eigenvalues in (0, 1].
+#' @keywords internal
+.dpss_eigenvalues <- function(n, nw, tapers) {
+  W   <- nw / n                              # normalised half-bandwidth
+  k   <- ncol(tapers)
+  idx <- outer(seq_len(n), seq_len(n), "-") # difference matrix [n x n]
+
+  # Sinc concentration matrix: B[i,j] = sin(2*pi*W*(i-j)) / (pi*(i-j))
+  # Diagonal (i == j, idx == 0): limit is 2W
+  B         <- sin(2 * pi * W * idx) / (pi * idx)
+  diag(B)   <- 2 * W
+
+  # Eigenvalue for taper j: v_j^T * B * v_j
+  # (tapers are unit-energy so this is already the concentration ratio)
+  eigvals <- numeric(k)
+  for (j in seq_len(k)) {
+    v          <- tapers[, j]
+    eigvals[j] <- as.numeric(crossprod(v, B %*% v))
+  }
+  pmin(eigvals, 1.0)   # clamp floating-point overshoot
 }
 
 
@@ -953,6 +995,11 @@ eeg_psd_welch <- function(input_obj,
 #' @param remove_dc      Logical. If TRUE (default), subtract the segment mean
 #'   before applying tapers on every analysis segment. Prevents DC energy from
 #'   leaking into adjacent low-frequency bins.
+#' @param low_bias       Logical. If TRUE (default), discard any DPSS taper
+#'   whose spectral concentration eigenvalue is below 0.9. Higher-order tapers
+#'   with low eigenvalues leak energy from outside the target band, biasing the
+#'   PSD estimate. Keeping only well-concentrated tapers reduces bias at a small
+#'   variance cost (fewer tapers = slightly less averaging).
 #' @param verbose        Logical. Print processing summary. Default: TRUE.
 #'
 #' @return An object of class 'eeg_spectrum'. Output units are uV^2/Hz.
@@ -990,6 +1037,7 @@ eeg_multitaper <- function(input_obj,
                            fmin           = 0,
                            fmax           = NULL,
                            remove_dc      = TRUE,
+                           low_bias       = TRUE,
                            verbose        = TRUE) {
   
   valid_cls   <- c("eeg", "eeg_epochs", "eeg_evoked")
@@ -1039,9 +1087,23 @@ eeg_multitaper <- function(input_obj,
     starts   <- seq(1L, n_tp - win_samp + 1L, by = step)
     n_half   <- floor(win_samp / 2L) + 1L
     freqs    <- seq(0, sr / 2, length.out = n_half)
-    tapers   <- .compute_dpss(win_samp, time_bandwidth, n_tapers)
-    h_bw     <- round(time_bandwidth / win_samp * sr, 3)
-    
+    dpss         <- .compute_dpss(win_samp, time_bandwidth, n_tapers)
+    tapers       <- dpss$tapers
+    eigvals      <- dpss$eigenvalues
+    n_tapers_req <- n_tapers
+    if (low_bias) {
+      keep <- eigvals >= 0.9
+      if (!any(keep)) {
+        warning("low_bias = TRUE removed all tapers; retaining the best one.",
+                call. = FALSE)
+        keep[which.max(eigvals)] <- TRUE
+      }
+      tapers   <- tapers[, keep, drop = FALSE]
+      eigvals  <- eigvals[keep]
+      n_tapers <- sum(keep)
+    }
+    h_bw <- round(time_bandwidth / win_samp * sr, 3)
+
     if (verbose) {
       cat("\n", strrep("=", 60), "\n", sep = "")
       cat("Multitaper PSD  [eeg]\n")
@@ -1049,7 +1111,9 @@ eeg_multitaper <- function(input_obj,
       cat("  Channels:          ", n_ch, "\n")
       cat("  Signal length:     ", n_tp, "samples (", round(n_tp / sr, 2), "s)\n")
       cat("  Time-bandwidth NW: ", time_bandwidth, "\n")
-      cat("  Tapers (K):        ", n_tapers, "\n")
+      cat("  Tapers requested:  ", n_tapers_req, "\n")
+      cat("  Tapers kept:       ", n_tapers,
+          if (low_bias) "(low_bias >= 0.9)" else "", "\n")
       cat("  Spectral half-bw:  +-", h_bw, "Hz\n")
       cat("  Segment length:    ", segment_length, "s (", win_samp, "samples)\n")
       cat("  Segments:          ", length(starts), "\n")
@@ -1115,8 +1179,22 @@ eeg_multitaper <- function(input_obj,
     n_ep       <- dim(data_arr)[3L]
     n_half     <- floor(n_samp / 2L) + 1L
     freqs      <- seq(0, sr / 2, length.out = n_half)
-    tapers     <- .compute_dpss(n_samp, time_bandwidth, n_tapers)
-    
+    dpss         <- .compute_dpss(n_samp, time_bandwidth, n_tapers)
+    tapers       <- dpss$tapers
+    eigvals      <- dpss$eigenvalues
+    n_tapers_req <- n_tapers
+    if (low_bias) {
+      keep <- eigvals >= 0.9
+      if (!any(keep)) {
+        warning("low_bias = TRUE removed all tapers; retaining the best one.",
+                call. = FALSE)
+        keep[which.max(eigvals)] <- TRUE
+      }
+      tapers   <- tapers[, keep, drop = FALSE]
+      eigvals  <- eigvals[keep]
+      n_tapers <- sum(keep)
+    }
+
     if (verbose) {
       cat("\n", strrep("=", 60), "\n", sep = "")
       cat("Multitaper PSD  [eeg_epochs]\n")
@@ -1125,7 +1203,9 @@ eeg_multitaper <- function(input_obj,
       cat("  Epochs:            ", n_ep, "\n")
       cat("  Samples per epoch: ", n_samp, "\n")
       cat("  Time-bandwidth NW: ", time_bandwidth, "\n")
-      cat("  Tapers (K):        ", n_tapers, "\n")
+      cat("  Tapers requested:  ", n_tapers_req, "\n")
+      cat("  Tapers kept:       ", n_tapers,
+          if (low_bias) "(low_bias >= 0.9)" else "", "\n")
       cat("  Per epoch:         ", per_epoch, "\n")
       cat(strrep("=", 60), "\n\n")
     }
@@ -1196,8 +1276,22 @@ eeg_multitaper <- function(input_obj,
     n_samp     <- ncol(input_obj$evoked[[1L]])
     n_half     <- floor(n_samp / 2L) + 1L
     freqs      <- seq(0, sr / 2, length.out = n_half)
-    tapers     <- .compute_dpss(n_samp, time_bandwidth, n_tapers)
-    
+    dpss         <- .compute_dpss(n_samp, time_bandwidth, n_tapers)
+    tapers       <- dpss$tapers
+    eigvals      <- dpss$eigenvalues
+    n_tapers_req <- n_tapers
+    if (low_bias) {
+      keep <- eigvals >= 0.9
+      if (!any(keep)) {
+        warning("low_bias = TRUE removed all tapers; retaining the best one.",
+                call. = FALSE)
+        keep[which.max(eigvals)] <- TRUE
+      }
+      tapers   <- tapers[, keep, drop = FALSE]
+      eigvals  <- eigvals[keep]
+      n_tapers <- sum(keep)
+    }
+
     if (verbose) {
       cat("\n", strrep("=", 60), "\n", sep = "")
       cat("Multitaper PSD  [eeg_evoked]\n")
@@ -1205,7 +1299,9 @@ eeg_multitaper <- function(input_obj,
       cat("  Channels:          ", n_ch, "\n")
       cat("  Conditions:        ", paste(conditions, collapse = ", "), "\n")
       cat("  Time-bandwidth NW: ", time_bandwidth, "\n")
-      cat("  Tapers (K):        ", n_tapers, "\n")
+      cat("  Tapers requested:  ", n_tapers_req, "\n")
+      cat("  Tapers kept:       ", n_tapers,
+          if (low_bias) "(low_bias >= 0.9)" else "", "\n")
       cat(strrep("=", 60), "\n\n")
     }
     

@@ -9,7 +9,7 @@
 \arguments{
 \item{data}{Numeric matrix or array. First dimension must be channels.}
 
-\item{chan_names}{Character vector of channel names (length = dim(data)/\link{1/}).}
+\item{chan_names}{Character vector of channel names (length = dim(data)[1]).}
 }
 \value{
 Integer vector of bad channel indices (length 0 if none found).

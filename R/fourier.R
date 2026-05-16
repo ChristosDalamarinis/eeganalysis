@@ -101,7 +101,29 @@
 }
 
 
-#' Validate and resolve fmin / fmax against the Nyquist frequency - added 15/5/2026
+#' Identify channels containing NaN or Inf values
+#'
+#' Scans a data matrix \[channels x samples] or 3-D array
+#' \[channels x samples x epochs] for non-finite values. Issues a warning
+#' listing the affected channel names, then returns their indices so the
+#' caller can zero them out before computation and restore NaN afterwards.
+#'
+#' @param data       Numeric matrix or array. First dimension must be channels.
+#' @param chan_names Character vector of channel names (length = dim(data)[1]).
+#' @return Integer vector of bad channel indices (length 0 if none found).
+#' @keywords internal
+.find_bad_channels <- function(data, chan_names) {
+  bad <- which(apply(!is.finite(data), 1L, any))
+  if (length(bad) > 0L) {
+    warning(length(bad), " channel(s) contain NaN/Inf values and will be ",
+            "set to NaN in the output: ",
+            paste(chan_names[bad], collapse = ", "), call. = FALSE)
+  }
+  bad
+}
+
+
+#' Validate and resolve fmin / fmax against the Nyquist frequency
 #'
 #' @param fmin Numeric. Lower frequency bound in Hz (>= 0).
 #' @param fmax Numeric or NULL. Upper frequency bound. NULL defaults to Nyquist.
@@ -399,8 +421,10 @@ eeg_fft <- function(input_obj,
     n_fft_use  <- if (is.null(n_fft)) n_tp else as.integer(n_fft)
     n_half     <- floor(n_fft_use / 2L) + 1L
     freqs      <- seq(0, sr / 2, length.out = n_half)
-    win_vec    <- .make_window(n_tp, window)
-    
+    win_vec <- .make_window(n_tp, window)
+    bad_ch  <- .find_bad_channels(data_mat, chan_names)
+    if (length(bad_ch) > 0L) data_mat[bad_ch, ] <- 0.0
+
     if (verbose) {
       cat("\n", strrep("=", 60), "\n", sep = "")
       cat("FFT Spectral Analysis  [eeg]\n")
@@ -428,7 +452,13 @@ eeg_fft <- function(input_obj,
       amp_mat[i, ]   <- res$amplitude
       phase_mat[i, ] <- res$phase
     }
-    
+
+    if (length(bad_ch) > 0L) {
+      pwr_mat[bad_ch, ]   <- NA_real_
+      amp_mat[bad_ch, ]   <- NA_real_
+      phase_mat[bad_ch, ] <- NA_real_
+    }
+
     ff        <- .check_freq_range(fmin, fmax, sr)
     freq_idx  <- which(freqs >= ff[1] & freqs <= ff[2])
     freqs     <- freqs[freq_idx]
@@ -472,8 +502,10 @@ eeg_fft <- function(input_obj,
     n_fft_use  <- if (is.null(n_fft)) n_samp else as.integer(n_fft)
     n_half     <- floor(n_fft_use / 2L) + 1L
     freqs      <- seq(0, sr / 2, length.out = n_half)
-    win_vec    <- .make_window(n_samp, window)
-    
+    win_vec <- .make_window(n_samp, window)
+    bad_ch  <- .find_bad_channels(data_arr, chan_names)
+    if (length(bad_ch) > 0L) data_arr[bad_ch, , ] <- 0.0
+
     if (verbose) {
       cat("\n", strrep("=", 60), "\n", sep = "")
       cat("FFT Spectral Analysis  [eeg_epochs]\n")
@@ -531,7 +563,17 @@ eeg_fft <- function(input_obj,
       }
       epoch_pwr <- NULL
     }
-    
+
+    if (length(bad_ch) > 0L) {
+      pwr_mat[bad_ch, ] <- NA_real_
+      amp_mat[bad_ch, ] <- NA_real_
+      if (per_epoch) {
+        epoch_pwr[bad_ch, , ] <- NA_real_
+      } else {
+        phase_mat[bad_ch, ] <- NA_real_
+      }
+    }
+
     ff       <- .check_freq_range(fmin, fmax, sr)
     freq_idx <- which(freqs >= ff[1] & freqs <= ff[2])
     freqs    <- freqs[freq_idx]
@@ -594,14 +636,17 @@ eeg_fft <- function(input_obj,
     phase_list <- list()
     
     for (cond in conditions) {
-      cond_data <- input_obj$evoked[[cond]]   # [channels x times]
-      pwr_c     <- matrix(0, nrow = n_ch, ncol = n_half,
-                          dimnames = list(chan_names, NULL))
-      amp_c     <- matrix(0, nrow = n_ch, ncol = n_half,
-                          dimnames = list(chan_names, NULL))
-      phase_c   <- matrix(0, nrow = n_ch, ncol = n_half,
-                          dimnames = list(chan_names, NULL))
-      
+      cond_data   <- input_obj$evoked[[cond]]   # [channels x times]
+      bad_ch_cond <- .find_bad_channels(cond_data, chan_names)
+      if (length(bad_ch_cond) > 0L) cond_data[bad_ch_cond, ] <- 0.0
+
+      pwr_c   <- matrix(0, nrow = n_ch, ncol = n_half,
+                        dimnames = list(chan_names, NULL))
+      amp_c   <- matrix(0, nrow = n_ch, ncol = n_half,
+                        dimnames = list(chan_names, NULL))
+      phase_c <- matrix(0, nrow = n_ch, ncol = n_half,
+                        dimnames = list(chan_names, NULL))
+
       for (i in seq_len(n_ch)) {
         sig <- cond_data[i, ]
         if (remove_dc) sig <- sig - mean(sig)
@@ -610,7 +655,13 @@ eeg_fft <- function(input_obj,
         amp_c[i, ]   <- res$amplitude
         phase_c[i, ] <- res$phase
       }
-      
+
+      if (length(bad_ch_cond) > 0L) {
+        pwr_c[bad_ch_cond, ]   <- NA_real_
+        amp_c[bad_ch_cond, ]   <- NA_real_
+        phase_c[bad_ch_cond, ] <- NA_real_
+      }
+
       pwr_list[[cond]]   <- pwr_c
       amp_list[[cond]]   <- amp_c
       phase_list[[cond]] <- phase_c
@@ -809,9 +860,11 @@ eeg_psd_welch <- function(input_obj,
     chan_names <- input_obj$channels
     n_ch       <- nrow(data_mat)
     n_tp       <- ncol(data_mat)
-    s          <- .welch_setup(sr, n_tp)
-    n_seg      <- floor((n_tp - s$win_samp) / s$step) + 1L
-    
+    s      <- .welch_setup(sr, n_tp)
+    n_seg  <- floor((n_tp - s$win_samp) / s$step) + 1L
+    bad_ch <- .find_bad_channels(data_mat, chan_names)
+    if (length(bad_ch) > 0L) data_mat[bad_ch, ] <- 0.0
+
     if (verbose) {
       cat("\n", strrep("=", 60), "\n", sep = "")
       cat("Welch PSD  [eeg]\n")
@@ -834,7 +887,9 @@ eeg_psd_welch <- function(input_obj,
       psd_mat[i, ] <- .welch_channel(data_mat[i, ], sr,
                                      s$win_samp, s$step, s$win_vec, s$n_fft_w)
     }
-    
+
+    if (length(bad_ch) > 0L) psd_mat[bad_ch, ] <- NA_real_
+
     ff       <- .check_freq_range(fmin, fmax, sr)
     freqs    <- s$freqs
     freq_idx <- which(freqs >= ff[1] & freqs <= ff[2])
@@ -878,8 +933,10 @@ eeg_psd_welch <- function(input_obj,
     n_ch       <- dim(data_arr)[1L]
     n_samp     <- dim(data_arr)[2L]
     n_ep       <- dim(data_arr)[3L]
-    s          <- .welch_setup(sr, n_samp)
-    
+    s      <- .welch_setup(sr, n_samp)
+    bad_ch <- .find_bad_channels(data_arr, chan_names)
+    if (length(bad_ch) > 0L) data_arr[bad_ch, , ] <- 0.0
+
     if (verbose) {
       cat("\n", strrep("=", 60), "\n", sep = "")
       cat("Welch PSD  [eeg_epochs]\n")
@@ -919,7 +976,12 @@ eeg_psd_welch <- function(input_obj,
       }
       epoch_pwr <- NULL
     }
-    
+
+    if (length(bad_ch) > 0L) {
+      psd_mat[bad_ch, ] <- NA_real_
+      if (per_epoch) epoch_pwr[bad_ch, , ] <- NA_real_
+    }
+
     ff       <- .check_freq_range(fmin, fmax, sr)
     freqs    <- s$freqs
     freq_idx <- which(freqs >= ff[1] & freqs <= ff[2])
@@ -976,15 +1038,20 @@ eeg_psd_welch <- function(input_obj,
     psd_list <- list()
     for (cond in conditions) {
       cond_data   <- input_obj$evoked[[cond]]   # [channels x times]
-      psd_c       <- matrix(0, nrow = n_ch, ncol = s$n_half,
-                            dimnames = list(chan_names, NULL))
+      bad_ch_cond <- .find_bad_channels(cond_data, chan_names)
+      if (length(bad_ch_cond) > 0L) cond_data[bad_ch_cond, ] <- 0.0
+
+      psd_c <- matrix(0, nrow = n_ch, ncol = s$n_half,
+                      dimnames = list(chan_names, NULL))
       for (i in seq_len(n_ch)) {
         psd_c[i, ] <- .welch_channel(cond_data[i, ], sr,
                                      s$win_samp, s$step, s$win_vec, s$n_fft_w)
       }
+
+      if (length(bad_ch_cond) > 0L) psd_c[bad_ch_cond, ] <- NA_real_
       psd_list[[cond]] <- psd_c
     }
-    
+
     ff       <- .check_freq_range(fmin, fmax, sr)
     freqs    <- s$freqs
     freq_idx <- which(freqs >= ff[1] & freqs <= ff[2])
@@ -1168,7 +1235,9 @@ eeg_multitaper <- function(input_obj,
       eigvals  <- eigvals[keep]
       n_tapers <- sum(keep)
     }
-    h_bw <- round(time_bandwidth / win_samp * sr, 3)
+    h_bw   <- round(time_bandwidth / win_samp * sr, 3)
+    bad_ch <- .find_bad_channels(data_mat, chan_names)
+    if (length(bad_ch) > 0L) data_mat[bad_ch, ] <- 0.0
 
     if (verbose) {
       cat("\n", strrep("=", 60), "\n", sep = "")
@@ -1199,6 +1268,8 @@ eeg_multitaper <- function(input_obj,
       }
       psd_mat[i, ] <- seg_acc / length(starts)
     }
+
+    if (length(bad_ch) > 0L) psd_mat[bad_ch, ] <- NA_real_
 
     ff       <- .check_freq_range(fmin, fmax, sr)
     freq_idx <- which(freqs >= ff[1] & freqs <= ff[2])
@@ -1260,6 +1331,8 @@ eeg_multitaper <- function(input_obj,
       eigvals  <- eigvals[keep]
       n_tapers <- sum(keep)
     }
+    bad_ch <- .find_bad_channels(data_arr, chan_names)
+    if (length(bad_ch) > 0L) data_arr[bad_ch, , ] <- 0.0
 
     if (verbose) {
       cat("\n", strrep("=", 60), "\n", sep = "")
@@ -1302,7 +1375,12 @@ eeg_multitaper <- function(input_obj,
       }
       epoch_pwr <- NULL
     }
-    
+
+    if (length(bad_ch) > 0L) {
+      psd_mat[bad_ch, ] <- NA_real_
+      if (per_epoch) epoch_pwr[bad_ch, , ] <- NA_real_
+    }
+
     ff       <- .check_freq_range(fmin, fmax, sr)
     freq_idx <- which(freqs >= ff[1] & freqs <= ff[2])
     freqs    <- freqs[freq_idx]
@@ -1374,16 +1452,21 @@ eeg_multitaper <- function(input_obj,
     psd_list <- list()
     for (cond in conditions) {
       cond_data   <- input_obj$evoked[[cond]]
-      psd_c       <- matrix(0, nrow = n_ch, ncol = n_half,
-                            dimnames = list(chan_names, NULL))
+      bad_ch_cond <- .find_bad_channels(cond_data, chan_names)
+      if (length(bad_ch_cond) > 0L) cond_data[bad_ch_cond, ] <- 0.0
+
+      psd_c <- matrix(0, nrow = n_ch, ncol = n_half,
+                      dimnames = list(chan_names, NULL))
       for (i in seq_len(n_ch)) {
         sig <- cond_data[i, ]
         if (remove_dc) sig <- sig - mean(sig)
         psd_c[i, ] <- .mtaper_psd(sig, sr, tapers)
       }
+
+      if (length(bad_ch_cond) > 0L) psd_c[bad_ch_cond, ] <- NA_real_
       psd_list[[cond]] <- psd_c
     }
-    
+
     ff       <- .check_freq_range(fmin, fmax, sr)
     freq_idx <- which(freqs >= ff[1] & freqs <= ff[2])
     freqs    <- freqs[freq_idx]

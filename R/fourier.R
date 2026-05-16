@@ -109,7 +109,7 @@
 #' caller can zero them out before computation and restore NaN afterwards.
 #'
 #' @param data       Numeric matrix or array. First dimension must be channels.
-#' @param chan_names Character vector of channel names (length = dim(data)/[1/]).
+#' @param chan_names Character vector of channel names (length = dim(data)\[1\]).
 #' @return Integer vector of bad channel indices (length 0 if none found).
 #' @keywords internal
 .find_bad_channels <- function(data, chan_names) {

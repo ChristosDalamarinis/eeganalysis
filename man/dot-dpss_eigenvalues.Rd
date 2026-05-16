@@ -19,10 +19,10 @@ Numeric vector of length k with eigenvalues in (0, 1].
 }
 \description{
 For each taper, the eigenvalue lambda measures what fraction of the taper's
-energy falls inside the target bandwidth '\link{-W, W}'.  Lambda = 1 means perfect
+energy falls inside the target bandwidth [-W, W].  Lambda = 1 means perfect
 concentration (zero leakage); values below ~0.9 indicate meaningful leakage
 from outside the band.  The computation uses the exact sinc inner-product
-formula: lambda_k = v_k^T B v_k, where B'\link{i,j}' = sin(2\emph{pi}W*(i-j))/(pi*(i-j))
-and B'\link{i,i}' = 2*W.
+formula: lambda_k = v_k^T B v_k, where B[i,j] = sin(2\emph{pi}W*(i-j))/(pi*(i-j))
+and B[i,i] = 2*W.
 }
 \keyword{internal}

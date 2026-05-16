@@ -11,6 +11,7 @@ eeg_fft(
   per_epoch = FALSE,
   fmin = 0,
   fmax = NULL,
+  remove_dc = TRUE,
   verbose = TRUE
 )
 }
@@ -30,6 +31,17 @@ interest.}
 \item{per_epoch}{Logical. Only relevant for 'eeg_epochs' input. If TRUE,
 compute FFT per epoch and store results in $epoch_power.
 Default: FALSE.}
+
+\item{fmin}{Numeric. Lower frequency bound in Hz for the returned
+spectrum (default: 0). Must be >= 0 and less than fmax.}
+
+\item{fmax}{Numeric or NULL. Upper frequency bound in Hz. NULL
+(default) retains all frequencies up to the Nyquist limit.
+Values above Nyquist are clamped with a warning.}
+
+\item{remove_dc}{Logical. If TRUE (default), subtract the channel mean
+before applying the window. This prevents DC energy from
+leaking into adjacent low-frequency bins.}
 
 \item{verbose}{Logical. Print a processing summary. Default: TRUE.}
 }

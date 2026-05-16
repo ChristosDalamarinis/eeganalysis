@@ -14,8 +14,14 @@
 \item{k}{Integer. Number of tapers to return (k <= 2*nw - 1 recommended).}
 }
 \value{
-Numeric matrix of dimensions [n x k]. Columns are the tapers,
-normalised to unit energy. Sign convention: first element positive.
+A named list with two elements:
+\describe{
+\item{tapers}{Numeric matrix [n x k]. Columns are the DPSS tapers,
+normalised to unit energy. Sign convention: first element positive.}
+\item{eigenvalues}{Numeric vector of length k. Spectral concentration
+eigenvalue for each taper (values in (0, 1]). Higher is better;
+tapers with eigenvalue < 0.9 have meaningful spectral leakage.}
+}
 }
 \description{
 Uses the symmetric tridiagonal commuting matrix approach (Slepian 1978,

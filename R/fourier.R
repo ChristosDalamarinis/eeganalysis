@@ -256,6 +256,30 @@
 }
 
 
+#' Compute median bias correction factors for Welch PSD
+#'
+#' The median of chi-squared-distributed periodogram values is a biased
+#' estimator of the true PSD.  This function returns a look-up vector of
+#' length \code{n + 1} where element \code{k + 1} (1-indexed) is the bias
+#' correction factor for a median computed from \code{k} segments.  Dividing
+#' the raw per-frequency median by \code{biases[k + 1]} removes the bias.
+#' The formula matches the SciPy / MNE implementation.
+#'
+#' @param n Integer. Maximum number of segments (sets vector length to n + 1).
+#' @return Numeric vector of length \code{n + 1}. All values are >= 1.
+#' @keywords internal
+.median_biases <- function(n) {
+  biases <- rep(1.0, n + 1L)
+  if (n >= 3L) {
+    ii_2          <- 2L * seq_len((n - 1L) %/% 2L)         # 2, 4, 6, ...
+    sums          <- 1 + cumsum(1 / (ii_2 + 1) - 1 / ii_2) # running correction
+    k_seq         <- seq(2L, n - 1L)                        # segment counts 2..(n-1)
+    biases[4L:(n + 1L)] <- sums[k_seq %/% 2L]              # map counts -> correction
+  }
+  biases
+}
+
+
 # ============================================================================
 #                         RAW FFT SPECTRUM  (eeg_fft)
 # ============================================================================
@@ -642,6 +666,11 @@ eeg_fft <- function(input_obj,
 #' @param remove_dc Logical. If TRUE (default), subtract the segment mean
 #'   before applying the window on every Welch segment. Prevents DC energy
 #'   from leaking into adjacent low-frequency bins.
+#' @param average   Character. How to combine periodograms across Welch
+#'   segments: \code{"mean"} (default) or \code{"median"}. The median is more
+#'   robust to artefact-contaminated segments but is a slightly biased
+#'   estimator; a bias correction factor is applied automatically so the
+#'   result remains unbiased.
 #' @param verbose   Logical. Print processing summary. Default: TRUE.
 #'
 #' @return An object of class 'eeg_spectrum'. \code{$power} contains the PSD
@@ -671,9 +700,11 @@ eeg_psd_welch <- function(input_obj,
                           fmin          = 0,
                           fmax          = NULL,
                           remove_dc     = TRUE,
+                          average       = c("mean", "median"),
                           verbose       = TRUE) {
-  
+
   window      <- match.arg(window)
+  average     <- match.arg(average)
   valid_cls   <- c("eeg", "eeg_epochs", "eeg_evoked")
   input_class <- class(input_obj)[1L]
   
@@ -698,29 +729,36 @@ eeg_psd_welch <- function(input_obj,
     n        <- length(x)
     n_half   <- floor(n_fft_w / 2L) + 1L
     win_norm <- sum(win_vec^2) * sr   # = Fs * sum(w^2), normalises to uV^2/Hz
-    
+
     starts <- seq(1L, n - win_samp + 1L, by = step)
     if (length(starts) < 1L) {
       stop("Signal too short for window_length = ", window_length,
            " s. Reduce window_length or shorten overlap.", call. = FALSE)
     }
-    
-    acc <- numeric(n_half)
-    
-    for (s in starts) {
-      seg <- x[s:(s + win_samp - 1L)]
+
+    n_seg   <- length(starts)
+    seg_mat <- matrix(0.0, nrow = n_half, ncol = n_seg)
+
+    for (j in seq_len(n_seg)) {
+      seg <- x[starts[j]:(starts[j] + win_samp - 1L)]
       if (remove_dc) seg <- seg - mean(seg)
       seg <- seg * win_vec
       if (n_fft_w > win_samp) seg <- c(seg, rep(0.0, n_fft_w - win_samp))
-      
+
       X   <- fft(seg)[seq_len(n_half)]
       p   <- (Mod(X)^2) / win_norm
       # Double one-sided bins; leave DC and Nyquist as-is
       p[seq(2L, n_half - 1L)] <- 2.0 * p[seq(2L, n_half - 1L)]
-      acc <- acc + p
+      seg_mat[, j] <- p
     }
-    
-    acc / length(starts)
+
+    if (average == "mean") {
+      rowMeans(seg_mat)
+    } else {
+      # Median with bias correction (matches MNE / SciPy _median_biases)
+      bias_val <- .median_biases(n_seg)[n_seg + 1L]
+      apply(seg_mat, 1L, median) / bias_val
+    }
   }
   
   # ========== SHARED SETUP HELPER ==========
@@ -764,9 +802,10 @@ eeg_psd_welch <- function(input_obj,
       cat("  FFT length:        ", s$n_fft_w, "\n")
       cat("  Freq. resolution:  ", round(sr / s$n_fft_w, 4), "Hz\n")
       cat("  Window:            ", window, "\n")
+      cat("  Averaging:         ", average, "\n")
       cat(strrep("=", 60), "\n\n")
     }
-    
+
     psd_mat <- matrix(0, nrow = n_ch, ncol = s$n_half,
                       dimnames = list(chan_names, NULL))
     for (i in seq_len(n_ch)) {
@@ -795,6 +834,7 @@ eeg_psd_welch <- function(input_obj,
         window_length = window_length,
         overlap       = overlap,
         n_segments    = n_seg,
+        average       = average,
         per_epoch     = FALSE,
         epoch_power   = NULL,
         conditions    = NULL
@@ -827,6 +867,7 @@ eeg_psd_welch <- function(input_obj,
       cat("  Samples per epoch: ", n_samp, "\n")
       cat("  Window length:     ", window_length, "s (", s$win_samp, "samples)\n")
       cat("  Overlap:           ", overlap * 100, "%\n")
+      cat("  Averaging:         ", average, "\n")
       cat("  Per epoch:         ", per_epoch, "\n")
       cat(strrep("=", 60), "\n\n")
     }
@@ -879,6 +920,7 @@ eeg_psd_welch <- function(input_obj,
         window_length = window_length,
         overlap       = overlap,
         n_segments    = floor((n_samp - s$win_samp) / s$step) + 1L,
+        average       = average,
         per_epoch     = per_epoch,
         epoch_power   = if (per_epoch) epoch_pwr else NULL,
         n_epochs      = n_ep,
@@ -905,6 +947,7 @@ eeg_psd_welch <- function(input_obj,
       cat("  Channels:    ", n_ch, "\n")
       cat("  Conditions:  ", paste(conditions, collapse = ", "), "\n")
       cat("  Window:      ", window_length, "s, overlap", overlap * 100, "%\n")
+      cat("  Averaging:   ", average, "\n")
       cat(strrep("=", 60), "\n\n")
     }
     
@@ -941,6 +984,7 @@ eeg_psd_welch <- function(input_obj,
         window_length = window_length,
         overlap       = overlap,
         n_segments    = floor((n_samp - s$win_samp) / s$step) + 1L,
+        average       = average,
         per_epoch     = FALSE,
         epoch_power   = NULL,
         conditions    = conditions

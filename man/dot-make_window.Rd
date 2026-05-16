@@ -21,16 +21,24 @@ implementing four complementary spectral estimation approaches:
 \details{
 eeg_fft()        - Raw FFT: amplitude, power, and phase spectra using the
 Fast Fourier Transform with optional windowing.
+Supports fmin/fmax trimming and DC removal.
 Best for short, stationary segments or ERPs.
 
 eeg_psd_welch()  - Welch averaged periodogram (PSD in uV^2/Hz). Reduces
 spectral variance by averaging overlapping windowed
-segments. The standard method for resting-state EEG.
+segments. Supports mean or median averaging; median
+averaging applies automatic bias correction for
+robustness against artefact-contaminated segments.
+Supports fmin/fmax trimming and DC removal.
+The standard method for resting-state EEG.
 
 eeg_multitaper() - Multitaper spectral estimation using Discrete Prolate
 Spheroidal Sequences (DPSS / Slepian tapers). Provides
 an optimal bias-variance trade-off via multiple
-orthogonal tapers. Output in uV^2/Hz.
+orthogonal tapers. Low-bias mode (default) retains only
+tapers with spectral concentration eigenvalue >= 0.9.
+Supports fmin/fmax trimming and DC removal.
+Output in uV^2/Hz.
 
 eeg_band_power() - Extracts total or relative power in the canonical EEG
 frequency bands (delta, theta, alpha, beta, gamma).
@@ -42,23 +50,35 @@ All return objects of class 'eeg_spectrum' (except eeg_band_power which
 returns a data frame or list of data frames for multi-condition evoked data).
 
 Return object structure (eeg_spectrum):
+
+Core fields (all methods):
 $power         - matrix [channels x frequencies] or named list for evoked
 $amplitude     - sqrt(power)
 $phase         - phase angles in radians (eeg_fft only; NULL otherwise)
-$frequencies   - numeric vector of frequencies in Hz
+$frequencies   - numeric vector of frequencies in Hz (trimmed to fmin/fmax)
 $channels      - character vector of channel names
 $sampling_rate - recording sampling rate in Hz
 $method        - "fft" | "welch" | "multitaper"
 $input_class   - "eeg" | "eeg_epochs" | "eeg_evoked"
 $n_fft         - FFT length used
-$window_type   - window function applied ("hann", "hamming", etc.)
+$window_type   - window function applied ("hann", "hamming", "dpss", etc.)
 $per_epoch     - logical; TRUE if per-epoch spectra were computed
 $epoch_power   - 3D array [channels x freqs x epochs] (per_epoch = TRUE)
 $n_epochs      - number of epochs (eeg_epochs input only)
 $conditions    - condition names (eeg_evoked input only)
-\itemize{
-\item method-specific fields (window_length, overlap, time_bandwidth, etc.)
-}
+
+Welch-specific fields:
+$window_length - segment length in seconds
+$overlap       - fractional overlap between segments (0 to <1)
+$n_segments    - number of segments used
+$average       - aggregation method used: "mean" or "median"
+
+Multitaper-specific fields:
+$time_bandwidth - time-bandwidth product NW
+$n_tapers       - number of tapers actually used (after low_bias filtering)
+$segment_length - segment length in seconds (eeg input only)
+$overlap        - fractional overlap between segments (eeg input only)
+$n_segments     - number of segments used (eeg input only)
 
 ============================================================================
 }

@@ -13,6 +13,7 @@ eeg_multitaper(
   per_epoch = FALSE,
   fmin = 0,
   fmax = NULL,
+  remove_dc = TRUE,
   verbose = TRUE
 )
 }
@@ -35,6 +36,17 @@ for 'eeg' input (default: 0.5). Ignored for epochs/evoked.}
 
 \item{per_epoch}{Logical. For 'eeg_epochs': compute multitaper PSD per
 epoch then average (TRUE), or average epochs first (FALSE). Default: FALSE.}
+
+\item{fmin}{Numeric. Lower frequency bound in Hz for the returned
+spectrum (default: 0). Must be >= 0 and less than fmax.}
+
+\item{fmax}{Numeric or NULL. Upper frequency bound in Hz. NULL
+(default) retains all frequencies up to the Nyquist limit. Values above
+Nyquist are clamped with a warning.}
+
+\item{remove_dc}{Logical. If TRUE (default), subtract the segment mean
+before applying tapers on every analysis segment. Prevents DC energy from
+leaking into adjacent low-frequency bins.}
 
 \item{verbose}{Logical. Print processing summary. Default: TRUE.}
 }

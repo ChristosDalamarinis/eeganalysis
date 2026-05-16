@@ -14,6 +14,7 @@ eeg_psd_welch(
   fmin = 0,
   fmax = NULL,
   remove_dc = TRUE,
+  average = c("mean", "median"),
   verbose = TRUE
 )
 }
@@ -51,6 +52,12 @@ Nyquist are clamped with a warning.}
 \item{remove_dc}{Logical. If TRUE (default), subtract the segment mean
 before applying the window on every Welch segment. Prevents DC energy
 from leaking into adjacent low-frequency bins.}
+
+\item{average}{Character. How to combine periodograms across Welch
+segments: \code{"mean"} (default) or \code{"median"}. The median is more
+robust to artefact-contaminated segments but is a slightly biased
+estimator; a bias correction factor is applied automatically so the
+result remains unbiased.}
 
 \item{verbose}{Logical. Print processing summary. Default: TRUE.}
 }

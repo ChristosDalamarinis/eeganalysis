@@ -14,6 +14,7 @@ eeg_multitaper(
   fmin = 0,
   fmax = NULL,
   remove_dc = TRUE,
+  low_bias = TRUE,
   verbose = TRUE
 )
 }
@@ -47,6 +48,12 @@ Nyquist are clamped with a warning.}
 \item{remove_dc}{Logical. If TRUE (default), subtract the segment mean
 before applying tapers on every analysis segment. Prevents DC energy from
 leaking into adjacent low-frequency bins.}
+
+\item{low_bias}{Logical. If TRUE (default), discard any DPSS taper
+whose spectral concentration eigenvalue is below 0.9. Higher-order tapers
+with low eigenvalues leak energy from outside the target band, biasing the
+PSD estimate. Keeping only well-concentrated tapers reduces bias at a small
+variance cost (fewer tapers = slightly less averaging).}
 
 \item{verbose}{Logical. Print processing summary. Default: TRUE.}
 }

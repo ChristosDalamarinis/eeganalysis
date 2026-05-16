@@ -2,7 +2,7 @@
 % Please edit documentation in R/fourier.R
 \name{.check_freq_range}
 \alias{.check_freq_range}
-\title{Validate and resolve fmin / fmax against the Nyquist frequency - added 15/5/2026}
+\title{Validate and resolve fmin / fmax against the Nyquist frequency}
 \usage{
 .check_freq_range(fmin, fmax, sr)
 }
@@ -17,6 +17,6 @@
 Numeric vector c(fmin, fmax) with fmax resolved and clamped.
 }
 \description{
-Validate and resolve fmin / fmax against the Nyquist frequency - added 15/5/2026
+Validate and resolve fmin / fmax against the Nyquist frequency
 }
 \keyword{internal}

@@ -242,11 +242,11 @@
 #' Compute spectral concentration eigenvalues for DPSS tapers
 #'
 #' For each taper, the eigenvalue lambda measures what fraction of the taper's
-#' energy falls inside the target bandwidth '[-W, W]'.  Lambda = 1 means perfect
+#' energy falls inside the target bandwidth \[-W, W].  Lambda = 1 means perfect
 #' concentration (zero leakage); values below ~0.9 indicate meaningful leakage
 #' from outside the band.  The computation uses the exact sinc inner-product
-#' formula: lambda_k = v_k^T B v_k, where B'[i,j]' = sin(2*pi*W*(i-j))/(pi*(i-j))
-#' and B'[i,i]' = 2*W.
+#' formula: lambda_k = v_k^T B v_k, where B\[i,j] = sin(2*pi*W*(i-j))/(pi*(i-j))
+#' and B\[i,i] = 2*W.
 #'
 #' @param n      Integer. Signal length (number of samples).
 #' @param nw     Numeric. Time-bandwidth product (same as passed to

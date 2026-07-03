@@ -3,13 +3,13 @@
 #' ============================================================================
 #'
 #' This module implements ICA-based artifact removal for EEG data. ICA
-#' decomposes the multichannel EEG signal into statistically independent
+#' decomposes the multi-channel EEG signal into statistically independent
 #' components, allowing identification and rejection of components that
 #' capture non-neural artifacts (eye blinks, muscle activity, cardiac
 #' signals, electrode noise).
 #'
 #' The decomposition follows the FastICA/Infomax approach commonly used in
-#' EEG pipelines (matching MNE-Python's mne.preprocessing.ICA), including:
+#' EEG pipelines, including:
 #'   - Whitening via PCA prior to ICA rotation
 #'   - Component labelling helpers (correlation with EOG/ECG channels)
 #'   - Reconstruction of clean data after component exclusion

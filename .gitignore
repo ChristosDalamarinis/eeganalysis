@@ -13,4 +13,6 @@ test_signal_99.csv
 test-filter1.R
 .positai
 *.py
+*.pyc
+*.pyi
 *.pdf

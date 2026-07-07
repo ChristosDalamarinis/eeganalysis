@@ -100,7 +100,7 @@ Depends on: eeg_class.R (for eeg object structure)
 }
 \section{Author: Christos Dalamarinis
 Date: July 2026
-Status: Container implemented (new_ica, print.eeg_ica); fit/apply pending
+Status: Container + pre-whitening helpers implemented; fit_ica() pending
 Tested: NaN}{
 Create a New ICA Object
 

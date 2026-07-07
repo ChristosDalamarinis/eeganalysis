@@ -25,7 +25,7 @@
 #'
 #' Author: Christos Dalamarinis
 #' Date: July 2026
-#' Status: Container implemented (new_ica, print.eeg_ica); fit/apply pending
+#' Status: Container + pre-whitening helpers implemented; fit_ica() pending
 #' Tested: NaN
 #' ============================================================================
 
@@ -271,4 +271,63 @@ print.eeg_ica <- function(x, ...) {
 
   # Return invisibly (standard R convention)
   invisible(x)
+}
+
+#
+# ============================================================================
+#                    PRE-WHITENING HELPERS (private)
+# ============================================================================
+#
+# The step run before PCA/ICA: each channel is scaled by its own standard
+# deviation so that channels with naturally larger amplitude don't dominate
+# the decomposition purely because of scale. Mirrors
+# ICA._compute_pre_whitener() / ICA._pre_whiten() in python/ica/ica.py, but
+# only the default (noise_cov = NULL) branch, which is self-contained in
+# ica.py. The noise_cov branch there calls compute_whitener() from cov.py
+# (a full noise-covariance eigendecomposition) - that path is not
+# implemented here yet.
+#
+# ----------------------------------------------------------------------------
+# .compute_pre_whitener() - per-channel standard deviation
+# ----------------------------------------------------------------------------
+#' Compute the pre-whitening vector for ICA fitting
+#'
+#' Computes the per-channel standard deviation used to z-standardize the
+#' data before PCA whitening. This is the default (\code{noise_cov = NULL})
+#' pre-whitening path from \code{mne.preprocessing.ICA}; it does not depend
+#' on a noise covariance matrix.
+#'
+#' @param data Numeric matrix, channels x time points (same layout as
+#'   \code{eeg$data}).
+#' @param noise_cov \code{NULL} (default). A non-NULL value is not yet
+#'   supported and raises an error.
+#' @return Named numeric vector of length \code{nrow(data)}, one standard
+#'   deviation per channel (named by \code{rownames(data)}, if present).
+#' @keywords internal
+.compute_pre_whitener <- function(data, noise_cov = NULL) {
+  if (!is.null(noise_cov)) {
+    stop("ERROR: noise_cov-based pre-whitening is not yet implemented. ",
+         "Only the default z-score path (noise_cov = NULL) is supported.")
+  }
+  apply(data, 1, sd)
+}
+
+# ----------------------------------------------------------------------------
+# .pre_whiten() - apply the pre-whitening vector to data
+# ----------------------------------------------------------------------------
+#' Apply pre-whitening to data
+#'
+#' Divides each channel (row) of \code{data} by its corresponding entry in
+#' \code{pre_whitener}. Used both when fitting ICA and later whenever new
+#' data is projected through an already-fitted \code{eeg_ica} object (e.g.
+#' \code{get_sources()}, \code{apply_ica()}), which is why it is kept as a
+#' standalone helper rather than being inlined into the fitting step.
+#'
+#' @param data Numeric matrix, channels x time points.
+#' @param pre_whitener Numeric vector of length \code{nrow(data)}, as
+#'   returned by \code{.compute_pre_whitener()}.
+#' @return Numeric matrix of the same shape as \code{data}, pre-whitened.
+#' @keywords internal
+.pre_whiten <- function(data, pre_whitener) {
+  sweep(data, MARGIN = 1, STATS = pre_whitener, FUN = "/")
 }

@@ -14,10 +14,261 @@
 #'   - Component labelling helpers (correlation with EOG/ECG channels)
 #'   - Reconstruction of clean data after component exclusion
 #'
+#' Design mirrors mne.preprocessing.ICA: the object returned by new_ica()
+#' stores the requested *parameters* immediately, while data-derived
+#' *fitted attributes* (named with a trailing underscore, e.g.
+#' n_components_, mixing_matrix_) stay NULL until fit_ica() runs. The
+#' current_fit field ("unfitted" | "raw" | "epochs") is the canonical flag
+#' for whether the object has been fit.
+#'
 #' Depends on: eeg_class.R (for eeg object structure)
 #'
 #' Author: Christos Dalamarinis
 #' Date: July 2026
-#' Status: In development
+#' Status: Container implemented (new_ica, print.eeg_ica); fit/apply pending
 #' Tested: NaN
 #' ============================================================================
+
+#' Create a New ICA Object
+#'
+#' Creates an unfitted \code{eeg_ica} object that stores the configuration
+#' for an Independent Component Analysis decomposition, following the design
+#' of \code{mne.preprocessing.ICA}. Parameters are available immediately;
+#' data-derived attributes (named with a trailing underscore, e.g.
+#' \code{n_components_}, \code{mixing_matrix_}) stay \code{NULL} until the
+#' object is fit to data (via a future \code{fit_ica()}).
+#'
+#' @param n_components \code{NULL}, an integer, or a float in (0, 1).
+#'   Number of principal components (from the pre-whitening PCA step) passed
+#'   to the ICA algorithm during fitting.
+#'   \describe{
+#'     \item{integer}{Must be greater than 1 and less than or equal to the
+#'       number of channels.}
+#'     \item{float in (0, 1)}{Selects the smallest number of components whose
+#'       cumulative explained variance exceeds this threshold.}
+#'     \item{NULL}{Default. \code{0.999999} will be used at fit time, to
+#'       avoid numerical stability problems with rank-deficient data.}
+#'   }
+#'   The actual number resolved at fit time is stored in \code{n_components_}.
+#' @param noise_cov \code{NULL} or a numeric channels x channels covariance
+#'   matrix. Used for pre-whitening. If \code{NULL} (default), channels are
+#'   scaled to unit variance ("z-standardized") prior to PCA whitening. This
+#'   package does not yet implement a dedicated covariance-estimation
+#'   workflow, so only \code{NULL} is functionally supported by the fitting
+#'   step for now; a matrix may be supplied and is stored as-is for forward
+#'   compatibility.
+#' @param random_state \code{NULL} or a single integer. Seed for the random
+#'   number generator used by the ICA algorithm. If \code{NULL} (default),
+#'   results will generally differ between runs.
+#' @param method Character string. The ICA method to use. Currently only
+#'   \code{"fastica"} is implemented (backed by the \code{fastICA} package).
+#' @param fit_params \code{NULL} or a named list of additional arguments
+#'   passed to the underlying ICA estimator (\code{fastICA::fastICA} when
+#'   \code{method = "fastica"}). Entries supplied here override the package
+#'   defaults (\code{alg.typ = "parallel"}, \code{fun = "logcosh"}).
+#' @param max_iter Integer, or \code{"auto"} (default). If \code{"auto"}, it
+#'   resolves immediately to \code{1000}. The actual number of iterations
+#'   taken to fit will be stored in \code{n_iter_}.
+#' @param verbose \code{NULL}, logical, or character. Reserved for future use
+#'   controlling the verbosity of fitting/logging output.
+#'
+#' @return An object of class \code{eeg_ica}, a list containing:
+#'  \describe{
+#'    \item{n_components, noise_cov, random_state, method, fit_params,
+#'      max_iter, verbose}{The (validated/resolved) parameters as supplied.}
+#'    \item{current_fit}{\code{"unfitted"} until \code{fit_ica()} is run.}
+#'    \item{ch_names}{\code{NULL} until fit; channel names used for fitting.}
+#'    \item{n_components_, pre_whitener_, pca_components_, pca_mean_,
+#'      pca_explained_variance_, mixing_matrix_, unmixing_matrix_,
+#'      n_samples_, n_iter_}{\code{NULL} until fit; data-derived attributes.}
+#'    \item{exclude}{Integer vector (initially empty) of component indices
+#'      to exclude when reconstructing data. Present from creation and
+#'      user/auto-detection editable — not a fitted attribute.}
+#'    \item{labels_}{List (initially empty) of independent component
+#'      indices grouped by type (e.g. \code{"eog"}, \code{"ecg"}). Populated
+#'      by future automatic artifact-detection helpers.}
+#'  }
+#'
+#' @details
+#' Following scikit-learn/MNE convention, attribute names ending in a
+#' trailing underscore (\code{n_components_}, \code{mixing_matrix_}, ...)
+#' signify that the attribute is derived from data and only exists once the
+#' object has been fit. Before fitting, these fields are present but
+#' \code{NULL}. \code{current_fit} is the authoritative flag for whether an
+#' \code{eeg_ica} object has been fit — check
+#' \code{ica$current_fit != "unfitted"} rather than relying on individual
+#' fields being non-\code{NULL}.
+#'
+#' @examples
+#' \dontrun{
+#'   # Default configuration (n_components resolved at fit time)
+#'   ica <- new_ica()
+#'
+#'   # Request 15 components, custom max_iter
+#'   ica <- new_ica(n_components = 15, max_iter = 500)
+#'
+#'   # Request components explaining 95% of variance
+#'   ica <- new_ica(n_components = 0.95)
+#' }
+#'
+#' @export
+new_ica <- function(n_components = NULL,
+                     noise_cov = NULL,
+                     random_state = NULL,
+                     method = "fastica",
+                     fit_params = NULL,
+                     max_iter = "auto",
+                     verbose = NULL) {
+
+  # ========== VALIDATE method ==========
+
+  if (!is.character(method) || length(method) != 1) {
+    stop("ERROR: 'method' must be a single character string.")
+  }
+  if (method != "fastica") {
+    stop("ERROR: method = '", method, "' is not yet implemented. ",
+         "Only 'fastica' is currently supported ('infomax' and 'picard' ",
+         "are planned for a future release).")
+  }
+
+  # ========== VALIDATE n_components ==========
+
+  if (!is.null(n_components)) {
+    if (!is.numeric(n_components) || length(n_components) != 1) {
+      stop("ERROR: 'n_components' must be a single number, or NULL.")
+    }
+    if (n_components != as.integer(n_components)) {
+      # float case: must be in (0, 1) exclusive
+      if (!(n_components > 0 && n_components < 1)) {
+        stop("ERROR: Selecting ICA components by explained variance needs ",
+             "'n_components' between 0.0 and 1.0 (exclusive), got ",
+             n_components, ".")
+      }
+    } else if (n_components == 1) {
+      stop("ERROR: Selecting one component with n_components = 1 is not ",
+           "supported.")
+    }
+  }
+
+  # ========== RESOLVE max_iter ==========
+
+  if (identical(max_iter, "auto")) {
+    max_iter <- 1000L
+  } else {
+    if (!is.numeric(max_iter) || length(max_iter) != 1 ||
+        max_iter != as.integer(max_iter) || max_iter <= 0) {
+      stop("ERROR: 'max_iter' must be a positive integer, or 'auto'.")
+    }
+    max_iter <- as.integer(max_iter)
+  }
+
+  # ========== RESOLVE fit_params ==========
+
+  if (is.null(fit_params)) {
+    fit_params <- list()
+  } else if (!is.list(fit_params)) {
+    stop("ERROR: 'fit_params' must be a named list, or NULL.")
+  }
+
+  default_fit_params <- list(alg.typ = "parallel", fun = "logcosh")
+  fit_params <- modifyList(default_fit_params, fit_params)
+  fit_params$maxit <- max_iter
+
+  # ========== CONSTRUCT ICA OBJECT ==========
+
+  ica_object <- structure(
+    list(
+      # ---- parameters ----
+      n_components = n_components,
+      noise_cov = noise_cov,
+      random_state = random_state,
+      method = method,
+      fit_params = fit_params,
+      max_iter = max_iter,
+      verbose = verbose,
+
+      # ---- fit state ----
+      current_fit = "unfitted",
+      ch_names = NULL,
+
+      # ---- fitted attributes (trailing underscore, NULL until fit) ----
+      n_components_ = NULL,
+      pre_whitener_ = NULL,
+      pca_components_ = NULL,
+      pca_mean_ = NULL,
+      pca_explained_variance_ = NULL,
+      mixing_matrix_ = NULL,
+      unmixing_matrix_ = NULL,
+      n_samples_ = NULL,
+      n_iter_ = NULL,
+
+      # ---- present from creation, not fitted attributes ----
+      exclude = integer(0),
+      labels_ = list()
+    ),
+    class = "eeg_ica"
+  )
+
+  return(ica_object)
+}
+
+#' Print Method for ICA Objects
+#'
+#' Custom print method that displays a formatted summary of an \code{eeg_ica}
+#' object: the configured parameters and, if the object has been fit, the
+#' resolved fitted attributes.
+#'
+#' @param x An object of class \code{eeg_ica}.
+#' @param ... Additional arguments (unused).
+#'
+#' @return Invisibly returns \code{x} (standard R print method convention).
+#'
+#' @examples
+#' \dontrun{
+#'   ica <- new_ica(n_components = 15)
+#'   print(ica)  # Calls this method automatically
+#' }
+#'
+#' @export
+print.eeg_ica <- function(x, ...) {
+
+  # ========== HEADER ==========
+  cat("\n")
+  cat(strrep("=", 70), "\n")
+  cat("ICA Object Summary\n")
+  cat(strrep("=", 70), "\n\n")
+
+  # ========== PARAMETERS ==========
+  cat("PARAMETERS:\n")
+  cat("  n_components:    ",
+      if (is.null(x$n_components)) "None (resolved at fit time)" else x$n_components,
+      "\n")
+  cat("  method:          ", x$method, "\n")
+  cat("  max_iter:        ", x$max_iter, "\n")
+  cat("  noise_cov:       ",
+      if (is.null(x$noise_cov)) "None (z-score standardization)" else "supplied",
+      "\n")
+  cat("  random_state:    ", if (is.null(x$random_state)) "None" else x$random_state, "\n")
+
+  # ========== FIT STATUS ==========
+  cat("\nFIT STATUS:\n")
+  if (identical(x$current_fit, "unfitted")) {
+    cat("  Not fitted. Call fit_ica() to run decomposition.\n")
+  } else {
+    cat("  Fitted on:       ", x$current_fit, "data\n")
+    cat("  n_components_:   ", x$n_components_, "\n")
+    cat("  n_samples_:      ", x$n_samples_, "\n")
+    cat("  n_iter_:         ", x$n_iter_, "\n")
+    cat("  Excluded ICs:    ", length(x$exclude), "\n")
+    if (length(x$labels_) > 0) {
+      cat("  Labels:          ",
+          paste(names(x$labels_), "=", lengths(x$labels_), collapse = ", "), "\n")
+    }
+  }
+
+  # ========== FOOTER ==========
+  cat("\n", strrep("=", 70), "\n\n", sep = "")
+
+  # Return invisibly (standard R convention)
+  invisible(x)
+}

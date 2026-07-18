@@ -17,3 +17,4 @@ test-filter1.R
 *.pyi
 *.pdf
 *.csv
+*.md

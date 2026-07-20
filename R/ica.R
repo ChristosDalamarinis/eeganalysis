@@ -25,7 +25,7 @@
 #'
 #' Author: Christos Dalamarinis
 #' Date: July 2026
-#' Status: Container + pre-whitening helpers implemented; fit_ica() pending
+#' Status: reconstructing coding implementation
 #' Tested: NaN
 #' ============================================================================
 

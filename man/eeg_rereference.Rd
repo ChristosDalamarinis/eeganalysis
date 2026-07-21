@@ -4,7 +4,13 @@
 \alias{eeg_rereference}
 \title{============================================================EEG Re-referencing Utilities}
 \usage{
-eeg_rereference(eeg, ref = "average", exclude = NULL, copy = TRUE)
+eeg_rereference(
+  eeg,
+  ref = "average",
+  exclude = NULL,
+  copy = TRUE,
+  drop_ref = FALSE
+)
 }
 \arguments{
 \item{eeg}{An EEG object as used in this package.}
@@ -18,6 +24,14 @@ exclude from computing the reference (e.g., EOG, EMG).}
 \item{copy}{Logical. If \code{TRUE}, return a new EEG object and leave
 \code{eeg} unchanged. If \code{FALSE}, re-reference \code{eeg} in place
 (if your class supports this).}
+
+\item{drop_ref}{Logical. If \code{TRUE}, remove the channel(s) used as
+\code{ref} from the returned data/channels after re-referencing. Has no
+effect when \code{ref = "average"} (a warning is issued instead, since
+the reference channels are then the entire contributing set). Default
+\code{FALSE}, matching the behavior of MNE-Python's
+\code{set_eeg_reference()}, which also keeps reference channels in the
+data unless dropped explicitly.}
 }
 \value{
 An EEG object with updated reference.
@@ -43,6 +57,14 @@ across all non-excluded EEG channels at each time point (common average
 reference).
 When one or several channels are specified in \code{ref}, the reference
 signal is the mean of those channels at each time point.
+
+After re-referencing to specific channels (e.g., linked mastoids), those
+channels remain in the data by default, transformed into mirror-image
+signals of each other (e.g., for \code{ref = c("M1", "M2")}, the new
+\code{M1 == -M2}). This makes them perfectly (anti)correlated, reducing
+the effective rank of the data by one — relevant before rank-sensitive
+steps such as ICA or PCA/whitening. Set \code{drop_ref = TRUE} to remove
+them from the returned object instead.
 }
 
 \examples{
@@ -50,8 +72,11 @@ signal is the mean of those channels at each time point.
 # Common average reference
 eeg_avg <- eeg_rereference(eeg, ref = "average")
 
-# Re-reference to linked mastoids M1/M2
+# Re-reference to linked mastoids M1/M2, keeping them in the data
 eeg_mastoids <- eeg_rereference(eeg, ref = c("M1", "M2"))
+
+# Re-reference to linked mastoids and drop them afterward
+eeg_mastoids <- eeg_rereference(eeg, ref = c("M1", "M2"), drop_ref = TRUE)
 }
 
 }

@@ -23,6 +23,13 @@
 #' @param copy Logical. If \code{TRUE}, return a new EEG object and leave
 #'   \code{eeg} unchanged. If \code{FALSE}, re-reference \code{eeg} in place
 #'   (if your class supports this).
+#' @param drop_ref Logical. If \code{TRUE}, remove the channel(s) used as
+#'   \code{ref} from the returned data/channels after re-referencing. Has no
+#'   effect when \code{ref = "average"} (a warning is issued instead, since
+#'   the reference channels are then the entire contributing set). Default
+#'   \code{FALSE}, matching the behavior of MNE-Python's
+#'   \code{set_eeg_reference()}, which also keeps reference channels in the
+#'   data unless dropped explicitly.
 #'
 #' @return An EEG object with updated reference.
 #' @details
@@ -36,20 +43,32 @@
 #' When one or several channels are specified in \code{ref}, the reference
 #' signal is the mean of those channels at each time point.
 #'
+#' After re-referencing to specific channels (e.g., linked mastoids), those
+#' channels remain in the data by default, transformed into mirror-image
+#' signals of each other (e.g., for \code{ref = c("M1", "M2")}, the new
+#' \code{M1 == -M2}). This makes them perfectly (anti)correlated, reducing
+#' the effective rank of the data by one — relevant before rank-sensitive
+#' steps such as ICA or PCA/whitening. Set \code{drop_ref = TRUE} to remove
+#' them from the returned object instead.
+#'
 #' @examples
 #' \dontrun{
 #' # Common average reference
 #' eeg_avg <- eeg_rereference(eeg, ref = "average")
 #'
-#' # Re-reference to linked mastoids M1/M2
+#' # Re-reference to linked mastoids M1/M2, keeping them in the data
 #' eeg_mastoids <- eeg_rereference(eeg, ref = c("M1", "M2"))
+#'
+#' # Re-reference to linked mastoids and drop them afterward
+#' eeg_mastoids <- eeg_rereference(eeg, ref = c("M1", "M2"), drop_ref = TRUE)
 #' }
 #'
 #' @export
 eeg_rereference <- function(eeg,
                             ref = "average",
                             exclude = NULL,
-                            copy = TRUE) {
+                            copy = TRUE,
+                            drop_ref = FALSE) {
   
   # make a copy if requested
   if (copy) {
@@ -139,6 +158,30 @@ eeg_rereference <- function(eeg,
     eeg_out$preprocessing_history,
     list(paste0("Re-referenced to: ", ref_label))
   )
-  
+
+  # ---- optionally drop the reference channel(s) from the output ----
+  if (drop_ref) {
+    if (identical(ref, "average")) {
+      warning("drop_ref is ignored when ref = 'average' (the reference ",
+              "channels are the entire contributing set).")
+    } else {
+      dropped_names <- chan_names[ref_idx]
+
+      if (length(ref_idx) >= nrow(eeg_out$data)) {
+        stop("Dropping the reference channel(s) would remove all channels ",
+             "from the data.")
+      }
+
+      eeg_out$data     <- eeg_out$data[-ref_idx, , drop = FALSE]
+      eeg_out$channels <- eeg_out$channels[-ref_idx]
+
+      eeg_out$preprocessing_history <- c(
+        eeg_out$preprocessing_history,
+        list(paste0("Dropped reference channel(s): ",
+                    paste(dropped_names, collapse = ", ")))
+      )
+    }
+  }
+
   eeg_out
 }

@@ -25,7 +25,9 @@
 #'
 #' Author: Christos Dalamarinis
 #' Date: July 2026
-#' Status: reconstructing coding implementation
+#' Status: reconstructing coding implementation: using the reticualte package 
+#'         to import the "fastICA" algorithm from scikit-learn Python is a
+#'         possible solution.
 #' Tested: NaN
 #' ============================================================================
 

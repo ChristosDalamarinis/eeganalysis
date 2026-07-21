@@ -402,3 +402,108 @@ print.eeg_ica <- function(x, ...) {
 .pre_whiten <- function(data, pre_whitener) {
   sweep(data, MARGIN = 1, STATS = pre_whitener, FUN = "/")
 }
+
+#
+# ============================================================================
+#                    PCA WHITENING HELPER (private)
+# ============================================================================
+#
+# The full-rank PCA step run on the pre-whitened data before the ICA
+# rotation itself. Mirrors the
+#   pca = _PCA(n_components=self._max_pca_components, whiten=True)
+#   data = pca.fit_transform(data.T)
+# lines in ICA._fit() (python/ica/ica.py:900-901) - specifically sklearn's
+# "covariance_eigh" solver path (eigendecompose the channel x channel
+# covariance matrix), which is what PCA(svd_solver = "auto") resolves to
+# whenever n_channels <= 1000 and n_samples >= 10 * n_channels - true for
+# essentially any real EEG recording (tens of thousands of samples against
+# a few dozen to a few hundred channels). The "full"/"randomized"/"arpack"
+# solvers sklearn also offers, for small-sample or huge-channel-count edge
+# cases, are not implemented here.
+#
+# ----------------------------------------------------------------------------
+# .pca_whiten() - mean-center, eigendecompose, whiten to unit variance
+# ----------------------------------------------------------------------------
+#' PCA-whiten pre-whitened data before ICA rotation
+#'
+#' Mean-centers \code{data}, eigendecomposes its channel x channel covariance
+#' matrix, and rescales each principal-component score to unit variance -
+#' i.e. \code{whiten = TRUE} in \code{sklearn.decomposition.PCA}, as used by
+#' \code{ICA._fit()} at \code{python/ica/ica.py:900}. Always returns the
+#' *full* set of components; selecting how many of them (\code{n_components_})
+#' go on to the ICA rotation step is a separate, later concern, mirroring how
+#' MNE fits PCA at \code{max_pca_components} and only slices
+#' \code{data[:, sel]} afterward. Because of that, trailing components whose
+#' eigenvalue is (numerically) zero - e.g. the one rank-deficient dimension
+#' introduced by average referencing - will legitimately contain \code{Inf}/
+#' \code{NaN} in \code{data} after the unit-variance division; this matches
+#' what MNE's own full PCA output looks like before its component-selection
+#' step trims those dimensions away, and is why \code{new_ica()} defaults to
+#' resolving \code{n_components = 0.999999} rather than requesting the full
+#' rank.
+#'
+#' @param data Numeric matrix, channels x time points, already pre-whitened
+#'   (see \code{.compute_pre_whitener()} / \code{.pre_whiten()}).
+#' @return A list with:
+#'  \describe{
+#'    \item{data}{Numeric matrix, components x time points: the
+#'      unit-variance-whitened principal component scores.}
+#'    \item{pca_mean_}{Numeric vector, length \code{nrow(data)}: the
+#'      per-channel mean removed before decomposition.}
+#'    \item{pca_components_}{Numeric matrix, components x channels: the
+#'      principal axes (covariance-matrix eigenvectors), sign-fixed so the
+#'      largest-magnitude entry of each component is positive (matches
+#'      sklearn's \code{svd_flip(..., u_based_decision = FALSE)}, making the
+#'      result deterministic regardless of the underlying LAPACK
+#'      eigensolver's arbitrary sign convention).}
+#'    \item{pca_explained_variance_}{Numeric vector, one eigenvalue per
+#'      component, decreasing order; tiny negative values (numerical noise)
+#'      are clipped to 0.}
+#'  }
+#' @keywords internal
+.pca_whiten <- function(data) {
+  n_samples <- ncol(data)
+
+  pca_mean_ <- rowMeans(data)
+  data_centered <- sweep(data, MARGIN = 1, STATS = pca_mean_, FUN = "-")
+
+  # channel x channel covariance, ddof = 1 (matches sklearn's
+  # _cov(X, ddof=1, ...) in the covariance_eigh solver path)
+  cov_matrix <- tcrossprod(data_centered) / (n_samples - 1)
+
+  eig <- eigen(cov_matrix, symmetric = TRUE)
+  eigenvalues  <- eig$values
+  eigenvectors <- eig$vectors
+
+  # Numerical noise can leave the smallest eigenvalue(s) slightly negative;
+  # sklearn clips these the same way before storing explained_variance_.
+  eigenvalues[eigenvalues < 0] <- 0
+
+  # Deterministic sign convention (mirrors sklearn's svd_flip): the
+  # largest-magnitude entry of each component becomes positive, so results
+  # don't depend on the arbitrary sign LAPACK's eigensolver happens to
+  # return.
+  for (i in seq_len(ncol(eigenvectors))) {
+    component <- eigenvectors[, i]
+    peak <- which.max(abs(component))
+    if (component[peak] < 0) {
+      eigenvectors[, i] <- -component
+    }
+  }
+
+  pca_components_ <- t(eigenvectors)
+
+  whitened <- sweep(
+    pca_components_ %*% data_centered,
+    MARGIN = 1,
+    STATS = sqrt(eigenvalues),
+    FUN = "/"
+  )
+
+  list(
+    data = whitened,
+    pca_mean_ = pca_mean_,
+    pca_components_ = pca_components_,
+    pca_explained_variance_ = eigenvalues
+  )
+}

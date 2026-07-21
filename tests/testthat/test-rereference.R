@@ -679,6 +679,89 @@ test_that("single time-point matrix is handled without error", {
   expect_equal(result$data[3, 1], -5 - 5/3, tolerance = 1e-10)
 })
 
+# ============================================================================
+# TEST SUITE 10 – drop_ref Parameter
+# ============================================================================
+# WHAT THESE TESTS DO:
+#   drop_ref = TRUE removes the channel(s) used as 'ref' from $data/$channels
+#   after re-referencing. It is a no-op (with a warning) when ref = "average",
+#   since ref_idx == contrib_idx in that case. It also guards against
+#   dropping every remaining channel.
+
+test_that("drop_ref removes linked mastoid channels from data and channels", {
+  eeg    <- make_eeg(channel_names = c("Cz", "Pz", "M1", "M2"), seed = 21)
+  result <- eeg_rereference(eeg, ref = c("M1", "M2"), drop_ref = TRUE)
+
+  expect_equal(result$channels, c("Cz", "Pz"))
+  expect_equal(dim(result$data), c(2, ncol(eeg$data)))
+})
+
+test_that("drop_ref preserves correct values for remaining channels", {
+  # Same fixture/expectations as the linked-ref suite, minus the dropped rows.
+  eeg    <- make_known_eeg()
+  result <- eeg_rereference(eeg, ref = c("Ch1", "Ch2"), drop_ref = TRUE)
+
+  expect_equal(result$channels, "Ch3")
+  expect_equal(result$data[1, ], c(-10, -10, -10, -10), tolerance = 1e-10)
+})
+
+test_that("drop_ref removes a single named reference channel", {
+  eeg    <- make_eeg(channel_names = c("Cz", "Pz", "Fz", "Oz"), seed = 5)
+  result <- eeg_rereference(eeg, ref = "Cz", drop_ref = TRUE)
+
+  expect_equal(result$channels, c("Pz", "Fz", "Oz"))
+  expect_equal(nrow(result$data), 3)
+})
+
+test_that("drop_ref = FALSE (default) keeps reference channels in the data", {
+  eeg    <- make_eeg(channel_names = c("Cz", "Pz", "M1", "M2"), seed = 8)
+  result <- eeg_rereference(eeg, ref = c("M1", "M2"))
+
+  expect_equal(result$channels, c("Cz", "Pz", "M1", "M2"))
+})
+
+test_that("drop_ref logs a preprocessing_history entry naming dropped channels", {
+  eeg    <- make_eeg(channel_names = c("Cz", "Pz", "M1", "M2"), seed = 13)
+  result <- eeg_rereference(eeg, ref = c("M1", "M2"), drop_ref = TRUE)
+
+  last_entry <- result$preprocessing_history[[length(result$preprocessing_history)]]
+  expect_match(last_entry, "Dropped reference channel\\(s\\): M1, M2")
+})
+
+test_that("drop_ref with ref = 'average' warns and does not drop channels", {
+  eeg <- make_eeg(channel_names = c("Cz", "Pz", "Fz", "Oz"))
+
+  expect_warning(
+    result <- eeg_rereference(eeg, ref = "average", drop_ref = TRUE),
+    "drop_ref is ignored when ref = 'average'"
+  )
+  expect_equal(result$channels, c("Cz", "Pz", "Fz", "Oz"))
+})
+
+test_that("drop_ref errors if dropping the reference would remove all channels", {
+  eeg <- make_eeg(channel_names = c("M1", "M2"))
+
+  expect_error(
+    eeg_rereference(eeg, ref = c("M1", "M2"), drop_ref = TRUE),
+    "Dropping the reference channel\\(s\\) would remove all channels"
+  )
+})
+
+test_that("drop_ref works together with exclude", {
+  eeg <- make_eeg(channel_names = c("Cz", "Pz", "M1", "M2", "EOG"), seed = 18)
+  original_eog <- eeg$data[5, ]
+
+  result <- eeg_rereference(eeg,
+                            ref     = c("M1", "M2"),
+                            exclude = "EOG",
+                            drop_ref = TRUE)
+
+  expect_equal(result$channels, c("Cz", "Pz", "EOG"))
+  expect_equal(result$data[3, ], original_eog,
+               label = "Excluded EOG channel row is unchanged and retained")
+})
+
+
 test_that("rereferencing can be chained: average → specific channel", {
   # WHAT THIS TESTS: Multiple rereferencing operations in sequence should
   # work correctly, with each operation's history logged independently.

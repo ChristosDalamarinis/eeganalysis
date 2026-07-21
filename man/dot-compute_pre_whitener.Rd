@@ -4,23 +4,37 @@
 \alias{.compute_pre_whitener}
 \title{Compute the pre-whitening vector for ICA fitting}
 \usage{
-.compute_pre_whitener(data, noise_cov = NULL)
+.compute_pre_whitener(data, channels, noise_cov = NULL)
 }
 \arguments{
 \item{data}{Numeric matrix, channels x time points (same layout as
-\code{eeg$data}).}
+\code{eeg$data}). Must already be restricted to the channels intended
+for ICA fitting - e.g. the BioSemi status channel excluded - since that
+selection is a \code{fit_ica()}-level concern upstream of this helper,
+mirroring how MNE applies \code{picks} before \code{_fit()} ever sees
+the data.}
+
+\item{channels}{Character vector of channel names, \code{length(channels)
+  == nrow(data)}. Used to split channels into type groups via
+\code{detect_external_channels()} plus the renamed-channel regex
+fallback (the same EEG-vs-external classification \code{print.eeg()}
+uses): channels flagged as external (EOG/EMG/ECG/GSR/etc.) form one
+group, and every remaining channel forms the \code{"eeg"} group.}
 
 \item{noise_cov}{\code{NULL} (default). A non-NULL value is not yet
 supported and raises an error.}
 }
 \value{
-Named numeric vector of length \code{nrow(data)}, one standard
-deviation per channel (named by \code{rownames(data)}, if present).
+Named numeric vector of length \code{nrow(data)}: one population
+standard deviation per channel, pooled within and broadcast across
+each type group, named by \code{channels}.
 }
 \description{
-Computes the per-channel standard deviation used to z-standardize the
-data before PCA whitening. This is the default (\code{noise_cov = NULL})
-pre-whitening path from \code{mne.preprocessing.ICA}; it does not depend
-on a noise covariance matrix.
+Computes the pre-whitening scale used to z-standardize data before PCA
+whitening. This is the default (\code{noise_cov = NULL}) pre-whitening
+path from \code{mne.preprocessing.ICA}: MNE pools a single standard
+deviation across \emph{all} channels of a given type - e.g. every EEG channel
+shares one scale factor - rather than scaling each channel independently
+(see \code{ICA._compute_pre_whitener()}, \code{python/ica/ica.py:841-857}).
 }
 \keyword{internal}

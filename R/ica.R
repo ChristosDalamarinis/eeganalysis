@@ -25,9 +25,11 @@
 #'
 #' Author: Christos Dalamarinis
 #' Date: July 2026
-#' Status: reconstructing coding implementation: using the reticualte package 
-#'         to import the "fastICA" algorithm from scikit-learn Python is a
-#'         possible solution.
+#' Status: pre-whitening fixed to pool std by channel type (matches MNE's
+#'         _compute_pre_whitener()). PCA whitening still to be ported
+#'         natively (plain SVD, no external dependency needed). The FastICA
+#'         rotation step itself remains the one open question - port
+#'         sklearn's _fastica.py line-by-line, or call it via reticulate.
 #' Tested: NaN
 #' ============================================================================
 
@@ -280,38 +282,105 @@ print.eeg_ica <- function(x, ...) {
 #                    PRE-WHITENING HELPERS (private)
 # ============================================================================
 #
-# The step run before PCA/ICA: each channel is scaled by its own standard
-# deviation so that channels with naturally larger amplitude don't dominate
-# the decomposition purely because of scale. Mirrors
-# ICA._compute_pre_whitener() / ICA._pre_whiten() in python/ica/ica.py, but
-# only the default (noise_cov = NULL) branch, which is self-contained in
-# ica.py. The noise_cov branch there calls compute_whitener() from cov.py
-# (a full noise-covariance eigendecomposition) - that path is not
-# implemented here yet.
+# The step run before PCA/ICA: every channel of a given *type* is scaled by
+# one shared standard deviation (pooled across all channels of that type),
+# so that channel types with naturally larger amplitude (e.g. EOG vs EEG)
+# don't dominate the decomposition purely because of scale. Mirrors
+# ICA._compute_pre_whitener() / ICA._pre_whiten() in python/ica/ica.py
+# (python/ica/ica.py:841-857), but only the default (noise_cov = NULL)
+# branch, which is self-contained in ica.py. The noise_cov branch there
+# calls compute_whitener() from cov.py (a full noise-covariance
+# eigendecomposition) - that path is not implemented here yet.
+#
+# NOTE on duplication: the EEG-vs-external channel split below is a third
+# copy of the same two-pass classification already duplicated between
+# detect_external_channels() (R/setexchannels.R) and print.eeg()
+# (R/eeg_class.R:203-214) - see the CLAUDE.md note on that drift risk. If
+# the classification logic changes, all three call sites need to move
+# together (or get factored into one shared helper).
 #
 # ----------------------------------------------------------------------------
-# .compute_pre_whitener() - per-channel standard deviation
+# .population_sd() - population standard deviation (numpy's ddof = 0)
+# ----------------------------------------------------------------------------
+#' Population standard deviation, matching numpy's default ddof
+#'
+#' R's \code{sd()} divides by \code{n - 1} (Bessel's correction). numpy's
+#' \code{np.std()} - what \code{ICA._compute_pre_whitener()} actually calls
+#' - divides by \code{n} (\code{ddof = 0}). Use this instead of \code{sd()}
+#' anywhere exact numerical parity with the MNE reference matters.
+#'
+#' @param x Numeric vector or matrix (flattened before computing, matching
+#'   numpy's default \code{axis = None} behavior).
+#' @return A single numeric value.
+#' @keywords internal
+.population_sd <- function(x) {
+  x <- as.double(x)
+  m <- mean(x)
+  sqrt(mean((x - m)^2))
+}
+
+# ----------------------------------------------------------------------------
+# .compute_pre_whitener() - per-channel-*type* standard deviation
 # ----------------------------------------------------------------------------
 #' Compute the pre-whitening vector for ICA fitting
 #'
-#' Computes the per-channel standard deviation used to z-standardize the
-#' data before PCA whitening. This is the default (\code{noise_cov = NULL})
-#' pre-whitening path from \code{mne.preprocessing.ICA}; it does not depend
-#' on a noise covariance matrix.
+#' Computes the pre-whitening scale used to z-standardize data before PCA
+#' whitening. This is the default (\code{noise_cov = NULL}) pre-whitening
+#' path from \code{mne.preprocessing.ICA}: MNE pools a single standard
+#' deviation across *all* channels of a given type - e.g. every EEG channel
+#' shares one scale factor - rather than scaling each channel independently
+#' (see \code{ICA._compute_pre_whitener()}, \code{python/ica/ica.py:841-857}).
 #'
 #' @param data Numeric matrix, channels x time points (same layout as
-#'   \code{eeg$data}).
+#'   \code{eeg$data}). Must already be restricted to the channels intended
+#'   for ICA fitting - e.g. the BioSemi status channel excluded - since that
+#'   selection is a \code{fit_ica()}-level concern upstream of this helper,
+#'   mirroring how MNE applies \code{picks} before \code{_fit()} ever sees
+#'   the data.
+#' @param channels Character vector of channel names, \code{length(channels)
+#'   == nrow(data)}. Used to split channels into type groups via
+#'   \code{detect_external_channels()} plus the renamed-channel regex
+#'   fallback (the same EEG-vs-external classification \code{print.eeg()}
+#'   uses): channels flagged as external (EOG/EMG/ECG/GSR/etc.) form one
+#'   group, and every remaining channel forms the \code{"eeg"} group.
 #' @param noise_cov \code{NULL} (default). A non-NULL value is not yet
 #'   supported and raises an error.
-#' @return Named numeric vector of length \code{nrow(data)}, one standard
-#'   deviation per channel (named by \code{rownames(data)}, if present).
+#' @return Named numeric vector of length \code{nrow(data)}: one population
+#'   standard deviation per channel, pooled within and broadcast across
+#'   each type group, named by \code{channels}.
 #' @keywords internal
-.compute_pre_whitener <- function(data, noise_cov = NULL) {
+.compute_pre_whitener <- function(data, channels, noise_cov = NULL) {
   if (!is.null(noise_cov)) {
     stop("ERROR: noise_cov-based pre-whitening is not yet implemented. ",
          "Only the default z-score path (noise_cov = NULL) is supported.")
   }
-  apply(data, 1, sd)
+  if (length(channels) != nrow(data)) {
+    stop("ERROR: length(channels) (", length(channels),
+         ") must match nrow(data) (", nrow(data), ").")
+  }
+
+  # Same two-pass EEG/external split as print.eeg() (R/eeg_class.R:203-214):
+  # pass 1 catches original BioSemi EXG-style names, pass 2 catches renamed
+  # channels that kept the original name in parentheses (e.g. "MASTOID LEFT
+  # (EXG5)").
+  exg_pattern <- paste0(
+    "\\((", "EXG[1-8]|GSR[12]|Plet|Temp|Resp|Erg[12]", ")\\)"
+  )
+  exg_pass1 <- detect_external_channels(channels)
+  exg_pass2 <- channels[grepl(exg_pattern, channels, ignore.case = TRUE)]
+  exg_idx   <- which(channels %in% unique(c(exg_pass1, exg_pass2)))
+  eeg_idx   <- setdiff(seq_along(channels), exg_idx)
+
+  pre_whitener <- numeric(length(channels))
+  if (length(eeg_idx) > 0) {
+    pre_whitener[eeg_idx] <- .population_sd(data[eeg_idx, , drop = FALSE])
+  }
+  if (length(exg_idx) > 0) {
+    pre_whitener[exg_idx] <- .population_sd(data[exg_idx, , drop = FALSE])
+  }
+
+  names(pre_whitener) <- channels
+  pre_whitener
 }
 
 # ----------------------------------------------------------------------------

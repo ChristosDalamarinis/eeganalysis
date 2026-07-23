@@ -33,14 +33,14 @@
 #'   \item{summary}{Data frame summarizing the labeling}
 #'
 #' @details
-#' This function relies on get_electrode_database() from channel_info2.R to 
-#' accurately identify which channels are external electrodes. It recognizes:
-#' - EXG1-EXG8 (BioSemi external electrodes)
-#' - GSR1/GSR2 (Galvanic skin response)
-#' - Erg1/Erg2 (Ergo/AUX inputs)
-#' - Resp (Respiration belt)
-#' - Plet (Plethysmograph)
-#' - Temp (Temperature)
+#' External-channel identification is read from \code{channel_types}, not
+#' recomputed here: if \code{data} is an \code{eeg} object, its
+#' \code{channel_types} field (set once by \code{classify_channels()} in
+#' \code{new_eeg()}) is used directly; otherwise \code{classify_channels()}
+#' is called on the extracted channel names. \code{get_electrode_database()}
+#' is still used, but only for descriptive context (the position-type hint
+#' shown at each prompt and the Type/Description columns in the summary),
+#' not to decide which channels are external.
 #'
 #' @examples
 #' \dontrun{
@@ -56,6 +56,8 @@ identify_external_channels <- function(data, channel_col = NULL) {
   # EXTRACT CHANNEL NAMES
   # ========================================================================
   
+  channel_types <- NULL
+
   if (is.character(data)) {
     # Character vector of channel names
     channel_names <- trimws(data)
@@ -70,9 +72,12 @@ identify_external_channels <- function(data, channel_col = NULL) {
       channel_names <- unique(data[[channel_col]])
     }
   } else if (is.list(data)) {
-    # List - try common locations
+    # List - try common locations (includes eeg objects)
     if (!is.null(data$channels)) {
       channel_names <- trimws(data$channels)
+      if (!is.null(data$channel_types)) {
+        channel_types <- data$channel_types
+      }
     } else if (!is.null(data$channel_names)) {
       channel_names <- trimws(data$channel_names)
     } else {
@@ -81,39 +86,31 @@ identify_external_channels <- function(data, channel_col = NULL) {
   } else {
     stop("Invalid input type. Expected data frame, matrix, list, or character vector.")
   }
-  
+
   if (is.null(channel_names) || length(channel_names) == 0) {
     stop("No channel names found or extracted.")
   }
-  
+
+  # If the input didn't already carry a classification (e.g. an eeg object's
+  # channel_types), compute it the same way new_eeg() does rather than
+  # re-deriving externality from the electrode database here.
+  if (is.null(channel_types)) {
+    channel_types <- classify_channels(channel_names)
+  }
+
   # ========================================================================
   # GET ELECTRODE DATABASE
   # ========================================================================
-  
+
+  # Used below only for descriptive context (position-type hint, summary
+  # Type/Description columns) - not to decide which channels are external.
   electrode_db <- get_electrode_database()
-  
+
   # ========================================================================
-  # IDENTIFY EXTERNAL CHANNELS USING DATABASE
+  # IDENTIFY EXTERNAL CHANNELS (FROM channel_types)
   # ========================================================================
-  
-  external_channels <- character()
-  
-  for (ch_name in channel_names) {
-    # Case-insensitive lookup
-    ch_lower <- tolower(ch_name)
-    
-    if (ch_lower %in% names(electrode_db)) {
-      electrode_info <- electrode_db[[ch_lower]]
-      
-      # Check if it's an external channel
-      # External channels have position_type = "External" or similar categories
-      if (electrode_info$position_type %in% c("External", "GSR", "Ergo/AUX", 
-                                              "Respiration", "Plethysmograph", 
-                                              "Temperature")) {
-        external_channels <- c(external_channels, ch_name)
-      }
-    }
-  }
+
+  external_channels <- channel_names[channel_types == "external"]
   
   # ========================================================================
   # REPORT FINDINGS

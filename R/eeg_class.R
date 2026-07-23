@@ -47,6 +47,13 @@
 #'  \describe{
 #'    \item{data}{Numeric matrix of EEG values (channels x time points)}
 #'    \item{channels}{Character vector of channel names}
+#'    \item{channel_types}{Character vector, same length and order as
+#'      \code{channels}, classifying each channel as \code{"eeg"},
+#'      \code{"external"} (EOG/ECG/EMG/GSR/etc.), or \code{"status"}.
+#'      Computed once at construction via \code{classify_channels()} - see
+#'      that function for the classification rules - so downstream code
+#'      should read this field rather than re-deriving it from
+#'      \code{channels}.}
 #'    \item{sampling_rate}{Numeric sampling rate}
 #'    \item{times}{Numeric time vector}
 #'    \item{events}{Data frame with event information}
@@ -67,7 +74,7 @@
 #' }
 #'
 #' @export
-new_eeg <- function(data, 
+new_eeg <- function(data,
                     channels, 
                     sampling_rate, 
                     times = NULL,
@@ -107,6 +114,12 @@ new_eeg <- function(data,
     }
   }
   
+  # ========== CLASSIFY CHANNELS ==========
+
+  # Computed once here so downstream functions (print.eeg(), etc.) read
+  # channel_types instead of re-deriving the eeg/external/status split.
+  channel_types <- classify_channels(as.character(channels))
+
   # ========== CREATE EVENTS DATAFRAME ==========
   
   if (is.null(events)) {
@@ -138,6 +151,7 @@ new_eeg <- function(data,
     list(
       data = as.matrix(data),
       channels = as.character(channels),
+      channel_types = channel_types,
       sampling_rate = as.numeric(sampling_rate),
       times = as.numeric(times),
       events = events,
@@ -149,6 +163,48 @@ new_eeg <- function(data,
   )
   
   return(eeg_object)
+}
+
+#' Classify Channels as EEG, External, or Status (internal)
+#'
+#' Computes the eeg/external/status classification for a vector of channel
+#' names, once, so that \code{new_eeg()} can store the result on the
+#' \code{eeg} object as \code{channel_types} instead of every downstream
+#' function re-deriving it. Combines the BioSemi status-channel check with
+#' the same two-pass external-channel detection used elsewhere in the
+#' package: pass 1 is the electrode-database lookup
+#' (\code{detect_external_channels()}, see R/setexchannels.R), pass 2 is a
+#' regex fallback for channels renamed with the original name kept in
+#' parentheses (e.g. \code{"MASTOID LEFT (EXG5)"}).
+#'
+#' This only distinguishes broad channel categories (eeg/external/status),
+#' not the physiological sub-type of an external channel (EOG vs ECG vs
+#' EMG vs GSR). BioSemi's EXG1-EXG8 ports are generic in the electrode
+#' database - which physiological signal is wired to a given port is a
+#' fact about how that specific recording session was set up, not
+#' something derivable from the channel name. That labeling is handled
+#' separately by \code{identify_external_channels()} /
+#' \code{apply_external_labels()}.
+#'
+#' @param channels Character vector of channel names.
+#' @return Character vector the same length as \code{channels}, with values
+#'   \code{"eeg"}, \code{"external"}, or \code{"status"}, in the same order
+#'   as \code{channels}.
+#' @keywords internal
+classify_channels <- function(channels) {
+  ch    <- channels
+  types <- rep("eeg", length(ch))
+
+  status_idx <- which(grepl("^status$", tolower(ch)))
+  types[status_idx] <- "status"
+
+  exg_pattern <- "\\((EXG[1-8]|GSR[12]|Plet|Temp|Resp|Erg[12])\\)"
+  exg_pass1 <- detect_external_channels(ch)
+  exg_pass2 <- ch[grepl(exg_pattern, ch, ignore.case = TRUE)]
+  exg_idx   <- setdiff(which(ch %in% unique(c(exg_pass1, exg_pass2))), status_idx)
+  types[exg_idx] <- "external"
+
+  types
 }
 
 #' Print Method for EEG Objects
@@ -192,27 +248,13 @@ print.eeg <- function(x, ...) {
   cat("  Sampling rate:   ", x$sampling_rate, " Hz\n")
   
   # ========== DATA STATISTICS ==========
-  # Update: 30/03/2026 - Refined to focus on EEG channels only, excluding status and EXG channels.
-  # Stats are scoped to EEG channels only.
-  # Uses the same two-pass channel classification as eeg_summary():
-  #   Pass 1 - detect_external_channels() catches original EXG names (e.g. "EXG1")
-  #   Pass 2 - regex fallback catches renamed channels that kept the original
-  #             name in parentheses, e.g. "MASTOID LEFT (EXG5)"
-  # Status channel is always excluded.
-  
-  .all_ch     <- x$channels
-  .status_idx <- which(grepl("^status$", tolower(.all_ch)))
-  
-  .exg_pattern <- paste0(
-    "\\((",
-    "EXG[1-8]|GSR[12]|Plet|Temp|Resp|Erg[12]",
-    ")\\)"
-  )
-  .exg_pass1 <- detect_external_channels(.all_ch)
-  .exg_pass2 <- .all_ch[grepl(.exg_pattern, .all_ch, ignore.case = TRUE)]
-  .exg_idx   <- which(.all_ch %in% unique(c(.exg_pass1, .exg_pass2)))
-  .eeg_idx   <- setdiff(seq_along(.all_ch), c(.status_idx, .exg_idx))
-  
+  # Stats are scoped to EEG channels only, excluding status and external
+  # (EXG/EOG/ECG/EMG/GSR/etc.) channels. Classification is read from
+  # x$channel_types, computed once by classify_channels() at construction
+  # in new_eeg() - not re-derived here.
+
+  .eeg_idx <- which(x$channel_types == "eeg")
+
   .eeg_data  <- x$data[.eeg_idx, , drop = FALSE]
   
   cat("\nDATA STATISTICS (EEG channels only):\n")

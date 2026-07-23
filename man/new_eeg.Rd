@@ -49,6 +49,13 @@ An object of class 'eeg' containing:
 \describe{
 \item{data}{Numeric matrix of EEG values (channels x time points)}
 \item{channels}{Character vector of channel names}
+\item{channel_types}{Character vector, same length and order as
+\code{channels}, classifying each channel as \code{"eeg"},
+\code{"external"} (EOG/ECG/EMG/GSR/etc.), or \code{"status"}.
+Computed once at construction via \code{classify_channels()} - see
+that function for the classification rules - so downstream code
+should read this field rather than re-deriving it from
+\code{channels}.}
 \item{sampling_rate}{Numeric sampling rate}
 \item{times}{Numeric time vector}
 \item{events}{Data frame with event information}

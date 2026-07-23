@@ -292,13 +292,6 @@ print.eeg_ica <- function(x, ...) {
 # calls compute_whitener() from cov.py (a full noise-covariance
 # eigendecomposition) - that path is not implemented here yet.
 #
-# NOTE on duplication: the EEG-vs-external channel split below is a third
-# copy of the same two-pass classification already duplicated between
-# detect_external_channels() (R/setexchannels.R) and print.eeg()
-# (R/eeg_class.R:203-214) - see the CLAUDE.md note on that drift risk. If
-# the classification logic changes, all three call sites need to move
-# together (or get factored into one shared helper).
-#
 # ----------------------------------------------------------------------------
 # .population_sd() - population standard deviation (numpy's ddof = 0)
 # ----------------------------------------------------------------------------
@@ -338,18 +331,21 @@ print.eeg_ica <- function(x, ...) {
 #'   mirroring how MNE applies \code{picks} before \code{_fit()} ever sees
 #'   the data.
 #' @param channels Character vector of channel names, \code{length(channels)
-#'   == nrow(data)}. Used to split channels into type groups via
-#'   \code{detect_external_channels()} plus the renamed-channel regex
-#'   fallback (the same EEG-vs-external classification \code{print.eeg()}
-#'   uses): channels flagged as external (EOG/EMG/ECG/GSR/etc.) form one
-#'   group, and every remaining channel forms the \code{"eeg"} group.
+#'   == nrow(data)}. Used only to name the returned vector.
+#' @param channel_types Character vector, same length and order as
+#'   \code{channels}, with values \code{"eeg"} / \code{"external"} /
+#'   \code{"status"} - i.e. \code{eeg_obj$channel_types} as computed once by
+#'   \code{classify_channels()} in \code{new_eeg()} (see R/eeg_class.R).
+#'   Channels typed \code{"eeg"} form one pooled-std group and channels typed
+#'   \code{"external"} form another; \code{"status"} entries are not
+#'   assigned to either group and must already be excluded from \code{data}.
 #' @param noise_cov \code{NULL} (default). A non-NULL value is not yet
 #'   supported and raises an error.
 #' @return Named numeric vector of length \code{nrow(data)}: one population
 #'   standard deviation per channel, pooled within and broadcast across
 #'   each type group, named by \code{channels}.
 #' @keywords internal
-.compute_pre_whitener <- function(data, channels, noise_cov = NULL) {
+.compute_pre_whitener <- function(data, channels, channel_types, noise_cov = NULL) {
   if (!is.null(noise_cov)) {
     stop("ERROR: noise_cov-based pre-whitening is not yet implemented. ",
          "Only the default z-score path (noise_cov = NULL) is supported.")
@@ -358,18 +354,13 @@ print.eeg_ica <- function(x, ...) {
     stop("ERROR: length(channels) (", length(channels),
          ") must match nrow(data) (", nrow(data), ").")
   }
+  if (length(channel_types) != nrow(data)) {
+    stop("ERROR: length(channel_types) (", length(channel_types),
+         ") must match nrow(data) (", nrow(data), ").")
+  }
 
-  # Same two-pass EEG/external split as print.eeg() (R/eeg_class.R:203-214):
-  # pass 1 catches original BioSemi EXG-style names, pass 2 catches renamed
-  # channels that kept the original name in parentheses (e.g. "MASTOID LEFT
-  # (EXG5)").
-  exg_pattern <- paste0(
-    "\\((", "EXG[1-8]|GSR[12]|Plet|Temp|Resp|Erg[12]", ")\\)"
-  )
-  exg_pass1 <- detect_external_channels(channels)
-  exg_pass2 <- channels[grepl(exg_pattern, channels, ignore.case = TRUE)]
-  exg_idx   <- which(channels %in% unique(c(exg_pass1, exg_pass2)))
-  eeg_idx   <- setdiff(seq_along(channels), exg_idx)
+  eeg_idx <- which(channel_types == "eeg")
+  exg_idx <- which(channel_types == "external")
 
   pre_whitener <- numeric(length(channels))
   if (length(eeg_idx) > 0) {

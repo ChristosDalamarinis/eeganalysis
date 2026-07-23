@@ -1,4 +1,3 @@
-#' @importFrom fastICA fastICA
 #' @importFrom MASS ginv
 #' @importFrom stats prcomp cov cor dist
 #' @importFrom graphics plot abline lines legend par

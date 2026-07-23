@@ -38,16 +38,14 @@ enabling proper documentation and analysis of multi-modal physiological data.
 Date: Jan - 2026}{
 Interactively Identify and Label External Channels (Database-Driven)
 
-This function relies on get_electrode_database() from channel_info2.R to
-accurately identify which channels are external electrodes. It recognizes:
-\itemize{
-\item EXG1-EXG8 (BioSemi external electrodes)
-\item GSR1/GSR2 (Galvanic skin response)
-\item Erg1/Erg2 (Ergo/AUX inputs)
-\item Resp (Respiration belt)
-\item Plet (Plethysmograph)
-\item Temp (Temperature)
-}
+External-channel identification is read from \code{channel_types}, not
+recomputed here: if \code{data} is an \code{eeg} object, its
+\code{channel_types} field (set once by \code{classify_channels()} in
+\code{new_eeg()}) is used directly; otherwise \code{classify_channels()}
+is called on the extracted channel names. \code{get_electrode_database()}
+is still used, but only for descriptive context (the position-type hint
+shown at each prompt and the Type/Description columns in the summary),
+not to decide which channels are external.
 }
 
 \examples{

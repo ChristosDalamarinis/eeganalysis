@@ -4,7 +4,7 @@
 \alias{.compute_pre_whitener}
 \title{Compute the pre-whitening vector for ICA fitting}
 \usage{
-.compute_pre_whitener(data, channels, noise_cov = NULL)
+.compute_pre_whitener(data, channels, channel_types, noise_cov = NULL)
 }
 \arguments{
 \item{data}{Numeric matrix, channels x time points (same layout as
@@ -15,11 +15,15 @@ mirroring how MNE applies \code{picks} before \code{_fit()} ever sees
 the data.}
 
 \item{channels}{Character vector of channel names, \code{length(channels)
-  == nrow(data)}. Used to split channels into type groups via
-\code{detect_external_channels()} plus the renamed-channel regex
-fallback (the same EEG-vs-external classification \code{print.eeg()}
-uses): channels flagged as external (EOG/EMG/ECG/GSR/etc.) form one
-group, and every remaining channel forms the \code{"eeg"} group.}
+== nrow(data)}. Used only to name the returned vector.}
+
+\item{channel_types}{Character vector, same length and order as
+\code{channels}, with values \code{"eeg"} / \code{"external"} /
+\code{"status"} - i.e. \code{eeg_obj$channel_types} as computed once by
+\code{classify_channels()} in \code{new_eeg()} (see R/eeg_class.R).
+Channels typed \code{"eeg"} form one pooled-std group and channels typed
+\code{"external"} form another; \code{"status"} entries are not
+assigned to either group and must already be excluded from \code{data}.}
 
 \item{noise_cov}{\code{NULL} (default). A non-NULL value is not yet
 supported and raises an error.}

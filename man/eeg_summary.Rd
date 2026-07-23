@@ -48,9 +48,9 @@ a full diagnostic report with:
 }
 }
 \details{
-Channel classification relies on detect_external_channels() from
-setexchannels.R. The Status channel is automatically excluded from
-all statistical computations.
+Channel classification is read from eeg_obj$channel_types (computed once
+by classify_channels() in new_eeg()), not re-derived here. The Status
+channel is automatically excluded from all statistical computations.
 }
 \section{Author: Christos Dalamarinis
 Date: March 2026

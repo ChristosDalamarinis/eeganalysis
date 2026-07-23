@@ -8,9 +8,9 @@
 #'   - Stats computed separately for EEG and EXG channels
 #'   - Suspicious channel flagging (flat, noisy, outlier amplitude)
 #'
-#' Channel classification relies on detect_external_channels() from
-#' setexchannels.R. The Status channel is automatically excluded from
-#' all statistical computations.
+#' Channel classification is read from eeg_obj$channel_types (computed once
+#' by classify_channels() in new_eeg()), not re-derived here. The Status
+#' channel is automatically excluded from all statistical computations.
 #'
 #' Author: Christos Dalamarinis
 #' Date: March 2026
@@ -83,49 +83,17 @@ eeg_summary <- function(eeg_obj,
   }
   
   # ========== CLASSIFY CHANNELS ==========
-  
+
+  # Classification is read from eeg_obj$channel_types, computed once by
+  # classify_channels() at construction in new_eeg() - not re-derived here
+  # (same pattern as print.eeg() in R/eeg_class.R).
+
   all_channels <- eeg_obj$channels
-  
-  # Status channel - always excluded from stats
-  status_idx <- which(grepl("^status$", tolower(all_channels)))
-  
-  # EXG channels - two-pass detection:
-  #
-  # Pass 1: detect_external_channels() catches original names (e.g. "EXG1")
-  # Pass 2: regex fallback catches renamed channels where the original name
-  #         is preserved in parentheses by apply_external_labels(keep_original=TRUE)
-  #         e.g. "MASTOID LEFT (EXG5)", "EOG LEFT (EXG1)", "ECG (EXG3)"
-  #
-  # Known external name patterns to look for inside parentheses:
-  #   EXG1-EXG8, GSR1-GSR2, Plet, Temp, Resp, Erg1-Erg2
-  
-  exg_pattern <- paste0(
-    "\\(",                          # opening parenthesis
-    "(",                            # start capture group
-    "EXG[1-8]",                     # BioSemi external electrodes
-    "|GSR[12]",                     # Galvanic skin response
-    "|Plet",                        # Plethysmograph
-    "|Temp",                        # Temperature
-    "|Resp",                        # Respiration
-    "|Erg[12]",                     # Ergo/AUX
-    ")",                            # end capture group
-    "\\)"                           # closing parenthesis
-  )
-  
-  # Pass 1 - original names
-  exg_names_pass1 <- detect_external_channels(all_channels)
-  
-  # Pass 2 - renamed channels (keep_original = TRUE pattern)
-  exg_names_pass2 <- all_channels[grepl(exg_pattern, all_channels,
-                                        ignore.case = TRUE)]
-  
-  # Combine both passes, remove duplicates
-  exg_names <- unique(c(exg_names_pass1, exg_names_pass2))
-  exg_idx   <- which(all_channels %in% exg_names)
-  
-  # EEG channels - everything that is not Status and not EXG
-  eeg_idx <- setdiff(seq_along(all_channels), c(status_idx, exg_idx))
-  
+
+  status_idx <- which(eeg_obj$channel_types == "status")
+  exg_idx    <- which(eeg_obj$channel_types == "external")
+  eeg_idx    <- which(eeg_obj$channel_types == "eeg")
+
   if (length(eeg_idx) == 0) {
     stop("No EEG channels found after excluding EXG and Status channels.\n",
          "Check that channel names follow standard 10-20/10-10 conventions.")

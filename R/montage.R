@@ -42,10 +42,10 @@ new_montage <- function(channels, positions, coord_frame = "biosemi64") {
 
 #' Create a Montage From the Built-in BioSemi Electrode Template
 #'
-#' Builds a \code{\link{montage}} object giving scalp positions (Cartesian
+#' Builds a \code{montage} object giving scalp positions (Cartesian
 #' x/y/z and spherical theta/phi/radius) for a set of channel names, drawn
 #' from the package's built-in 64-channel BioSemi electrode database
-#' (\code{\link{get_electrode_database}}). Channel names may be given in
+#' (\code{get_electrode_database}). Channel names may be given in
 #' either standard 10-20/10-10 notation (e.g. \code{"Cz"}) or BioSemi internal
 #' notation (e.g. \code{"B16"}); matching is case-insensitive.
 #'
@@ -55,14 +55,14 @@ new_montage <- function(channels, positions, coord_frame = "biosemi64") {
 #' @param template Character string naming the coordinate template to use.
 #'   Currently only \code{"biosemi64"} (the default) is supported.
 #'
-#' @return An object of class \code{'montage'}. See \code{\link{new_montage}}.
+#' @return An object of class \code{'montage'}. See \code{new_montage}.
 #'
 #' @details
 #' Requested channels that have no scalp position in the template - either
 #' because they are not in the database at all, or because they are external
 #' channels (EOG/ECG/EMG/GSR/etc., which have no coordinates) - are dropped
 #' with a warning naming exactly which channels were excluded. Use
-#' \code{\link{detect_electrode_naming_system}} first if you are unsure which
+#' \code{detect_electrode_naming_system} first if you are unsure which
 #' naming convention a dataset uses.
 #'
 #' @examples

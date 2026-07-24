@@ -105,7 +105,7 @@ _compute_pre_whitener()). PCA whitening still to be ported
 natively (plain SVD, no external dependency needed). The FastICA
 rotation step itself remains the one open question - port
 sklearn's _fastica.py line-by-line, or call it via reticulate.
-Tested: NaN}{
+Tested: no test file written yet}{
 Create a New ICA Object
 
 Creates an unfitted \code{eeg_ica} object that stores the configuration

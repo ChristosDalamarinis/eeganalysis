@@ -43,6 +43,10 @@
 #' @param preprocessing_history List tracking all preprocessing steps applied
 #'                             Useful for reproducibility and auditing
 #'
+#' @param montage An object of class 'montage' giving channel scalp positions
+#'                (optional). \code{NULL} until attached via
+#'                \code{\link{set_montage}}. See \code{\link{create_montage}}.
+#'
 #' @return An object of class 'eeg' containing:
 #'  \describe{
 #'    \item{data}{Numeric matrix of EEG values (channels x time points)}
@@ -60,6 +64,8 @@
 #'    \item{metadata}{List with experiment metadata}
 #'    \item{reference}{Reference scheme used}
 #'    \item{preprocessing_history}{Processing log}
+#'    \item{montage}{Object of class 'montage' with channel scalp positions,
+#'      or \code{NULL} if none has been attached yet}
 #'  }
 #'
 #' @examples
@@ -80,8 +86,9 @@ new_eeg <- function(data,
                     times = NULL,
                     events = NULL, 
                     metadata = NULL,
-                    reference = "original", 
-                    preprocessing_history = NULL) {
+                    reference = "original",
+                    preprocessing_history = NULL,
+                    montage = NULL) {
   
   # ========== INPUT VALIDATION ==========
   
@@ -157,7 +164,8 @@ new_eeg <- function(data,
       events = events,
       metadata = metadata,
       reference = as.character(reference),
-      preprocessing_history = preprocessing_history
+      preprocessing_history = preprocessing_history,
+      montage = montage
     ),
     class = "eeg"
   )

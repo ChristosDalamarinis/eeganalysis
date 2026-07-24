@@ -12,7 +12,8 @@ new_eeg(
   events = NULL,
   metadata = NULL,
   reference = "original",
-  preprocessing_history = NULL
+  preprocessing_history = NULL,
+  montage = NULL
 )
 }
 \arguments{
@@ -43,6 +44,10 @@ Options: "average", "linked_mastoids", "CMS/DRL", etc.}
 
 \item{preprocessing_history}{List tracking all preprocessing steps applied
 Useful for reproducibility and auditing}
+
+\item{montage}{An object of class 'montage' giving channel scalp positions
+(optional). \code{NULL} until attached via
+\code{\link{set_montage}}. See \code{\link{create_montage}}.}
 }
 \value{
 An object of class 'eeg' containing:
@@ -62,6 +67,8 @@ should read this field rather than re-deriving it from
 \item{metadata}{List with experiment metadata}
 \item{reference}{Reference scheme used}
 \item{preprocessing_history}{Processing log}
+\item{montage}{Object of class 'montage' with channel scalp positions,
+or \code{NULL} if none has been attached yet}
 }
 }
 \description{

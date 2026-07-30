@@ -8,7 +8,7 @@
 }
 \arguments{
 \item{x}{Numeric vector (length n_samples) or matrix (components x
-n_samples): the current unmixing projection \code{w'X} / \code{WX}.}
+n_samples): the current unmixing projection \code{w^T X} / \code{WX}.}
 
 \item{fun_args}{Named list; only \code{alpha} is read (default \code{1.0}),
 matching sklearn's \code{fun_args.get("alpha", 1.0)}. Must lie in

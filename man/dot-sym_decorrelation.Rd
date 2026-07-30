@@ -2,7 +2,7 @@
 % Please edit documentation in R/ica1.R
 \name{.sym_decorrelation}
 \alias{.sym_decorrelation}
-\title{Symmetric decorrelation: \code{W <- (W W')^{-1/2} W}}
+\title{Symmetric decorrelation: \code{W <- (W W^T)^{-1/2} W}}
 \usage{
 .sym_decorrelation(W)
 }

@@ -730,7 +730,7 @@ print.eeg_ica <- function(x, ...) {
 # ----------------------------------------------------------------------------
 # .sym_decorrelation() - symmetric orthogonalization of the unmixing matrix
 # ----------------------------------------------------------------------------
-#' Symmetric decorrelation: \code{W <- (W W')^{-1/2} W}
+#' Symmetric decorrelation: \code{W <- (W W^T)^{-1/2} W}
 #'
 #' Mirrors sklearn's \code{_sym_decorrelation()} (\code{_fastica.py:61-73}).
 #' Used both to initialize \code{.ica_par()}'s starting \code{W} and inside

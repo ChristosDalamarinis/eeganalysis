@@ -18,3 +18,4 @@ test-filter1.R
 *.pdf
 *.csv
 *.md
+*.png

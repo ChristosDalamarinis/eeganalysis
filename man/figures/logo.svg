@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 181 209" width="181" height="209" role="img" aria-label="eeganalysis logo">
+  <title>eeganalysis</title>
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0B1F3A"/>
+      <stop offset="100%" stop-color="#123A5E"/>
+    </linearGradient>
+  </defs>
+
+  <!-- outer border hex -->
+  <path d="M90.5,3.5 L174.2,52.5 L174.2,150.5 L90.5,199.5 L6.8,150.5 L6.8,52.5 Z"
+        fill="#EAF4F8"/>
+
+  <!-- main colored hex -->
+  <path d="M90.5,10.5 L167.7,55.5 L167.7,147.5 L90.5,192.5 L13.3,147.5 L13.3,55.5 Z"
+        fill="url(#bg)" stroke="#0B1F3A" stroke-width="2" stroke-linejoin="round"/>
+
+  <!-- head outline with small chin, sitting inside the wide flat band -->
+  <path d="M 62,75
+           a 28.5,28.5 0 1 1 57,0
+           l 0,10
+           q 0,9 -8,13
+           l -3,1.5
+           q -19,7 -38,0
+           l -3,-1.5
+           q -8,-4 -8,-13
+           z"
+        fill="none" stroke="#DCEBF2" stroke-width="2.25" opacity="0.9"/>
+
+  <!-- electrode nodes across the crown -->
+  <circle cx="90.5" cy="43.3" r="3" fill="#4FD9CE"/>
+  <circle cx="70"   cy="47"   r="3" fill="#4FD9CE"/>
+  <circle cx="111"  cy="47"   r="3" fill="#4FD9CE"/>
+  <circle cx="55"   cy="62"   r="3" fill="#4FD9CE"/>
+  <circle cx="126"  cy="62"   r="3" fill="#4FD9CE"/>
+
+  <!-- leads from electrodes converging toward the eeg trace -->
+  <path d="M55,62 L55,100 M126,62 L126,100 M70,47 L70,100 M111,47 L111,100 M90.5,43.3 L90.5,100"
+        stroke="#4FD9CE" stroke-width="1" opacity="0.35"/>
+
+  <!-- eeg waveform trace -->
+  <polyline points="33,113 45,113 51,98 57,124 63,105 69,115 75,100 81,117 87,107 93,121
+                     99,98 105,115 111,105 117,119 123,109 129,115 135,102 141,117 148,113"
+            fill="none" stroke="#4FD9CE" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- package name -->
+  <text x="90.5" y="145" text-anchor="middle"
+        font-family="Helvetica, Arial, sans-serif" font-size="15.5" font-weight="700"
+        letter-spacing="-0.2" fill="#F4FAFC">eeganalysis</text>
+
+  <!-- tagline -->
+  <text x="90.5" y="163" text-anchor="middle"
+        font-family="Helvetica, Arial, sans-serif" font-size="7.5" font-weight="400"
+        letter-spacing="1.6" fill="#8FB6CC">EEG IN R</text>
+</svg>

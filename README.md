@@ -1,5 +1,7 @@
 # eeganalysis
 
+<img src="man/figures/logo.png" align="right" height="139"/>
+
 *eeganalysis* gives EEG researchers a straightforward R-native workflow — from raw BioSemi recordings to epoched, analysis-ready data — without leaving the R ecosystem.
 
 Author: Christos Dalamarinis
@@ -27,19 +29,19 @@ Current code reads .bdf and .edf files. Scripts include functions for assisting 
 
 ## Interactive functions include:
 
--   **identify_external_channels()**: Allows the user to interactively label external channels detected in imported EEG data.
--   **plot_electrode_3d()**: 3D visualization of electrode positions on a head model (helper function).
--   **plot_electrode_3d_spherical()**: 3D visualization of electrode positions on a spherical head model (helper function).
+- **identify_external_channels()**: Allows the user to interactively label external channels detected in imported EEG data.
+- **plot_electrode_3d()**: 3D visualization of electrode positions on a head model (helper function).
+- **plot_electrode_3d_spherical()**: 3D visualization of electrode positions on a spherical head model (helper function).
 
 ## Dependencies
 
--   "signal" -\> Signal processing and filtering
+- "signal" -\> Signal processing and filtering
 
--   "graphics" -\> Powers all visualization (base R)
+- "graphics" -\> Powers all visualization (base R)
 
--   "dplyr" -\> Data manipulation
+- "dplyr" -\> Data manipulation
 
--   "plotly" -\> Interactive 3D plotting
+- "plotly" -\> Interactive 3D plotting
 
 ## Quick Start
 
@@ -91,7 +93,7 @@ epochs <- epoch_eeg(eeg_data, events = c(1, 2), time_window = c(-0.2, 0.8))
 
 Purpose: FIR filtering to remove unwanted frequency content.
 
-Key functions: 
+Key functions:
 
 - **eeg_bandpass()**: Bandpass filter using a Hamming-window FIR kernel (built-in). Attenuates frequencies outside the specified passband.
 
@@ -111,7 +113,7 @@ Purpose: Reduces sampling rate pf EEG data
 
 Key function:
 
-- **downsample()**: 
+- **downsample()**:
   - Applies an anti-alising Butterworth low-pass filter before decimating
   - Handles event onset recualculation after downsampling
   - Validates frequency band presentation
@@ -124,7 +126,7 @@ Key function:
 
 - **eeg_rereference()**:
   - Supports common average reference
-  - SUpports single or linked channel reference 
+  - SUpports single or linked channel reference
   - Allows exclusing channels from the reference computation
 
 ## epoch2.R
@@ -149,20 +151,19 @@ Key functions:
 
 - **apply_external_labels()**: Applies user-defined labels to the data
 
-
 # Analysis Pipeline
 
 The analysis pipeline implemented in the package includes the following steps:
 
--   1.Data Import: Functions to import raw EEG data from various file formats (e.g., .edf, .bdf, .set).
+- 1.Data Import: Functions to import raw EEG data from various file formats (e.g., .edf, .bdf, .set).
 
--   2.Preprocessing: Functions for filtering, artifact removal, and epoching the EEG data.
+- 2.Preprocessing: Functions for filtering, artifact removal, and epoching the EEG data.
 
--   3.Feature Extraction: Functions to extract relevant features from the EEG signals (e.g., power spectral density, event-related potentials).
+- 3.Feature Extraction: Functions to extract relevant features from the EEG signals (e.g., power spectral density, event-related potentials).
 
--   4.Statistical Analysis: Functions to perform statistical tests on the extracted features.
+- 4.Statistical Analysis: Functions to perform statistical tests on the extracted features.
 
--   5.Visualization: Functions to create visualizations of the EEG data and analysis results (e.g., topographic maps, time-frequency plots).
+- 5.Visualization: Functions to create visualizations of the EEG data and analysis results (e.g., topographic maps, time-frequency plots).
 
 ## Contributing
 

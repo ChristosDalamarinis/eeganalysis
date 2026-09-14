@@ -20,3 +20,5 @@ test-filter1.R
 *.md
 *.png
 *.txt
+*.jinja
+*.csd

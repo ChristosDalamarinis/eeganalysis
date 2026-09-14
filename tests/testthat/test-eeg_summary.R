@@ -13,6 +13,7 @@
 #   5. Return value structure
 #   6. Print output and parameters
 #   7. Integration tests
+#   8. Bad channel handling
 #
 # Author: Christos Dalamarinis
 # Date: May 2026
@@ -641,6 +642,120 @@ test_that("eeg_summary EEG stats are unaffected by extreme EXG values", {
     amp_flags <- report$flags[grepl("Excessive", report$flags$reason), ]
     expect_equal(nrow(amp_flags), 0)
   }
+})
+
+
+# ============================================================================
+# TEST SUITE 8: Bad channel handling
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# Test 8.1: Bad channel excluded from eeg_stats
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: A channel listed in eeg_obj$bads must not appear in
+# eeg_stats, and the row count must drop accordingly.
+test_that("eeg_summary excludes bad channels from eeg_stats", {
+  set.seed(101)
+  data <- matrix(rnorm(4 * 200, sd = 15), nrow = 4, ncol = 200)
+  eeg <- new_eeg(
+    data     = data,
+    channels = c("Cz", "Pz", "Oz", "Fz"),
+    sampling_rate = 256,
+    bads     = "Pz"
+  )
+
+  capture.output(report <- eeg_summary(eeg))
+
+  expect_equal(nrow(report$eeg_stats), 3)
+  expect_false("Pz" %in% report$eeg_stats$channel)
+})
+
+
+# ----------------------------------------------------------------------------
+# Test 8.2: Bad channel is not re-flagged even if it would trigger a flag
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: A channel already marked bad must be skipped by the
+# suspicious-channel flagging logic, even when its signal (e.g. perfectly
+# flat) would otherwise trigger a flag.
+test_that("eeg_summary does not flag channels already marked bad", {
+  set.seed(102)
+  data <- matrix(rnorm(3 * 200, sd = 15), nrow = 3, ncol = 200)
+  data[2, ] <- rep(5, 200)  # Pz: perfectly flat - would normally be flagged
+
+  eeg <- new_eeg(
+    data     = data,
+    channels = c("Cz", "Pz", "Oz"),
+    sampling_rate = 256,
+    bads     = "Pz"
+  )
+
+  capture.output(report <- eeg_summary(eeg))
+
+  flagged_channels <- if (is.null(report$flags)) character(0) else report$flags$channel
+  expect_false("Pz" %in% flagged_channels)
+  expect_false("Pz" %in% report$eeg_stats$channel)
+})
+
+
+# ----------------------------------------------------------------------------
+# Test 8.3: BAD CHANNELS section lists marked channels
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: The printed report must show a BAD CHANNELS section
+# naming every channel in eeg_obj$bads when at least one is marked.
+test_that("eeg_summary prints BAD CHANNELS section listing marked channels", {
+  set.seed(103)
+  data <- matrix(rnorm(4 * 200, sd = 15), nrow = 4, ncol = 200)
+  eeg <- new_eeg(
+    data     = data,
+    channels = c("Cz", "Pz", "Oz", "Fz"),
+    sampling_rate = 256,
+    bads     = c("Cz", "Oz")
+  )
+
+  output <- capture.output(eeg_summary(eeg))
+
+  expect_true(any(grepl("BAD CHANNELS", output)))
+  expect_true(any(grepl("Cz, Oz", output)))
+})
+
+
+# ----------------------------------------------------------------------------
+# Test 8.4: BAD CHANNELS section shows "None" when no channels are marked
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: With an empty bads list, the report must say "None"
+# rather than an empty or missing section.
+test_that("eeg_summary prints 'None' when no channels are marked bad", {
+  eeg <- .make_pure_eeg()
+
+  output <- capture.output(eeg_summary(eeg))
+
+  expect_true(any(grepl("Marked bad\\s*:\\s*None", output)))
+})
+
+
+# ----------------------------------------------------------------------------
+# Test 8.5: Bad channels combined with EXG and Status
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: In a realistic mixed recording, a bad EEG channel is
+# excluded from eeg_stats while EXG and Status channels are handled as
+# usual and unaffected by the bads exclusion.
+test_that("eeg_summary handles bads together with EXG and Status channels", {
+  set.seed(104)
+  data <- matrix(rnorm(6 * 200, sd = 15), nrow = 6, ncol = 200)
+
+  eeg <- new_eeg(
+    data     = data,
+    channels = c("Fp1", "Fp2", "Cz", "Pz", "EXG1", "Status"),
+    sampling_rate = 256,
+    bads     = "Fp2"
+  )
+
+  capture.output(report <- eeg_summary(eeg))
+
+  expect_equal(nrow(report$eeg_stats), 3)   # Fp1, Cz, Pz (Fp2 excluded as bad)
+  expect_false("Fp2" %in% report$eeg_stats$channel)
+  expect_equal(nrow(report$exg_stats), 1)   # EXG1 still present
+  expect_false("Status" %in% report$eeg_stats$channel)
 })
 
 

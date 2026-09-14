@@ -21,7 +21,8 @@
 #' values are interpolated onto a regular grid with \code{akima::interp()}.
 #'
 #' @param eeg_obj An object of class \code{'eeg'}. Used to read
-#'   \code{eeg_obj$montage} when \code{montage} is not supplied directly.
+#'   \code{eeg_obj$montage} when \code{montage} is not supplied directly, and
+#'   to read \code{eeg_obj$bads} so channels marked bad are always excluded.
 #' @param values Named numeric vector of one value per channel (names must
 #'   match montage channel names, e.g. \code{"Cz"}). A natural source is
 #'   \code{\link{eeg_band_power}}, e.g.
@@ -57,9 +58,12 @@
 #' or supply the \code{montage} argument directly.
 #'
 #' Channels present in \code{values} but absent from the montage, and montage
-#' channels with no supplied value, are both dropped with a warning. At least
-#' 3 channels with both a position and a value are required to interpolate a
-#' surface.
+#' channels with no supplied value, are both dropped with a warning. Channels
+#' listed in \code{eeg_obj$bads} (see \code{\link{new_eeg}}) are also dropped
+#' with a warning, the same shared exclude list used elsewhere in the
+#' package, so a channel marked bad once stays out of the topography too. At
+#' least 3 channels with both a position and a value are required to
+#' interpolate a surface.
 #'
 #' @examples
 #' \dontrun{
@@ -123,6 +127,19 @@ plot_topography <- function(eeg_obj,
             "excluded: ", paste(missing_values, collapse = ", "),
             call. = FALSE, immediate. = TRUE)
   }
+
+  # Bad channels are a shared exclude list (eeg_obj$bads, see new_eeg()) -
+  # read here rather than taking a separate per-call exclude argument, so a
+  # channel marked bad once stays excluded from the topography too.
+  bad_common <- intersect(common, eeg_obj$bads)
+  if (length(bad_common) > 0) {
+    warning("plot_topography(): ", length(bad_common),
+            " channel(s) excluded because they are marked bad ",
+            "(eeg_obj$bads): ", paste(bad_common, collapse = ", "),
+            call. = FALSE, immediate. = TRUE)
+    common <- setdiff(common, bad_common)
+  }
+
   if (length(common) < 3) {
     stop("ERROR: At least 3 channels with both a montage position and a ",
          "value are required to interpolate a topography (found ",

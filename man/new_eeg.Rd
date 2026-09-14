@@ -13,7 +13,8 @@ new_eeg(
   metadata = NULL,
   reference = "original",
   preprocessing_history = NULL,
-  montage = NULL
+  montage = NULL,
+  bads = NULL
 )
 }
 \arguments{
@@ -48,6 +49,15 @@ Useful for reproducibility and auditing}
 \item{montage}{An object of class 'montage' giving channel scalp positions
 (optional). \code{NULL} until attached via
 \code{\link{set_montage}}. See \code{\link{create_montage}}.}
+
+\item{bads}{Character vector of channel names to mark as bad (optional).
+Default: NULL (no channels marked bad). Every name must also
+appear in \code{channels}. This is a single shared list, the
+same idea as MNE's \code{raw.info['bads']}: functions that
+touch channels (re-referencing, ICA, interpolation) should
+read/write \code{eeg$bads} instead of each one taking its own
+exclude list, so marking a channel bad once is enough for it
+to stay excluded everywhere downstream.}
 }
 \value{
 An object of class 'eeg' containing:
@@ -61,6 +71,10 @@ Computed once at construction via \code{classify_channels()} - see
 that function for the classification rules - so downstream code
 should read this field rather than re-deriving it from
 \code{channels}.}
+\item{bads}{Character vector of channel names marked as bad (empty
+character vector if none). A shared, persistent list - other
+functions should read/write this instead of taking their own
+per-call exclude list.}
 \item{sampling_rate}{Numeric sampling rate}
 \item{times}{Numeric time vector}
 \item{events}{Data frame with event information}

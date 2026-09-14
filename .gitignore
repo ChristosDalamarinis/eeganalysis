@@ -29,3 +29,13 @@ test-filter1.R
 *.mat
 *.fif
 *.svg
+*.dat
+*.fif.gz
+*.sel
+*.min.cs
+*.min.js
+*.css
+*.js
+*.rst
+*.theme
+*.bundle.min.js

@@ -10,7 +10,8 @@
 #'
 #' Channel classification is read from eeg_obj$channel_types (computed once
 #' by classify_channels() in new_eeg()), not re-derived here. The Status
-#' channel is automatically excluded from all statistical computations.
+#' channel and any channel already marked bad (eeg_obj$bads) are
+#' automatically excluded from all statistical computations.
 #'
 #' Author: Christos Dalamarinis
 #' Date: March 2026
@@ -21,8 +22,8 @@
 #'
 #' Produces a detailed report of an eeg object, split into a clean EEG
 #' channel stats block, an EXG channel stats block, and a suspicious
-#' channel flagging section. Unlike print.eeg(), stats are never polluted
-#' by the Status channel or EXG signals.
+#' channel flagging section. Stats are never polluted by the Status
+#' channel, EXG signals, or channels already marked bad (eeg_obj$bads).
 #'
 #' @param eeg_obj An object of class 'eeg'.
 #'
@@ -86,13 +87,16 @@ eeg_summary <- function(eeg_obj,
 
   # Classification is read from eeg_obj$channel_types, computed once by
   # classify_channels() at construction in new_eeg() - not re-derived here
-  # (same pattern as print.eeg() in R/eeg_class.R).
+  # (same pattern as print.eeg() in R/eeg_class.R). Bad channels are read
+  # from eeg_obj$bads, the shared exclude list, and dropped from the EEG
+  # stats/flagging so they aren't double-counted or re-flagged.
 
   all_channels <- eeg_obj$channels
 
   status_idx <- which(eeg_obj$channel_types == "status")
   exg_idx    <- which(eeg_obj$channel_types == "external")
-  eeg_idx    <- which(eeg_obj$channel_types == "eeg")
+  eeg_idx    <- which(eeg_obj$channel_types == "eeg" &
+                         !(eeg_obj$channels %in% eeg_obj$bads))
 
   if (length(eeg_idx) == 0) {
     stop("No EEG channels found after excluding EXG and Status channels.\n",
@@ -204,7 +208,17 @@ eeg_summary <- function(eeg_obj,
     cat("    Status channel : present (excluded from all stats)\n")
   }
   cat("  Reference      : ", eeg_obj$reference, "\n", sep = "")
-  
+
+  # ---- Bad channels ----
+  cat("\nBAD CHANNELS:\n")
+  if (length(eeg_obj$bads) > 0) {
+    cat("  Marked bad     : ", paste(eeg_obj$bads, collapse = ", "),
+        " (", length(eeg_obj$bads), ")\n", sep = "")
+    cat("  Note: excluded from EEG stats and suspicious-channel flags below.\n")
+  } else {
+    cat("  Marked bad     : None\n")
+  }
+
   # ---- EEG global stats ----
   cat("\n")
   cat(strrep("-", 70), "\n")

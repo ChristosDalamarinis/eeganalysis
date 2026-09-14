@@ -27,3 +27,5 @@ test-filter1.R
 *.sfp
 *.elc
 *.mat
+*.fif
+*.svg

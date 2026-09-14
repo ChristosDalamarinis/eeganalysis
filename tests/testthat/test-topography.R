@@ -195,6 +195,62 @@ test_that("plot_topography errors clearly on collinear channels", {
 })
 
 # ============================================================================
+#            TEST SUITE 3: eeg_obj$bads Exclusion
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# Test 3.1: Channels marked bad are excluded with a warning
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies plot_topography() reads eeg_obj$bads (the shared
+# exclude list, see new_eeg()) and drops bad channels from the topography
+# with a warning, instead of feeding their raw value into the interpolation.
+test_that("plot_topography excludes eeg_obj$bads with a warning", {
+  chans <- c("Cz", "Fz", "Pz", "Oz", "T7", "T8")
+  mat <- matrix(rnorm(length(chans) * 200), nrow = length(chans))
+  eeg <- new_eeg(data = mat, channels = chans, sampling_rate = 100, bads = "T7")
+  eeg <- set_montage(eeg, create_montage(chans))
+  values <- setNames(runif(length(chans)), chans)
+
+  res <- with_null_device(
+    expect_warning(plot_topography(eeg, values), "marked bad.*T7")
+  )
+
+  expect_false("T7" %in% res$channel_positions$channel)
+  expect_equal(nrow(res$channel_positions), length(chans) - 1)
+})
+
+# ----------------------------------------------------------------------------
+# Test 3.2: No bads means no exclusion and no warning
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies plot_topography() does not warn or drop any
+# channel when eeg_obj$bads is empty (the default).
+test_that("plot_topography does not warn when there are no bad channels", {
+  fx <- make_topo_fixture()
+
+  expect_no_warning(res <- with_null_device(plot_topography(fx$eeg, fx$values)))
+  expect_equal(nrow(res$channel_positions), length(fx$values))
+})
+
+# ----------------------------------------------------------------------------
+# Test 3.3: Excluding bads can drop below the 3-channel minimum
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies that if excluding bad channels leaves fewer than
+# 3 usable channels, plot_topography() still errors clearly (after warning
+# about the exclusion).
+test_that("plot_topography errors when bads exclusion drops below 3 channels", {
+  chans <- c("Cz", "Fz", "Pz")
+  mat <- matrix(rnorm(length(chans) * 100), nrow = length(chans))
+  eeg <- new_eeg(data = mat, channels = chans, sampling_rate = 100, bads = "Pz")
+  eeg <- set_montage(eeg, create_montage(chans))
+  values <- setNames(runif(length(chans)), chans)
+
+  expect_error(
+    suppressWarnings(with_null_device(plot_topography(eeg, values))),
+    "At least 3 channels"
+  )
+})
+
+# ============================================================================
 #                     SUMMARY OF TEST COVERAGE
 # ============================================================================
 # - Input validation: non-'eeg' object, missing montage, unnamed values
@@ -202,4 +258,6 @@ test_that("plot_topography errors clearly on collinear channels", {
 # - Error: fewer than 3 usable channels for interpolation
 # - Successful rendering: return structure, interpolate_res, explicit
 #   montage argument overriding/substituting for eeg_obj$montage
+# - eeg_obj$bads exclusion: warns and drops bad channels, no-op when empty,
+#   can trigger the 3-channel minimum error
 # ============================================================================

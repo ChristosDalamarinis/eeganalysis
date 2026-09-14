@@ -19,7 +19,11 @@
 #' @param ref Character or integer vector specifying the new reference
 #'   channel(s). Use \code{"average"} to apply a common average reference.
 #' @param exclude Optional character or integer vector of channels to
-#'   exclude from computing the reference (e.g., EOG, EMG).
+#'   exclude from computing the reference (e.g., EOG, EMG). Excluded
+#'   channels are left untouched entirely - they are not part of the EEG
+#'   reference scheme, so the reference is not subtracted from them either.
+#'   Channels listed in \code{eeg$bads} are handled differently - see
+#'   Details.
 #' @param copy Logical. If \code{TRUE}, return a new EEG object and leave
 #'   \code{eeg} unchanged. If \code{FALSE}, re-reference \code{eeg} in place
 #'   (if your class supports this).
@@ -42,6 +46,17 @@
 #' reference).
 #' When one or several channels are specified in \code{ref}, the reference
 #' signal is the mean of those channels at each time point.
+#'
+#' \strong{Bad channels (\code{eeg$bads}):} channels marked bad are excluded
+#' from computing the reference signal (so noisy/broken data does not
+#' contaminate the average), but the reference is still subtracted from
+#' them, same as any other EEG channel. This differs from \code{exclude},
+#' which is meant for channels that were never on the EEG reference scheme
+#' (EOG/EMG/etc.) and are left untouched by this function entirely. Keeping
+#' bad channels in the same reference frame means they stay consistent with
+#' the rest of the data once they are later fixed (e.g., interpolated). A
+#' channel requested directly via \code{ref} that is also listed in
+#' \code{eeg$bads} is treated as unavailable, the same as an excluded one.
 #'
 #' After re-referencing to specific channels (e.g., linked mastoids), those
 #' channels remain in the data by default, transformed into mirror-image
@@ -86,7 +101,7 @@ eeg_rereference <- function(eeg,
     stop("Number of columns in signals does not match number of channel names.")
   }
   
-  # ---- handle exclude ----
+  # ---- handle exclude (channels never on the EEG reference scheme) ----
   if (!is.null(exclude)) {
     if (is.numeric(exclude)) {
       excl_idx <- exclude
@@ -97,14 +112,29 @@ eeg_rereference <- function(eeg,
   } else {
     excl_idx <- integer(0)
   }
-  
-  # channels available for referencing (contributors)
-  contrib_idx <- setdiff(seq_along(chan_names), excl_idx)
-  
-  if (length(contrib_idx) == 0) {
-    stop("No channels left to compute reference after applying 'exclude'.")
+
+  # ---- handle bads (shared eeg$bads list: noisy/broken EEG channels) ----
+  # Bad channels must not pollute the reference computation, but the
+  # reference is still subtracted from them (see @details) - so they get
+  # their own index set instead of being folded into 'exclude'.
+  if (!is.null(eeg_out$bads) && length(eeg_out$bads) > 0) {
+    bads_idx <- match(eeg_out$bads, chan_names)
+    bads_idx <- bads_idx[!is.na(bads_idx)]
+  } else {
+    bads_idx <- integer(0)
   }
-  
+
+  # channels that receive the reference subtraction: everything except
+  # 'exclude' (bad channels ARE still re-referenced)
+  apply_idx <- setdiff(seq_along(chan_names), excl_idx)
+
+  # channels available for computing the reference: also drops bads
+  contrib_idx <- setdiff(apply_idx, bads_idx)
+
+  if (length(contrib_idx) == 0) {
+    stop("No channels left to compute reference after applying 'exclude' and 'bads'.")
+  }
+
   # ---- determine reference channels ----
   if (identical(ref, "average")) {
     ref_idx <- contrib_idx
@@ -117,19 +147,17 @@ eeg_rereference <- function(eeg,
     if (any(is.na(ref_idx))) {
       stop("Some reference channels specified in 'ref' were not found.")
     }
-    # also ensure ref channels are part of contributors
+    # also ensure ref channels are part of contributors (not excluded, not bad)
     ref_idx <- intersect(ref_idx, contrib_idx)
     if (length(ref_idx) == 0) {
-      stop("Reference channels are all excluded by 'exclude'.")
+      stop("Reference channels are all excluded by 'exclude' or marked bad in eeg$bads.")
     }
   }
-  
+
   # ---- compute reference signal (1 value per time point) ----
   ref_signal <- colMeans(signals[ref_idx, , drop = FALSE], na.rm = TRUE)
-  
-  # ---- subtract reference from all non-excluded channels ----
-  apply_idx <- contrib_idx
-  
+
+  # ---- subtract reference from all non-excluded channels (bads included) ----
   signals[apply_idx, ] <- sweep(signals[apply_idx, , drop = FALSE],
                                 2,
                                 ref_signal,

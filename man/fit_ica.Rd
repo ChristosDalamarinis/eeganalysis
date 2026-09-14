@@ -16,9 +16,11 @@ to fit on.}
 \item{picks}{\code{NULL} (default), a character vector of channel names,
 or a numeric vector of channel indices - which channels of \code{eeg}
 to fit ICA on. If \code{NULL}, every channel with
-\code{channel_types != "status"} is used (i.e. \code{"eeg"} and
-\code{"external"} channels; the BioSemi status channel is always
-excluded, matching \code{.compute_pre_whitener()}'s expectations).}
+\code{channel_types != "status"} and not listed in \code{eeg$bads} is
+used (i.e. \code{"eeg"} and \code{"external"} channels, minus any
+marked bad; the BioSemi status channel is always excluded, matching
+\code{.compute_pre_whitener()}'s expectations). An explicit \code{picks}
+is taken as-is and can include bad channels if requested.}
 }
 \value{
 The same \code{eeg_ica} object passed in as \code{ica}, with its

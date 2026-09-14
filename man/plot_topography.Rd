@@ -18,7 +18,8 @@ plot_topography(
 }
 \arguments{
 \item{eeg_obj}{An object of class \code{'eeg'}. Used to read
-\code{eeg_obj$montage} when \code{montage} is not supplied directly.}
+\code{eeg_obj$montage} when \code{montage} is not supplied directly, and
+to read \code{eeg_obj$bads} so channels marked bad are always excluded.}
 
 \item{values}{Named numeric vector of one value per channel (names must
 match montage channel names, e.g. \code{"Cz"}). A natural source is
@@ -79,9 +80,12 @@ This function requires an attached montage: build one with
 or supply the \code{montage} argument directly.
 
 Channels present in \code{values} but absent from the montage, and montage
-channels with no supplied value, are both dropped with a warning. At least
-3 channels with both a position and a value are required to interpolate a
-surface.
+channels with no supplied value, are both dropped with a warning. Channels
+listed in \code{eeg_obj$bads} (see \code{\link{new_eeg}}) are also dropped
+with a warning, the same shared exclude list used elsewhere in the
+package, so a channel marked bad once stays out of the topography too. At
+least 3 channels with both a position and a value are required to
+interpolate a surface.
 }
 
 \examples{

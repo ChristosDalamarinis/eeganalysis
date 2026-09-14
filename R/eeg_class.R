@@ -22,6 +22,15 @@
 #' @param channels Character vector of channel names (e.g., "Cz", "Pz", "Oz")
 #'                 Length must match nrow(data)
 #'
+#' @param bads Character vector of channel names to mark as bad (optional).
+#'            Default: NULL (no channels marked bad). Every name must also
+#'            appear in \code{channels}. This is a single shared list, the
+#'            same idea as MNE's \code{raw.info['bads']}: functions that
+#'            touch channels (re-referencing, ICA, interpolation) should
+#'            read/write \code{eeg$bads} instead of each one taking its own
+#'            exclude list, so marking a channel bad once is enough for it
+#'            to stay excluded everywhere downstream.
+#'
 #' @param sampling_rate Numeric value - sampling rate in Hz
 #'                      Common values: 256, 512, 1024, 2048 Hz
 #'
@@ -58,6 +67,10 @@
 #'      that function for the classification rules - so downstream code
 #'      should read this field rather than re-deriving it from
 #'      \code{channels}.}
+#'    \item{bads}{Character vector of channel names marked as bad (empty
+#'      character vector if none). A shared, persistent list - other
+#'      functions should read/write this instead of taking their own
+#'      per-call exclude list.}
 #'    \item{sampling_rate}{Numeric sampling rate}
 #'    \item{times}{Numeric time vector}
 #'    \item{events}{Data frame with event information}
@@ -81,14 +94,15 @@
 #'
 #' @export
 new_eeg <- function(data,
-                    channels, 
-                    sampling_rate, 
+                    channels,
+                    sampling_rate,
                     times = NULL,
-                    events = NULL, 
+                    events = NULL,
                     metadata = NULL,
                     reference = "original",
                     preprocessing_history = NULL,
-                    montage = NULL) {
+                    montage = NULL,
+                    bads = NULL) {
   
   # ========== INPUT VALIDATION ==========
   
@@ -127,6 +141,19 @@ new_eeg <- function(data,
   # channel_types instead of re-deriving the eeg/external/status split.
   channel_types <- classify_channels(as.character(channels))
 
+  # ========== VALIDATE BAD CHANNELS ==========
+
+  if (is.null(bads)) {
+    bads <- character(0)
+  } else {
+    bads <- as.character(bads)
+    unknown_bads <- setdiff(bads, channels)
+    if (length(unknown_bads) > 0) {
+      stop("ERROR: 'bads' contains channel name(s) not found in 'channels': ",
+           paste(unknown_bads, collapse = ", "))
+    }
+  }
+
   # ========== CREATE EVENTS DATAFRAME ==========
   
   if (is.null(events)) {
@@ -159,6 +186,7 @@ new_eeg <- function(data,
       data = as.matrix(data),
       channels = as.character(channels),
       channel_types = channel_types,
+      bads = bads,
       sampling_rate = as.numeric(sampling_rate),
       times = as.numeric(times),
       events = events,
@@ -256,12 +284,14 @@ print.eeg <- function(x, ...) {
   cat("  Sampling rate:   ", x$sampling_rate, " Hz\n")
   
   # ========== DATA STATISTICS ==========
-  # Stats are scoped to EEG channels only, excluding status and external
-  # (EXG/EOG/ECG/EMG/GSR/etc.) channels. Classification is read from
-  # x$channel_types, computed once by classify_channels() at construction
-  # in new_eeg() - not re-derived here.
+  # Stats are scoped to EEG channels only, excluding status, external
+  # (EXG/EOG/ECG/EMG/GSR/etc.), and bad channels. Classification is read
+  # from x$channel_types, computed once by classify_channels() at
+  # construction in new_eeg() - not re-derived here - and bad channels are
+  # read from x$bads, the shared exclude list other functions should also
+  # use instead of taking their own per-call exclude argument.
 
-  .eeg_idx <- which(x$channel_types == "eeg")
+  .eeg_idx <- which(x$channel_types == "eeg" & !(x$channels %in% x$bads))
 
   .eeg_data  <- x$data[.eeg_idx, , drop = FALSE]
   
@@ -274,7 +304,16 @@ print.eeg <- function(x, ...) {
   # ========== REFERENCE INFORMATION ==========
   cat("\nREFERENCE:\n")
   cat("  Scheme:          ", x$reference, "\n")
-  
+
+  # ========== BAD CHANNELS ==========
+  cat("\nBAD CHANNELS:\n")
+  if (length(x$bads) > 0) {
+    cat("  Marked bad:      ", paste(x$bads, collapse = ", "),
+        " (", length(x$bads), ")\n", sep = "")
+  } else {
+    cat("  Marked bad:       None\n")
+  }
+
   # ========== EVENT INFORMATION ==========
   cat("\nEVENTS:\n")
   cat("  Total events:    ", nrow(x$events), "\n")

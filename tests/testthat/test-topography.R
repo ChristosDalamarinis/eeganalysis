@@ -211,9 +211,9 @@ test_that("plot_topography excludes eeg_obj$bads with a warning", {
   eeg <- set_montage(eeg, create_montage(chans))
   values <- setNames(runif(length(chans)), chans)
 
-  res <- with_null_device(
-    expect_warning(plot_topography(eeg, values), "marked bad.*T7")
-  )
+  with_null_device({
+    expect_warning(res <- plot_topography(eeg, values), "marked bad.*T7")
+  })
 
   expect_false("T7" %in% res$channel_positions$channel)
   expect_equal(nrow(res$channel_positions), length(chans) - 1)

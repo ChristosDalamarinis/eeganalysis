@@ -781,3 +781,135 @@ test_that("rereferencing can be chained: average → specific channel", {
   expect_match(step2$preprocessing_history[[1]], "Re-referenced to: Common Average")
   expect_match(step2$preprocessing_history[[2]], "Re-referenced to: M1")
 })
+
+
+# ============================================================================
+# TEST SUITE 11 – Bad Channels (eeg$bads) Integration
+# ============================================================================
+# WHAT THESE TESTS DO:
+#   eeg$bads is a shared, persistent list of noisy/broken EEG channels
+#   (see R/eeg_class.R). eeg_rereference() must:
+#     (a) exclude bad channels from computing the reference signal, but
+#     (b) still subtract the reference from them (unlike 'exclude', which
+#         leaves channels completely untouched).
+#   A channel requested directly via 'ref' that is also in eeg$bads must be
+#   treated as unavailable, same as an excluded channel.
+
+test_that("bad channel is excluded from average reference computation", {
+  # Same 3-channel fixture as Suite 4/6. Marking Ch3 bad should make the
+  # average reference computed from Ch1/Ch2 only - identical numerically to
+  # explicitly requesting ref = c("Ch1", "Ch2") (Suite 6).
+  eeg <- new_eeg(
+    data          = matrix(c(10, 20, 30, 40,
+                             0, 10, 20, 30,
+                             -5,  5, 15, 25),
+                           nrow = 3, ncol = 4, byrow = TRUE),
+    channels      = c("Ch1", "Ch2", "Ch3"),
+    sampling_rate = 256,
+    bads          = "Ch3"
+  )
+  result <- eeg_rereference(eeg, ref = "average")
+
+  expect_equal(result$data[1, ], c( 5,  5,  5,  5), tolerance = 1e-10)
+  expect_equal(result$data[2, ], c(-5, -5, -5, -5), tolerance = 1e-10)
+})
+
+test_that("bad channel still receives the reference subtraction (unlike exclude)", {
+  eeg <- new_eeg(
+    data          = matrix(c(10, 20, 30, 40,
+                             0, 10, 20, 30,
+                             -5,  5, 15, 25),
+                           nrow = 3, ncol = 4, byrow = TRUE),
+    channels      = c("Ch1", "Ch2", "Ch3"),
+    sampling_rate = 256,
+    bads          = "Ch3"
+  )
+  original_ch3 <- eeg$data[3, ]
+  result <- eeg_rereference(eeg, ref = "average")
+
+  # Ch3 is bad but NOT excluded, so it should still be re-referenced
+  # (ref = mean(Ch1, Ch2) = c(5, 15, 25, 35)) rather than left untouched.
+  expect_equal(result$data[3, ], c(-10, -10, -10, -10), tolerance = 1e-10)
+  expect_false(isTRUE(all.equal(result$data[3, ], original_ch3)),
+               label = "Bad channel row changed, unlike an excluded channel")
+})
+
+test_that("bad channel within a linked ref is dropped, remaining ref channel(s) used", {
+  # Same narrowing behavior as 'exclude': intersect(ref_idx, contrib_idx)
+  # silently drops the unavailable channel rather than erroring, as long as
+  # at least one requested ref channel remains usable.
+  eeg <- make_eeg(channel_names = c("Cz", "Pz", "M1", "M2"), seed = 30)
+  eeg$bads <- "M1"
+
+  result       <- eeg_rereference(eeg, ref = c("M1", "M2"))
+  result_m2only <- eeg_rereference(eeg, ref = "M2")
+
+  expect_equal(result$reference, "M2")
+  expect_equal(result$data, result_m2only$data, tolerance = 1e-10)
+})
+
+test_that("requesting ref channels that are ALL bad errors out", {
+  eeg <- make_eeg(channel_names = c("Cz", "Pz", "M1", "M2"), seed = 30)
+  eeg$bads <- c("M1", "M2")
+
+  expect_error(
+    eeg_rereference(eeg, ref = c("M1", "M2")),
+    "Reference channels are all excluded by 'exclude' or marked bad in eeg\\$bads"
+  )
+})
+
+test_that("all channels bad leaves nothing to compute the reference from", {
+  eeg <- make_eeg(channel_names = c("Cz", "Pz"), seed = 31)
+  eeg$bads <- c("Cz", "Pz")
+
+  expect_error(
+    eeg_rereference(eeg, ref = "average"),
+    "No channels left to compute reference after applying 'exclude' and 'bads'"
+  )
+})
+
+test_that("bads and exclude combine correctly: exclude stays untouched, bads still referenced", {
+  eeg <- make_eeg(channel_names = c("Cz", "Pz", "EOG", "M1"), seed = 32)
+  eeg$bads <- "M1"
+  original_eog <- eeg$data[3, ]
+  original_m1  <- eeg$data[4, ]
+
+  result <- eeg_rereference(eeg, ref = "average", exclude = "EOG")
+
+  expect_equal(result$data[3, ], original_eog,
+               label = "Excluded EOG channel is untouched")
+  expect_false(isTRUE(all.equal(result$data[4, ], original_m1)),
+               label = "Bad M1 channel is still re-referenced")
+})
+
+test_that("empty eeg$bads (default) behaves exactly as before", {
+  eeg    <- make_eeg(channel_names = c("Cz", "Pz", "Fz", "Oz"), seed = 33)
+  result <- eeg_rereference(eeg, ref = "average")
+
+  col_means_after <- colMeans(result$data)
+  expect_true(all(abs(col_means_after) < 1e-10))
+})
+
+test_that("missing $bads field (legacy eeg-like object) does not error", {
+  # Objects created before the 'bads' field existed, or constructed by hand,
+  # should be treated as having no bad channels rather than failing.
+  legacy_eeg <- list(
+    data          = matrix(c(10, 20, 30, 40,
+                             0, 10, 20, 30,
+                             -5,  5, 15, 25),
+                           nrow = 3, ncol = 4, byrow = TRUE),
+    channels      = c("Ch1", "Ch2", "Ch3"),
+    sampling_rate = 256,
+    times         = seq(0, 3/256, length.out = 4),
+    events        = data.frame(),
+    metadata      = list(),
+    reference     = "original",
+    preprocessing_history = list()
+  )
+  class(legacy_eeg) <- "eeg"
+
+  result <- eeg_rereference(legacy_eeg, ref = "average")
+
+  ref_signal <- c(5/3, 35/3, 65/3, 95/3)
+  expect_equal(result$data[1, ], c(10, 20, 30, 40) - ref_signal, tolerance = 1e-10)
+})

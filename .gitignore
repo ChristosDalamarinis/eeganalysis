@@ -22,3 +22,8 @@ test-filter1.R
 *.txt
 *.jinja
 *.csd
+*.lout
+*.lay
+*.sfp
+*.elc
+*.mat

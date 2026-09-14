@@ -19,3 +19,4 @@ test-filter1.R
 *.csv
 *.md
 *.png
+*.txt

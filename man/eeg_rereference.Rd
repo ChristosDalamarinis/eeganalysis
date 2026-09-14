@@ -19,7 +19,11 @@ eeg_rereference(
 channel(s). Use \code{"average"} to apply a common average reference.}
 
 \item{exclude}{Optional character or integer vector of channels to
-exclude from computing the reference (e.g., EOG, EMG).}
+exclude from computing the reference (e.g., EOG, EMG). Excluded
+channels are left untouched entirely - they are not part of the EEG
+reference scheme, so the reference is not subtracted from them either.
+Channels listed in \code{eeg$bads} are handled differently - see
+Details.}
 
 \item{copy}{Logical. If \code{TRUE}, return a new EEG object and leave
 \code{eeg} unchanged. If \code{FALSE}, re-reference \code{eeg} in place
@@ -57,6 +61,17 @@ across all non-excluded EEG channels at each time point (common average
 reference).
 When one or several channels are specified in \code{ref}, the reference
 signal is the mean of those channels at each time point.
+
+\strong{Bad channels (\code{eeg$bads}):} channels marked bad are excluded
+from computing the reference signal (so noisy/broken data does not
+contaminate the average), but the reference is still subtracted from
+them, same as any other EEG channel. This differs from \code{exclude},
+which is meant for channels that were never on the EEG reference scheme
+(EOG/EMG/etc.) and are left untouched by this function entirely. Keeping
+bad channels in the same reference frame means they stay consistent with
+the rest of the data once they are later fixed (e.g., interpolated). A
+channel requested directly via \code{ref} that is also listed in
+\code{eeg$bads} is treated as unavailable, the same as an excluded one.
 
 After re-referencing to specific channels (e.g., linked mastoids), those
 channels remain in the data by default, transformed into mirror-image

@@ -50,7 +50,8 @@ a full diagnostic report with:
 \details{
 Channel classification is read from eeg_obj$channel_types (computed once
 by classify_channels() in new_eeg()), not re-derived here. The Status
-channel is automatically excluded from all statistical computations.
+channel and any channel already marked bad (eeg_obj$bads) are
+automatically excluded from all statistical computations.
 }
 \section{Author: Christos Dalamarinis
 Date: March 2026
@@ -59,8 +60,8 @@ Full Diagnostic Summary of an EEG Object
 
 Produces a detailed report of an eeg object, split into a clean EEG
 channel stats block, an EXG channel stats block, and a suspicious
-channel flagging section. Unlike print.eeg(), stats are never polluted
-by the Status channel or EXG signals.
+channel flagging section. Stats are never polluted by the Status
+channel, EXG signals, or channels already marked bad (eeg_obj$bads).
 }
 
 \examples{

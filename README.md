@@ -6,7 +6,7 @@
 
 Author: Christos Dalamarinis
 
-Contact: [[dalamarinischristos\@gmail.com](mailto:dalamarinischristos@gmail.com)]
+Contact: [dalamarinischristos\@gmail.com](mailto:dalamarinischristos@gmail.com)
 
 <!-- badges: start -->
 
@@ -14,7 +14,7 @@ Contact: [[dalamarinischristos\@gmail.com](mailto:dalamarinischristos@gmail.com)
 
 <!-- badges: end -->
 
-# Installation
+## Installation
 
 You can install the *eeganalysis* package from GitHub using the following command:
 
@@ -23,25 +23,35 @@ You can install the *eeganalysis* package from GitHub using the following comman
 devtools::install_github("dalamarinischristos/eeganalysis")
 ```
 
-# Version: 0.0.0.9000 (under development)
+## Status
 
-Current code reads .bdf and .edf files. Scripts include functions for assisting the researcher in importing, down-sampling, and referencing the data.
+Version 0.0.0.9000 — under active development. Currently reads BioSemi `.bdf` files; additional formats (`.edf`, `.set`) are planned.
 
-## Interactive functions include:
+## Features
 
-- **identify_external_channels()**: Allows the user to interactively label external channels detected in imported EEG data.
-- **plot_electrode_3d()**: 3D visualization of electrode positions on a head model (helper function).
-- **plot_electrode_3d_spherical()**: 3D visualization of electrode positions on a spherical head model (helper function).
+| Stage | Function(s) | Status |
+|------------------------|------------------------|------------------------|
+| Import BioSemi `.bdf` | `read_bdf_native()` | ✅ |
+| Channel inspection & labeling | `inspect_bdf_channels()`, `identify_external_channels()`, `detect_external_channels()` | ✅ |
+| Downsampling / Filtering | `downsample()`, `eeg_bandpass()`, `eeg_notch()` | ✅ |
+| Bad-channel detection & repair | `find_bad_channels()`, `interpolate_bads()` | ✅ |
+| Re-referencing | `eeg_rereference()` | ✅ |
+| ICA artifact removal | `fit_ica()`, `plot_ica_sources()`, `apply_ica()` | ✅ |
+| Epoching & visualization | `epoch_eeg()`, `plot_epochs()` | ✅ |
+| Spectral analysis | `eeg_fft()`, `eeg_psd_welch()`, `eeg_band_power()` | ✅ |
+| Topography & montage | `plot_topography()`, `create_montage()` | ✅ |
+| ERP averaging | `average_epochs()` | ⚠️ in development |
 
 ## Dependencies
 
-- "signal" -\> Signal processing and filtering
-
-- "graphics" -\> Powers all visualization (base R)
-
-- "dplyr" -\> Data manipulation
-
-- "plotly" -\> Interactive 3D plotting
+- **signal** — filtering and downsampling
+- **dbscan** — Local Outlier Factor bad-channel detection
+- **akima** — spherical-spline interpolation for bad-channel repair and topography maps
+- **fastICA** — ICA decomposition for artifact removal
+- **MASS** — linear algebra support for ICA and interpolation
+- **plotly** — interactive 3D electrode and topography plots
+- **dplyr** — data manipulation
+- **ggplot2** — plotting
 
 ## Quick Start
 
@@ -49,36 +59,43 @@ Current code reads .bdf and .edf files. Scripts include functions for assisting 
 library(eeganalysis)
 ```
 
-### Import BioSemi data
+### Import and inspect
 
 ``` r
 eeg_data <- read_bdf_native("path/to/your/file.bdf")
-```
-
-### Inspect channels and events before preprocessing
-
-``` r
 inspect_bdf_channels("path/to/your/file.bdf")
 inspect_triggers(eeg_data)
 ```
 
-### Downsample to 256 Hz (optional)
+### Downsample and filter
 
 ``` r
 eeg_data <- downsample(eeg_data, target_srate = 256)
-```
-
-### Filter: highpass at 0.1 Hz, lowpass at 40 Hz, remove 50 Hz line noise
-
-``` r
 eeg_data <- eeg_bandpass(eeg_data, l_freq = 0.1, h_freq = 40)
 eeg_data <- eeg_notch(eeg_data, freqs = 50)
 ```
 
-### Rereference to average
+### Find and repair bad channels
+
+``` r
+eeg_data <- find_bad_channels(eeg_data)
+eeg_data <- interpolate_bads(eeg_data)
+```
+
+### Re-reference to average
 
 ``` r
 eeg_data <- eeg_rereference(eeg_data, ref_type = "average")
+```
+
+### Remove artifacts with ICA
+
+``` r
+ica <- new_ica(n_components = 20)
+ica <- fit_ica(ica, eeg_data)
+plot_ica_sources(ica, eeg_data)                 # inspect components
+ica <- set_exclude(ica, components = c(1, 3))   # mark eye/muscle artifacts
+eeg_data <- apply_ica(ica, eeg_data)
 ```
 
 ### Extract epochs around events
@@ -86,84 +103,6 @@ eeg_data <- eeg_rereference(eeg_data, ref_type = "average")
 ``` r
 epochs <- epoch_eeg(eeg_data, events = c(1, 2), time_window = c(-0.2, 0.8))
 ```
-
-# Preprocessing Scripts
-
-## filter1.R
-
-Purpose: FIR filtering to remove unwanted frequency content.
-
-Key functions:
-
-- **eeg_bandpass()**: Bandpass filter using a Hamming-window FIR kernel (built-in). Attenuates frequencies outside the specified passband.
-
-- **eeg_notch()**: Notch (band-stop) filter to remove line noise (e.g., 50 Hz and harmonics). Builds a multi-band FIR kernel in a single pass, matching MNE's implementation.
-
-Implementation Details:
-
-- Uses overlap-add FFT convolution
-
-- Zero-phase single-pass correction
-
-- Channel-selective filtering supported
-
-## downsample.R
-
-Purpose: Reduces sampling rate pf EEG data
-
-Key function:
-
-- **downsample()**:
-  - Applies an anti-alising Butterworth low-pass filter before decimating
-  - Handles event onset recualculation after downsampling
-  - Validates frequency band presentation
-
-## rereference.R
-
-Purpose: Changes the reference electrode scheme
-
-Key function:
-
-- **eeg_rereference()**:
-  - Supports common average reference
-  - SUpports single or linked channel reference
-  - Allows exclusing channels from the reference computation
-
-## epoch2.R
-
-Purpose: Segments continous EEG data into time-locked epochs around events.
-
-Key functions:
-
-- **epoch_eeg()**: Core epoching function; extracts epochs, applies baseline correction, and optionally rejects bad epochs.Biosemi-aware trigger filtering using a 0xFFFF bitmask to separate experimetnal triggers (bits 0-15) from system status codes (16-23)
-
-- **inspect_triggers()**: Diagnostic function to examine and valodate event triggers before epoching.
-
-## setexchannels.R
-
-Purpose: Manages external (non-EEG) channels before preprocessing.
-
-Key functions:
-
-- **identify_external_channels()**: Interactive function to label external channels (e.g EOG, EMG, ECG, GSR)
-
-- **detect_external_channels()**: Autoamted detenction of external channels
-
-- **apply_external_labels()**: Applies user-defined labels to the data
-
-# Analysis Pipeline
-
-The analysis pipeline implemented in the package includes the following steps:
-
-- 1.Data Import: Functions to import raw EEG data from various file formats (e.g., .edf, .bdf, .set).
-
-- 2.Preprocessing: Functions for filtering, artifact removal, and epoching the EEG data.
-
-- 3.Feature Extraction: Functions to extract relevant features from the EEG signals (e.g., power spectral density, event-related potentials).
-
-- 4.Statistical Analysis: Functions to perform statistical tests on the extracted features.
-
-- 5.Visualization: Functions to create visualizations of the EEG data and analysis results (e.g., topographic maps, time-frequency plots).
 
 ## Contributing
 
@@ -173,86 +112,12 @@ Contributions to the *eeganalysis* package are welcome! If you would like to con
 
 ``` r
 eeganalysis
-│
-├── R/                                    ← Your R functions live here
-│   ├── eeg_class.R                       ← EEG data structure & creation
-│   │   ├── new_eeg()                     ← Create an eeg object
-│   │   └── print.eeg()                   ← Display eeg object nicely
-│   │
-│   ├── read_bdf_native.R                 ← BioSemi file import
-│   │   └── read_bdf_native()             ← Import .bdf files - main function
-│   │
-│   ├── extract_bdf_events()
-│   │   ├── extract_bdf_events()          ← Parse trigger codes from status channel
-│   │   ├── summary_bdf_events()          ← Summary of extracted BDF events   
-│   │   └── validate_bdf_events()         ← Validate and summarize BDF events
-│   │
-│   ├── channel_info2.R                   ← Electrode database & channel inspection
-│   │   ├── get_electrode_database()      ← Access 64-ch BioSemi electrode database
-│   │   ├── get_electrode_position()      ← Get coordinates for specific electrode
-│   │   ├── inspect_bdf_channels()        ← Preview channels without full import
-│   │   ├── classify_channel_naming()     ← Identify naming convention (10-20/10-10/BioSemi)
-│   │   ├── plot_electrode_3d()           ← 3D electrode visualization (Cartesian)
-│   │   └── plot_electrode_3d_spherical() ← 3D electrode visualization (Spherical)
-│   │
-│   ├── setexchannels.R                   ← External channel management
-│   │   ├── identify_external_channels()  ← Interactive labeling (EOG, EMG, ECG, GSR)
-│   │   ├── detect_external_channels()    ← Automated external channel detection
-│   │   └── apply_external_labels()       ← Apply user-defined labels to data
-│   │
-│   ├── downsample.R                      ← Smart downsampling with anti-aliasing
-│   │   └── downsample()                  ← Downsample EEG data with filters
-│   │
-│   ├── rereference.R                     ← Re-referencing utilities
-│   │   └── eeg_rereference()             ← Change reference scheme (average/custom)
-│   │
-│   ├── filter1.R                          ← Filtering utilities
-│   │   ├── eeg_bandpass()                ← Attenuate frequencies outside a specified passband.
-│   │   ├── eeg_notch()                   ← Remove powerline noise with notch filter
-│   │   └── eeg_filter()                  ← Unified function combining both in one go
-│   │
-│   ├── epoch2.R                          ← Epoching functions
-│   │   ├── inspect_triggers()            ← Inspect Event Triggers in EEG Data
-│   │   ├── plot_epochs()                 ← Visualize  extracted epochs
-│   │   └── epoch_eeg()                   ← Extract time-locked epochs around events
-│   │
-│   ├── preprocessing.R                   ← (Future) Data cleaning & preprocessing
-│   │   ├── filter_eeg()                  ← Apply filters
-│   │   ├── rereference_eeg()             ← Change reference scheme
-│   │   └── ...                           ← Additional functions
-│   │
-│   └── feature_extraction.R              ← (Future) Feature computation
-│       ├── compute_erp()                 ← Calculate ERPs
-│       ├── compute_power()               ← Band power analysis
-│       └── ...                           ← Additional functions
-│
-├── man                                   ← Auto-generated help files
-│   ├── new_eeg.Rd                        ← Help for new_eeg()
-│   ├── print.eeg.Rd                      ← Help for print.eeg()
-│   ├── read_biosemi.Rd                   ← Help for read_biosemi()
-│   ├── extract_biosemi_events.Rd         ← Help for extract_biosemi_events()
-│   ├── summarize_biosemi_import.Rd       ← Help for summarize_biosemi_import()
-│   ├── get_electrode_database.Rd         ← Help for get_electrode_database()
-│   ├── get_electrode_position.Rd         ← Help for get_electrode_position()
-│   ├── inspect_bdf_channels.Rd           ← Help for inspect_bdf_channels()
-│   ├── identify_external_channels.Rd     ← Help for identify_external_channels()
-│   ├── detect_external_channels.Rd       ← Help for detect_external_channels()
-│   ├── apply_external_labels.Rd          ← Help for apply_external_labels()
-│   ├── downsample.Rd                     ← Help for downsample()
-│   ├── eeg_rereference.Rd                ← Help for eeg_rereference()
-│   ├── epoch_eeg.Rd                      ← Help for epoch_eeg()
-│   └── ...Rd                             ← Additional help files
-│
-├── data                                  ← Example datasets
-│   └── example_eeg.RData                 ← Example eeg object for testing (coming)
-│
-├── NAMESPACE                             ← Exported functions (auto-generated)
-├── DESCRIPTION                           ← Package metadata
-├── LICENSE                               ← License information
-├── README.md                             ← Package overview
-├── .gitignore                            ← Git ignore rules
-├── .Rbuildignore                         ← Build ignore rules
-└── eeganalysis.Rproj                     ← RStudio project file
+├── R/            ← Package source code
+├── man/          ← Auto-generated help files
+├── tests/        ← testthat unit tests
+├── data/         ← Example datasets
+├── NAMESPACE     ← Exported functions (auto-generated)
+├── DESCRIPTION   ← Package metadata
+├── LICENSE       ← License information
+└── README.md     ← Package overview
 ```
-
-Note: This is structure is frequently expanded and updated with additional folders/files/functions.

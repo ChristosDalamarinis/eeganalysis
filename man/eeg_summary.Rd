@@ -51,7 +51,11 @@ a full diagnostic report with:
 Channel classification is read from eeg_obj$channel_types (computed once
 by classify_channels() in new_eeg()), not re-derived here. The Status
 channel and any channel already marked bad (eeg_obj$bads) are
-automatically excluded from all statistical computations.
+automatically excluded from all statistical computations. The
+flat/amplitude/outlier-noise flags are computed by flag_channel_quality()
+(see R/bad_channels.R) rather than a second copy of that logic here -
+find_bad_channels() uses the same helper to write these flags to
+eeg_obj$bads, while eeg_summary() only reports them.
 }
 \section{Author: Christos Dalamarinis
 Date: March 2026
@@ -80,4 +84,9 @@ channel, EXG signals, or channels already marked bad (eeg_obj$bads).
   report$flags   # inspect flagged channels programmatically
 }
 
+}
+\seealso{
+\code{\link{find_bad_channels}}, which uses the same
+flat/amplitude/outlier-noise checks but writes them to
+\code{eeg_obj$bads} instead of only reporting them.
 }

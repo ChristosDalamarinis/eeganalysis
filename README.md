@@ -112,12 +112,122 @@ Contributions to the *eeganalysis* package are welcome! If you would like to con
 
 ``` r
 eeganalysis
-├── R/            ← Package source code
-├── man/          ← Auto-generated help files
-├── tests/        ← testthat unit tests
-├── data/         ← Example datasets
-├── NAMESPACE     ← Exported functions (auto-generated)
-├── DESCRIPTION   ← Package metadata
-├── LICENSE       ← License information
-└── README.md     ← Package overview
+│
+├── R/                                       ← Package source code
+│   ├── eeg_class.R                          ← Core EEG data structure
+│   │   ├── new_eeg()                        ← Create an eeg object
+│   │   └── print.eeg()                      ← Display eeg object nicely
+│   │
+│   ├── read_bdf_native.R                    ← BioSemi file import
+│   │   └── read_bdf_native()                ← Import .bdf files
+│   │
+│   ├── extract_bdf_events.R                 ← Trigger/event extraction
+│   │   ├── extract_bdf_events()             ← Parse trigger codes from status channel
+│   │   ├── summary_bdf_events()             ← Summarize extracted events
+│   │   └── validate_bdf_events()            ← Validate and report on events
+│   │
+│   ├── label_bdf_events.R                   ← Event labeling
+│   │   ├── label_bdf_events()               ← Attach human-readable labels to trigger codes
+│   │   └── apply_trigger_labels()           ← Apply a label scheme to events
+│   │
+│   ├── channel_info2.R                      ← Electrode database & channel inspection
+│   │   ├── get_electrode_database()         ← Access 64-ch BioSemi electrode database
+│   │   ├── get_electrode_position()         ← Get coordinates for a specific electrode
+│   │   ├── scan_biosemi_channels()          ← Quick channel-name scan of a .bdf file
+│   │   ├── inspect_biosemi_file()           ← Preview a .bdf file without full import
+│   │   ├── detect_electrode_naming_system() ← Identify naming convention (10-20/10-10/BioSemi)
+│   │   ├── plot_electrode_3d()              ← 3D electrode visualization (Cartesian)
+│   │   └── plot_electrode_3d_spherical()    ← 3D electrode visualization (spherical)
+│   │
+│   ├── setexchannels.R                      ← External channel management
+│   │   ├── identify_external_channels()     ← Interactive labeling (EOG, EMG, ECG, GSR)
+│   │   ├── detect_external_channels()       ← Automated external channel detection
+│   │   └── apply_external_labels()          ← Apply user-defined labels to data
+│   │
+│   ├── downsample.R                         ← Smart downsampling
+│   │   └── downsample()                     ← Downsample with anti-aliasing filter
+│   │
+│   ├── filter1.R                            ← FIR filtering
+│   │   ├── eeg_bandpass()                   ← Hamming-window FIR bandpass filter
+│   │   └── eeg_notch()                      ← Multi-band notch filter for line noise
+│   │
+│   ├── bad_channels.R                       ← Bad-channel detection
+│   │   └── find_bad_channels()              ← Flat/amplitude/outlier + spatial + LOF checks
+│   │
+│   ├── interpolate.R                        ← Bad-channel repair
+│   │   └── interpolate_bads()               ← Spherical-spline interpolation (MNE-matched)
+│   │
+│   ├── rereference.R                        ← Re-referencing utilities
+│   │   └── eeg_rereference()                ← Change reference scheme (average/custom)
+│   │
+│   ├── ica1.R                               ← ICA artifact removal
+│   │   ├── new_ica()                        ← Create an ICA container
+│   │   ├── fit_ica()                        ← Decompose data (PCA + FastICA)
+│   │   ├── get_sources()                    ← Get component time courses
+│   │   ├── plot_ica_sources()               ← Plot component time courses
+│   │   ├── get_component_topography()       ← Get a component's scalp topography
+│   │   ├── plot_ica_topography()            ← Plot a component's scalp topography
+│   │   ├── ica_component_summary()          ← Summary table of components
+│   │   ├── set_exclude()                    ← Mark components for removal
+│   │   ├── apply_ica()                      ← Reconstruct data without excluded components
+│   │   ├── plot_ica_overlay()               ← Before/after overlay for a channel
+│   │   └── print.eeg_ica()                  ← Display ICA object nicely
+│   │
+│   ├── montage.R                            ← Electrode montage handling
+│   │   ├── new_montage()                    ← Create a montage object
+│   │   ├── create_montage()                 ← Build a montage from a template
+│   │   ├── set_montage()                    ← Attach a montage to an eeg object
+│   │   └── print.montage()                  ← Display montage object nicely
+│   │
+│   ├── topography.R                         ← Scalp topography plotting
+│   │   └── plot_topography()                ← Interpolated scalp-map plot
+│   │
+│   ├── epoch2.R                             ← Epoching functions
+│   │   ├── inspect_triggers()               ← Inspect event triggers before epoching
+│   │   ├── epoch_eeg()                      ← Extract time-locked epochs around events
+│   │   └── plot_epochs()                    ← Visualize extracted epochs
+│   │
+│   ├── erp_analysis.R                       ← ERP averaging (in development)
+│   │   └── average_epochs()                 ← Average epochs into an ERP
+│   │
+│   ├── fourier.R                            ← Spectral analysis
+│   │   ├── eeg_fft()                        ← One-sided FFT spectrum
+│   │   ├── eeg_psd_welch()                  ← Welch's method PSD
+│   │   ├── eeg_multitaper()                 ← Multitaper (DPSS) PSD
+│   │   ├── eeg_band_power()                 ← Band-limited power
+│   │   └── print.eeg_spectrum()             ← Display spectrum object nicely
+│   │
+│   ├── plot_signal.R                        ← Raw signal plotting
+│   │   └── plot_eeg_signal()                ← Plot raw/continuous EEG traces
+│   │
+│   ├── eeg_summary.R                        ← Dataset diagnostics
+│   │   └── eeg_summary()                    ← Print a diagnostic summary of an eeg object
+│   │
+│   └── imports.R                            ← Centralized @importFrom declarations
+│
+├── man/                                     ← Auto-generated help files (93, one per exported/internal function)
+│   ├── new_eeg.Rd
+│   ├── read_bdf_native.Rd
+│   ├── find_bad_channels.Rd
+│   ├── interpolate_bads.Rd
+│   ├── fit_ica.Rd
+│   ├── apply_ica.Rd
+│   └── ...Rd                                ← Remaining help files
+│
+├── tests/testthat/                          ← Unit tests (testthat, one file per module, 17 total)
+│   ├── test-read_bdf_native.R
+│   ├── test-ica1.R
+│   ├── test-bad_channels.R
+│   ├── test-interpolate.R
+│   └── ...R                                 ← Remaining test files
+│
+├── NAMESPACE                                ← Exported functions (auto-generated)
+├── DESCRIPTION                               ← Package metadata
+├── LICENSE                                  ← License information
+├── README.md                                ← Package overview
+├── .gitignore                               ← Git ignore rules
+├── .Rbuildignore                            ← Build ignore rules
+└── eeganalysis.Rproj                        ← RStudio project file
 ```
+
+Note: this structure is expanded and updated as new modules are added.

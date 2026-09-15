@@ -110,7 +110,7 @@ Contributions to the *eeganalysis* package are welcome! If you would like to con
 
 ## Folder structure
 
-``` r
+```text
 eeganalysis
 │
 ├── R/                                       ← Package source code

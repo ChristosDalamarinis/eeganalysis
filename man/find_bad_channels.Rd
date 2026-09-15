@@ -90,7 +90,8 @@ starting eeg_obj$bads snapshot and are combined only at the end, so the
 order they run in has no effect on the result.
 }
 \section{Author: Christos Dalamarinis
-Date: Sep - 2026}{
+Date: Sep - 2026
+Status: Ready}{
 Automatically Detect and Flag Bad EEG Channels
 
 Runs four independent checks against an \code{eeg} object - flat /

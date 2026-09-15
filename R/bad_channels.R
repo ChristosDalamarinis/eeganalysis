@@ -20,6 +20,7 @@
 #'
 #' Author: Christos Dalamarinis
 #' Date: Sep - 2026
+#' Status: Ready
 #' ============================================================================
 #'
 #' Automatically Detect and Flag Bad EEG Channels

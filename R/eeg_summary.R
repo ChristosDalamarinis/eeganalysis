@@ -11,7 +11,11 @@
 #' Channel classification is read from eeg_obj$channel_types (computed once
 #' by classify_channels() in new_eeg()), not re-derived here. The Status
 #' channel and any channel already marked bad (eeg_obj$bads) are
-#' automatically excluded from all statistical computations.
+#' automatically excluded from all statistical computations. The
+#' flat/amplitude/outlier-noise flags are computed by flag_channel_quality()
+#' (see R/bad_channels.R) rather than a second copy of that logic here -
+#' find_bad_channels() uses the same helper to write these flags to
+#' eeg_obj$bads, while eeg_summary() only reports them.
 #'
 #' Author: Christos Dalamarinis
 #' Date: March 2026
@@ -64,6 +68,10 @@
 #'   report <- eeg_summary(sub1)
 #'   report$flags   # inspect flagged channels programmatically
 #' }
+#'
+#' @seealso \code{\link{find_bad_channels}}, which uses the same
+#'   flat/amplitude/outlier-noise checks but writes them to
+#'   \code{eeg_obj$bads} instead of only reporting them.
 #'
 #' @export
 eeg_summary <- function(eeg_obj,
@@ -136,57 +144,21 @@ eeg_summary <- function(eeg_obj,
   global_std <- round(sd(as.vector(eeg_obj$data[eeg_idx, ])), 2)
   
   # ========== FLAG SUSPICIOUS EEG CHANNELS ==========
-  
-  flags      <- data.frame(
-    channel = character(0),
-    reason  = character(0),
-    value   = character(0),
-    stringsAsFactors = FALSE
-  )
-  
+
+  # Flat/excessive-amplitude/outlier-noise checks are read from
+  # flag_channel_quality() (R/bad_channels.R) instead of keeping a second
+  # copy of that logic here - find_bad_channels() uses the same helper to
+  # write these flags to eeg_obj$bads, eeg_summary() only reports them
+  # (same reuse pattern as classify_channels() in R/eeg_class.R).
+
   median_std <- median(eeg_stats$std_uv, na.rm = TRUE)
-  
-  for (i in seq_len(nrow(eeg_stats))) {
-    
-    ch   <- eeg_stats$channel[i]
-    std  <- eeg_stats$std_uv[i]
-    amax <- max(abs(eeg_stats$min_uv[i]), abs(eeg_stats$max_uv[i]))
-    
-    # Flat / disconnected
-    if (std < flag_flat_threshold) {
-      flags <- rbind(flags, data.frame(
-        channel = ch,
-        reason  = "Flat / possibly disconnected",
-        value   = paste0("std = ", std, " uV  (threshold: < ",
-                         flag_flat_threshold, " uV)"),
-        stringsAsFactors = FALSE
-      ))
-    }
-    
-    # Saturated / excessive amplitude
-    if (amax > flag_amplitude_threshold) {
-      flags <- rbind(flags, data.frame(
-        channel = ch,
-        reason  = "Excessive amplitude",
-        value   = paste0("peak |amplitude| = ", round(amax, 2),
-                         " uV  (threshold: > ", flag_amplitude_threshold, " uV)"),
-        stringsAsFactors = FALSE
-      ))
-    }
-    
-    # Outlier std relative to the rest of the array
-    if (std > flag_outlier_sd_multiplier * median_std) {
-      flags <- rbind(flags, data.frame(
-        channel = ch,
-        reason  = "Outlier noise level",
-        value   = paste0("std = ", std, " uV  (", flag_outlier_sd_multiplier,
-                         " x median std = ",
-                         round(flag_outlier_sd_multiplier * median_std, 2), " uV)"),
-        stringsAsFactors = FALSE
-      ))
-    }
-  }
-  
+
+  flags <- flag_channel_quality(
+    eeg_obj,
+    flag_flat_threshold        = flag_flat_threshold,
+    flag_amplitude_threshold   = flag_amplitude_threshold,
+    flag_outlier_sd_multiplier = flag_outlier_sd_multiplier)
+
   if (nrow(flags) == 0) flags <- NULL
   
   # ========== PRINT REPORT ==========

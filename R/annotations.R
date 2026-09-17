@@ -9,16 +9,14 @@
 #' steps (epoching, ICA fitting) have something to check against before
 #' touching a given moment - without throwing away the whole channel over it.
 #'
-#' Four independent detectors, ported from MNE-Python
-#' (mne/preprocessing/_annotate_amplitude.py, artifact_detection.py,
-#' _annotate_nan.py):
+#' Four independent detectors:
 #'   - annotate_amplitude() - consecutive-sample jumps that are too small
 #'     (flat/disconnected) or too large (spikes), sustained for longer than
 #'     a minimum duration. A channel bad for most of the recording is added
 #'     to eeg_obj$bads instead of annotated (mirrors find_bad_channels()) -
 #'     that's a channel problem, not a moment problem.
-#'   - annotate_muscle()    - jaw-clench/EMG bursts, via MNE's 110-140 Hz
-#'     envelope-and-z-score method (MNE's annotate_muscle_zscore()).
+#'   - annotate_muscle()    - jaw-clench/EMG bursts, via a 110-140 Hz
+#'     envelope-and-z-score method.
 #'   - annotate_nan()       - amplifier dropouts (NA runs), per channel.
 #'   - annotate_break()     - dead time between experimental blocks: gaps
 #'     between existing annotations (or, with use_events = TRUE, between
@@ -34,7 +32,7 @@
 #'   onset       - start time in seconds from the beginning of the recording
 #'   duration    - length in seconds
 #'   description - reason, e.g. "BAD_muscle", "BAD_flat", "BAD_peak",
-#'                 "BAD_NAN", "BAD_break" (mirrors MNE's Annotations.description)
+#'                 "BAD_NAN", "BAD_break"
 #'   channel     - channel name, if the row is channel-specific (only
 #'                 annotate_nan() produces these); NA otherwise
 #'
@@ -89,8 +87,7 @@
 #' Append New Annotation Rows, Kept Sorted by Onset (internal)
 #'
 #' Combines \code{new_rows} onto \code{eeg_obj$annotations} and re-sorts the
-#' result by \code{onset}, mirroring MNE's own \code{Annotations}, which
-#' keeps itself sorted after every \code{append()}.
+#' result by \code{onset}, so the table always reads in chronological order.
 #'
 #' @param eeg_obj An object of class 'eeg' (already passed through
 #'   \code{\link{.ensure_annotations}}).
@@ -148,12 +145,10 @@
 
 #' Group a Boolean Mask into Onset/Offset Sample Pairs (internal)
 #'
-#' Ports MNE's \code{_mask_to_onsets_offsets()}: finds the rising and falling
-#' edges of \code{TRUE} runs in \code{mask}. \code{onsets} are 1-based and
-#' inclusive (the first \code{TRUE} sample of a run); \code{offsets} are
-#' 1-based and exclusive, i.e. \code{mask[onset:(offset - 1)]} is the run -
-#' matching the Python convention \code{mask[onset:offset]} one-to-one, just
-#' shifted for R's 1-based indexing.
+#' Finds the rising and falling edges of \code{TRUE} runs in \code{mask}.
+#' \code{onsets} are 1-based and inclusive (the first \code{TRUE} sample of
+#' a run); \code{offsets} are 1-based and exclusive, i.e.
+#' \code{mask[onset:(offset - 1)]} is the run.
 #'
 #' @param mask Logical vector.
 #' @return A list with integer vectors \code{onsets} and \code{offsets}, the
@@ -213,10 +208,9 @@
 #' shorter than \code{min_samples} samples to \code{flip_to}. Used two ways
 #' in this file: \code{\link{annotate_muscle}} uses it to fold short "good"
 #' gaps into the surrounding flagged stretch (\code{run_value = FALSE,
-#' flip_to = TRUE}, mirroring MNE's \code{scipy.ndimage.label} loop);
-#' \code{\link{annotate_amplitude}} uses it to discard flagged runs that
-#' don't last long enough to count (\code{run_value = TRUE, flip_to =
-#' FALSE}, mirroring MNE's \code{_reject_short_segments()}).
+#' flip_to = TRUE}); \code{\link{annotate_amplitude}} uses it to discard
+#' flagged runs that don't last long enough to count (\code{run_value =
+#' TRUE, flip_to = FALSE}).
 #'
 #' @param mask Logical vector.
 #' @param min_samples Numeric. Runs of \code{run_value} shorter than this
@@ -243,11 +237,10 @@
 
 #' Annotate Segments with Flat or Excessive Peak-to-Peak Amplitude
 #'
-#' Ports MNE-Python's \code{mne.preprocessing.annotate_amplitude()}: scans
-#' consecutive-sample differences per channel and flags stretches where the
-#' signal barely moves (\code{flat}) or jumps too hard (\code{peak}) for at
-#' least \code{min_duration} seconds. A channel flagged for
-#' \code{bad_percent} of the recording or more is added to
+#' Scans consecutive-sample differences per channel and flags stretches
+#' where the signal barely moves (\code{flat}) or jumps too hard
+#' (\code{peak}) for at least \code{min_duration} seconds. A channel
+#' flagged for \code{bad_percent} of the recording or more is added to
 #' \code{eeg_obj$bads} instead (mirrors \code{\link{find_bad_channels}}) -
 #' the problem is the channel, not a moment in it. Everything below that
 #' threshold is written to \code{eeg_obj$annotations} as \code{"BAD_flat"} /
@@ -265,8 +258,7 @@
 #'   percentage of the recording (or more) is added to \code{eeg_obj$bads}
 #'   instead of annotated. Default: 5.
 #' @param min_duration Numeric. Minimum duration in seconds a stretch of
-#'   consecutive flagged samples must last to count. Default: 0.005 (5 ms),
-#'   matching MNE's default.
+#'   consecutive flagged samples must last to count. Default: 0.005 (5 ms).
 #' @param channels Character or integer vector, or \code{NULL}. Channels to
 #'   check. \code{NULL} (default) uses every channel classified \code{"eeg"}
 #'   that is not already in \code{eeg_obj$bads}.
@@ -284,16 +276,13 @@
 #'   description, channel} - just the rows added by this call).
 #'
 #' @details
-#' Faithful to MNE's own approximation: a channel's flagged-sample count is
-#' bumped by 1 before converting to a percentage, correcting for
-#' \code{diff()} being one sample shorter than the channel (see MNE's
-#' \code{annotate_amplitude} source) - a per-channel, not per-run,
-#' correction, exactly as MNE does it.
+#' A channel's flagged-sample count is bumped by 1 before converting to a
+#' percentage, correcting for \code{diff()} being one sample shorter than
+#' the channel - a per-channel, not per-run, correction.
 #'
 #' This only detects edges where consecutive samples change abruptly; a slow
 #' drift or a plateau reached gradually will not trigger \code{peak} or
-#' \code{flat} the way the names alone might suggest - the same caveat MNE's
-#' own documentation makes.
+#' \code{flat} the way the names alone might suggest.
 #'
 #' @examples
 #' \dontrun{
@@ -440,8 +429,7 @@ annotate_amplitude <- function(eeg_obj,
 
 #' Annotate Muscle (EMG) Artifacts via High-Frequency Envelope Z-Score
 #'
-#' Ports MNE-Python's \code{mne.preprocessing.annotate_muscle_zscore()}:
-#' band-pass filters the picked channels to \code{filter_freq} (jaw-clench
+#' Band-pass filters the picked channels to \code{filter_freq} (jaw-clench
 #' and other EMG activity shows up here, well above EEG's own frequency
 #' range), takes the Hilbert envelope of each, z-scores every channel's
 #' envelope across time, sums the z-scores across channels (divided by
@@ -455,12 +443,12 @@ annotate_amplitude <- function(eeg_obj,
 #'
 #' @param eeg_obj An object of class 'eeg'.
 #' @param threshold Numeric. Z-score threshold above which a sample counts
-#'   as muscle activity. Default: 4, matching MNE's default.
+#'   as muscle activity. Default: 4.
 #' @param filter_freq Numeric vector of length 2, \verb{c(low, high)} in Hz.
-#'   Band tested for EMG envelope activity. Default: \code{c(110, 140)},
-#'   matching MNE's default - requires \code{eeg_obj$sampling_rate} well
-#'   above \code{2 * filter_freq[2]} to leave room for the filter's
-#'   transition band; lower sampling rates error out (see Details).
+#'   Band tested for EMG envelope activity. Default: \code{c(110, 140)} -
+#'   requires \code{eeg_obj$sampling_rate} well above
+#'   \code{2 * filter_freq[2]} to leave room for the filter's transition
+#'   band; lower sampling rates error out (see Details).
 #' @param min_length_good Numeric. Shortest allowed run of "good" data (in
 #'   seconds) between two flagged stretches; shorter runs are folded into
 #'   the surrounding flagged stretch. Default: 0.1.
@@ -471,8 +459,8 @@ annotate_amplitude <- function(eeg_obj,
 #'   the updated \code{eeg_obj}. If \code{TRUE}, returns
 #'   \code{list(eeg_obj, annotations, scores)}, where \code{annotations} is
 #'   a data frame of just the rows this call added and \code{scores} is the
-#'   smoothed combined z-score trace (length \code{ncol(eeg_obj$data)}) -
-#'   MNE itself returns this alongside its annotations; useful for plotting.
+#'   smoothed combined z-score trace (length \code{ncol(eeg_obj$data)}),
+#'   useful for plotting.
 #'
 #' @return If \code{return_details = FALSE} (default), the input
 #'   \code{eeg_obj} with new \code{"BAD_muscle"} rows appended to
@@ -484,12 +472,12 @@ annotate_amplitude <- function(eeg_obj,
 #' @details
 #' This function bandpass- and lowpass-filters data via the same FFT-based
 #' overlap-add convolution \code{\link{eeg_bandpass}} uses (see
-#' R/filter1.R), which has no concept of skipping over already-bad stretches
-#' of a continuous signal the way MNE's own \code{raw.filter()} does
-#' internally. Because both steps are FFT-based (global support), a single
-#' \code{NA} anywhere in the picked channels would silently turn the entire
-#' filtered trace to \code{NA} rather than just the affected stretch - so
-#' this function errors instead if it finds one. Run
+#' R/filter1.R), which has no concept of skipping over already-bad
+#' stretches of a continuous signal - it filters straight through. Because
+#' both steps are FFT-based (global support), a single \code{NA} anywhere
+#' in the picked channels would silently turn the entire filtered trace to
+#' \code{NA} rather than just the affected stretch - so this function
+#' errors instead if it finds one. Run
 #' \code{\link{annotate_nan}} first to locate such gaps; there is no
 #' automatic way to filter around them yet.
 #'
@@ -681,9 +669,7 @@ annotate_muscle <- function(eeg_obj,
 #'
 #' Computes the analytic signal of \code{x} via the standard FFT recipe
 #' (double the positive frequencies, zero the negative ones, keep DC and
-#' Nyquist unscaled - the same algorithm behind \code{scipy.signal.hilbert}
-#' and MNE's \code{apply_hilbert(envelope=True)}) and returns its magnitude,
-#' i.e. the envelope.
+#' Nyquist unscaled) and returns its magnitude, i.e. the envelope.
 #'
 #' @param x Numeric vector.
 #' @return Numeric vector, same length as \code{x} - the envelope.
@@ -709,11 +695,9 @@ annotate_muscle <- function(eeg_obj,
 
 #' Per-Row Z-Score, Population SD (internal)
 #'
-#' Z-scores each row of \code{x} independently using the population standard
-#' deviation (divide by \code{n}, not \code{n - 1}), matching
-#' \code{scipy.stats.zscore()}'s default \code{ddof = 0} - the function
-#' \code{\link{annotate_muscle}} ports (\code{annotate_muscle_zscore()})
-#' relies on this exact convention.
+#' Z-scores each row of \code{x} independently using the population
+#' standard deviation (divide by \code{n}, not \code{n - 1}) -
+#' \code{\link{annotate_muscle}} relies on this exact convention.
 #'
 #' @param x Numeric matrix, rows to z-score independently (channels x time).
 #' @return Numeric matrix, same shape as \code{x}.
@@ -732,12 +716,12 @@ annotate_muscle <- function(eeg_obj,
 
 #' Annotate Segments with NA (Amplifier Dropouts)
 #'
-#' Ports MNE-Python's \code{mne.preprocessing.annotate_nan()}: scans every
-#' picked channel independently for runs of \code{NA} and writes each run to
-#' \code{eeg_obj$annotations} as a channel-specific \code{"BAD_NAN"} row -
-#' this is the one detector in this file that fills in the \code{channel}
-#' column, since a dropout is a fact about one amplifier line, not the whole
-#' recording, and shouldn't block channels that stayed connected.
+#' Scans every picked channel independently for runs of \code{NA} and
+#' writes each run to \code{eeg_obj$annotations} as a channel-specific
+#' \code{"BAD_NAN"} row - this is the one detector in this file that fills
+#' in the \code{channel} column, since a dropout is a fact about one
+#' amplifier line, not the whole recording, and shouldn't block channels
+#' that stayed connected.
 #'
 #' @param eeg_obj An object of class 'eeg'.
 #' @param channels Character or integer vector, or \code{NULL}. Channels to
@@ -825,8 +809,7 @@ annotate_nan <- function(eeg_obj,
 
 #' Annotate Dead Time Between Experimental Blocks
 #'
-#' Ports MNE-Python's \code{mne.preprocessing.annotate_break()}: looks for
-#' gaps at least \code{min_break_duration} seconds long between
+#' Looks for gaps at least \code{min_break_duration} seconds long between
 #' known-occupied stretches of the recording, and writes each gap to
 #' \code{eeg_obj$annotations} as a \code{"BAD_break"} row - trimmed on both
 #' ends so the annotation doesn't start or stop right on top of a real
@@ -841,12 +824,11 @@ annotate_nan <- function(eeg_obj,
 #'     \code{\link{annotate_amplitude}}/\code{\link{annotate_muscle}}/
 #'     \code{\link{annotate_nan}} already wrote, though by default those all
 #'     start with \code{"BAD_"} and so are themselves excluded by
-#'     \code{ignore = "bad"}, same as MNE's own default. Pass
-#'     \code{ignore = character(0)} to count every annotation instead.
+#'     \code{ignore = "bad"}. Pass \code{ignore = character(0)} to count
+#'     every annotation instead.
 #'   \item \code{use_events = TRUE}: every trigger in \code{eeg_obj$events}
-#'     (see R/extract_bdf_events.R), each treated as an instantaneous marker
-#'     rather than a stretch - mirrors passing an events array directly to
-#'     MNE's \code{annotate_break()}. Natural for finding dead time between
+#'     (see R/extract_bdf_events.R), each treated as an instantaneous
+#'     marker rather than a stretch. Natural for finding dead time between
 #'     experimental blocks delimited by real trigger codes.
 #' }
 #' Overlapping occupied stretches are merged before gaps are computed, so
@@ -866,11 +848,10 @@ annotate_nan <- function(eeg_obj,
 #'   produce a non-positive-duration annotation).
 #' @param ignore Character vector of description prefixes to exclude,
 #'   matched case-insensitively, when \code{use_events = FALSE}. Default:
-#'   \code{"bad"}. MNE's own default also ignores \code{"edge"} annotations,
-#'   produced by concatenating separate recordings together - this package
-#'   has no equivalent of \code{mne.concatenate_raws()} yet, so there is no
-#'   \code{"edge"} annotation to ignore. Has no effect when
-#'   \code{use_events = TRUE}. Pass \code{character(0)} to keep everything.
+#'   \code{"bad"}. This package has no concept of "edge" annotations from
+#'   concatenating separate recordings together, so there is nothing else
+#'   ignored by default. Has no effect when \code{use_events = TRUE}. Pass
+#'   \code{character(0)} to keep everything.
 #' @param return_details Logical. If \code{FALSE} (default), returns just
 #'   the updated \code{eeg_obj}. If \code{TRUE}, returns
 #'   \code{list(eeg_obj, annotations)}, where \code{annotations} is a data
@@ -1022,7 +1003,6 @@ annotate_break <- function(eeg_obj,
 #'
 #' Sweeps \code{intervals} (already sorted by start) left to right, merging
 #' any interval that overlaps or touches the previous merged interval.
-#' Ported from the interval-merging loop inside MNE's \code{annotate_break()}.
 #'
 #' @param intervals A 2-column numeric matrix, one row per interval,
 #'   \code{[, 1]} = start, \code{[, 2]} = stop, sorted by start ascending.

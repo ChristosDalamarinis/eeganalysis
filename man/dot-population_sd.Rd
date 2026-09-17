@@ -15,10 +15,8 @@ A single numeric value.
 }
 \description{
 R's \code{sd()} divides by \code{n - 1} (Bessel's correction). numpy's
-\code{np.std()} - what \code{ICA._compute_pre_whitener()} actually calls
-\itemize{
-\item divides by \code{n} (\code{ddof = 0}). Use this instead of \code{sd()}
-anywhere exact numerical parity with the MNE reference matters.
-}
+\code{np.std()} divides by \code{n} (\code{ddof = 0}) instead. Use this
+instead of \code{sd()} anywhere exact numerical parity with that
+population-variance convention matters.
 }
 \keyword{internal}

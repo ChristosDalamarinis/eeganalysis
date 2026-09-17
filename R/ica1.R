@@ -975,6 +975,40 @@ print.eeg_ica <- function(x, ...) {
 # eeg_ica object; the caller must reassign it (ica <- fit_ica(ica, eeg)).
 #
 # ----------------------------------------------------------------------------
+# .annotation_bad_mask() - per-sample reject mask from eeg$annotations
+# ----------------------------------------------------------------------------
+#' Build a Logical Reject Mask From BAD_* Annotations (internal)
+#'
+#' Marks every sample of \code{eeg$data} covered by a row of
+#' \code{eeg$annotations} (see R/annotations.R) whose \code{description}
+#' starts with \code{"bad"}, case-insensitive - the same convention
+#' \code{\link{annotate_break}}'s \code{ignore} argument uses. A row's
+#' \code{channel} column is ignored: ICA needs the same time columns across
+#' every picked channel, so even a channel-specific annotation (e.g.
+#' \code{\link{annotate_nan}}'s per-channel rows) drops that stretch for all
+#' of them.
+#'
+#' @param eeg An object of class 'eeg'.
+#' @return Logical vector, length \code{ncol(eeg$data)}; \code{TRUE} where
+#'   the sample falls inside a \code{"BAD_*"} annotation. All \code{FALSE}
+#'   if \code{eeg$annotations} is \code{NULL} or empty.
+#' @keywords internal
+.annotation_bad_mask <- function(eeg) {
+  ann  <- eeg$annotations
+  mask <- rep(FALSE, ncol(eeg$data))
+  if (is.null(ann) || nrow(ann) == 0) return(mask)
+
+  ann <- ann[startsWith(tolower(ann$description), "bad"), , drop = FALSE]
+  if (nrow(ann) == 0) return(mask)
+
+  times <- eeg$times
+  for (i in seq_len(nrow(ann))) {
+    mask <- mask | (times >= ann$onset[i] & times < ann$onset[i] + ann$duration[i])
+  }
+  mask
+}
+
+# ----------------------------------------------------------------------------
 # fit_ica() - fit an eeg_ica object to eeg data
 # ----------------------------------------------------------------------------
 #' Fit an ICA Decomposition to EEG Data
@@ -999,6 +1033,18 @@ print.eeg_ica <- function(x, ...) {
 #'   marked bad; the BioSemi status channel is always excluded, matching
 #'   \code{.compute_pre_whitener()}'s expectations). An explicit \code{picks}
 #'   is taken as-is and can include bad channels if requested.
+#' @param reject_by_annotation Logical. If \code{TRUE} (default), timepoints
+#'   covered by a \code{"BAD_*"} row of \code{eeg$annotations} (see
+#'   R/annotations.R) are dropped from the data before fitting, so transient
+#'   artifacts (movement, muscle bursts, amplifier dropouts) don't get baked
+#'   into the components - mirrors MNE's
+#'   \code{ICA.fit(reject_by_annotation = TRUE)}. A row's \code{channel}
+#'   column is ignored: ICA needs the same time columns across every picked
+#'   channel, so even a channel-specific annotation (e.g.
+#'   \code{\link{annotate_nan}}'s per-channel rows) drops that stretch for
+#'   all of them. Only the fit is affected - \code{\link{get_sources}} and
+#'   \code{\link{apply_ica}} still run on the full recording. Has no effect
+#'   if \code{eeg$annotations} is \code{NULL} or empty.
 #'
 #' @return The same \code{eeg_ica} object passed in as \code{ica}, with its
 #'   fitted (trailing-underscore) fields populated and \code{current_fit} set
@@ -1015,7 +1061,7 @@ print.eeg_ica <- function(x, ...) {
 #' }
 #'
 #' @export
-fit_ica <- function(ica, eeg, picks = NULL) {
+fit_ica <- function(ica, eeg, picks = NULL, reject_by_annotation = TRUE) {
 
   # ========== VALIDATE inputs ==========
 
@@ -1048,6 +1094,21 @@ fit_ica <- function(ica, eeg, picks = NULL) {
   data <- eeg$data[idx, , drop = FALSE]
   channels <- eeg$channels[idx]
   channel_types <- eeg$channel_types[idx]
+
+  # ========== DROP ANNOTATED-BAD TIMEPOINTS ==========
+
+  if (isTRUE(reject_by_annotation)) {
+    bad_mask <- .annotation_bad_mask(eeg)
+    if (any(bad_mask)) {
+      data <- data[, !bad_mask, drop = FALSE]
+    }
+  }
+
+  if (ncol(data) < 2) {
+    stop("ERROR: fewer than 2 timepoints remain after excluding annotated ",
+         "bad stretches (reject_by_annotation = TRUE) - not enough data to ",
+         "fit ICA.")
+  }
 
   # ========== PRE-WHITEN ==========
 

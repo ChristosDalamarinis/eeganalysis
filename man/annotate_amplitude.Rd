@@ -31,8 +31,7 @@ percentage of the recording (or more) is added to \code{eeg_obj$bads}
 instead of annotated. Default: 5.}
 
 \item{min_duration}{Numeric. Minimum duration in seconds a stretch of
-consecutive flagged samples must last to count. Default: 0.005 (5 ms),
-matching MNE's default.}
+consecutive flagged samples must last to count. Default: 0.005 (5 ms).}
 
 \item{channels}{Character or integer vector, or \code{NULL}. Channels to
 check. \code{NULL} (default) uses every channel classified \code{"eeg"}
@@ -53,27 +52,23 @@ appended to \code{$preprocessing_history}. If \code{return_details =
   description, channel} - just the rows added by this call).
 }
 \description{
-Ports MNE-Python's \code{mne.preprocessing.annotate_amplitude()}: scans
-consecutive-sample differences per channel and flags stretches where the
-signal barely moves (\code{flat}) or jumps too hard (\code{peak}) for at
-least \code{min_duration} seconds. A channel flagged for
-\code{bad_percent} of the recording or more is added to
+Scans consecutive-sample differences per channel and flags stretches
+where the signal barely moves (\code{flat}) or jumps too hard
+(\code{peak}) for at least \code{min_duration} seconds. A channel
+flagged for \code{bad_percent} of the recording or more is added to
 \code{eeg_obj$bads} instead (mirrors \code{\link{find_bad_channels}}) -
 the problem is the channel, not a moment in it. Everything below that
 threshold is written to \code{eeg_obj$annotations} as \code{"BAD_flat"} /
 \code{"BAD_peak"} rows, unioned across every channel that tripped it.
 }
 \details{
-Faithful to MNE's own approximation: a channel's flagged-sample count is
-bumped by 1 before converting to a percentage, correcting for
-\code{diff()} being one sample shorter than the channel (see MNE's
-\code{annotate_amplitude} source) - a per-channel, not per-run,
-correction, exactly as MNE does it.
+A channel's flagged-sample count is bumped by 1 before converting to a
+percentage, correcting for \code{diff()} being one sample shorter than
+the channel - a per-channel, not per-run, correction.
 
 This only detects edges where consecutive samples change abruptly; a slow
 drift or a plateau reached gradually will not trigger \code{peak} or
-\code{flat} the way the names alone might suggest - the same caveat MNE's
-own documentation makes.
+\code{flat} the way the names alone might suggest.
 }
 \examples{
 \dontrun{

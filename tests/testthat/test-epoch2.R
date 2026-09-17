@@ -1527,6 +1527,204 @@ test_that("epoch_eeg rejects invalid detrend values", {
 # TEST SUITE 3: plot_epochs() — Epoch Visualisation
 # ============================================================================
 
+# ============================================================================
+# TEST SUITE 2C: reject_by_annotation — Annotation-Based Epoch Rejection
+# ============================================================================
+#
+# sr = 256, event onsets at 300 and 700 samples:
+#   epoch 1 time window (tmin=-0.1, tmax=0.4): [1.0719, 1.5719] s
+#   epoch 2 time window:                        [2.6344, 3.1344] s
+# Annotations are placed to overlap one or both windows as needed.
+# ----------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------
+# Test 2.44: reject_by_annotation = TRUE (default) rejects an epoch that
+#            overlaps a bad annotation, regardless of amplitude
+# ----------------------------------------------------------------------------
+test_that("epoch_eeg rejects epoch overlapping annotation when reject_by_annotation = TRUE", {
+  sr   <- 256
+  tmin <- -0.1
+  tmax <-  0.4
+
+  eeg <- make_mock_eeg(
+    n_timepoints = 2000,
+    sr           = sr,
+    event_onsets = c(300L, 700L),
+    event_types  = c("1", "1")
+  )
+
+  # Annotation overlapping epoch 1 only: [1.1, 1.3] s
+  eeg$annotations <- data.frame(
+    onset       = 1.1,
+    duration    = 0.2,
+    description = "BAD_muscle",
+    channel     = NA_character_,
+    stringsAsFactors = FALSE
+  )
+
+  epochs <- epoch_eeg(eeg, events = "all",
+                      tmin = tmin, tmax = tmax,
+                      baseline = NULL,
+                      reject_by_annotation = TRUE,
+                      verbose = FALSE)
+
+  expect_equal(epochs$n_epochs, 1)
+  expect_true(any(grepl("Overlaps annotation", epochs$rejection_log$reason)))
+})
+
+# ----------------------------------------------------------------------------
+# Test 2.45: reject_by_annotation = FALSE disables annotation-based rejection
+# ----------------------------------------------------------------------------
+test_that("epoch_eeg keeps all epochs when reject_by_annotation = FALSE", {
+  sr   <- 256
+  tmin <- -0.1
+  tmax <-  0.4
+
+  eeg <- make_mock_eeg(
+    n_timepoints = 2000,
+    sr           = sr,
+    event_onsets = c(300L, 700L),
+    event_types  = c("1", "1")
+  )
+
+  eeg$annotations <- data.frame(
+    onset       = 1.1,
+    duration    = 0.2,
+    description = "BAD_muscle",
+    channel     = NA_character_,
+    stringsAsFactors = FALSE
+  )
+
+  epochs <- epoch_eeg(eeg, events = "all",
+                      tmin = tmin, tmax = tmax,
+                      baseline = NULL,
+                      reject_by_annotation = FALSE,
+                      verbose = FALSE)
+
+  expect_equal(epochs$n_epochs, 2)
+  expect_equal(nrow(epochs$rejection_log), 0)
+})
+
+# ----------------------------------------------------------------------------
+# Test 2.46: reject_by_annotation as character vector only rejects epochs
+#            whose overlapping annotation matches one of the listed descriptions
+# ----------------------------------------------------------------------------
+test_that("epoch_eeg character reject_by_annotation filters by description", {
+  sr   <- 256
+  tmin <- -0.1
+  tmax <-  0.4
+
+  eeg <- make_mock_eeg(
+    n_timepoints = 2000,
+    sr           = sr,
+    event_onsets = c(300L, 700L),
+    event_types  = c("1", "1")
+  )
+
+  # BAD_muscle overlaps epoch 1 ([1.07, 1.57] s)
+  # BAD_flat   overlaps epoch 2 ([2.63, 3.13] s)
+  eeg$annotations <- data.frame(
+    onset       = c(1.1, 2.7),
+    duration    = c(0.2, 0.2),
+    description = c("BAD_muscle", "BAD_flat"),
+    channel     = NA_character_,
+    stringsAsFactors = FALSE
+  )
+
+  # Only reject on BAD_muscle: epoch 1 out, epoch 2 survives
+  epochs <- epoch_eeg(eeg, events = "all",
+                      tmin = tmin, tmax = tmax,
+                      baseline = NULL,
+                      reject_by_annotation = "BAD_muscle",
+                      verbose = FALSE)
+
+  expect_equal(epochs$n_epochs, 1)
+  expect_true(all(grepl("BAD_muscle", epochs$rejection_log$reason)))
+})
+
+# ----------------------------------------------------------------------------
+# Test 2.47: reject_by_annotation = TRUE with no annotations does not crash
+# ----------------------------------------------------------------------------
+test_that("epoch_eeg with reject_by_annotation = TRUE and no annotations runs cleanly", {
+  eeg <- make_mock_eeg(n_timepoints = 2000,
+                       event_onsets = c(300L, 700L),
+                       event_types  = c("1", "1"))
+  # eeg$annotations is NULL — the default for make_mock_eeg
+
+  epochs <- epoch_eeg(eeg, events = "all",
+                      tmin = -0.1, tmax = 0.4,
+                      baseline = NULL,
+                      reject_by_annotation = TRUE,
+                      verbose = FALSE)
+
+  expect_equal(epochs$n_epochs, 2)
+})
+
+# ----------------------------------------------------------------------------
+# Test 2.48: rejection log records the annotation description in the reason
+#            and the channel name when the annotation is channel-specific
+# ----------------------------------------------------------------------------
+test_that("epoch_eeg annotation rejection log records description and channel", {
+  sr   <- 256
+  tmin <- -0.1
+  tmax <-  0.4
+
+  eeg <- make_mock_eeg(
+    n_timepoints = 2000,
+    sr           = sr,
+    event_onsets = c(300L, 700L),
+    event_types  = c("1", "1")
+  )
+
+  # Channel-specific annotation (like BAD_NAN)
+  eeg$annotations <- data.frame(
+    onset       = 1.1,
+    duration    = 0.2,
+    description = "BAD_NAN",
+    channel     = "Ch1",
+    stringsAsFactors = FALSE
+  )
+
+  epochs <- epoch_eeg(eeg, events = "all",
+                      tmin = tmin, tmax = tmax,
+                      baseline = NULL,
+                      reject_by_annotation = TRUE,
+                      verbose = FALSE)
+
+  expect_equal(epochs$n_epochs, 1)
+  log_row <- epochs$rejection_log[grepl("Overlaps annotation", epochs$rejection_log$reason), ]
+  expect_true(grepl("BAD_NAN", log_row$reason[1]))
+  expect_equal(log_row$channel[1], "Ch1")
+})
+
+# ----------------------------------------------------------------------------
+# Test 2.49: empty annotations data frame does not trigger rejection
+# ----------------------------------------------------------------------------
+test_that("epoch_eeg with empty annotations data frame keeps all epochs", {
+  eeg <- make_mock_eeg(n_timepoints = 2000,
+                       event_onsets = c(300L, 700L),
+                       event_types  = c("1", "1"))
+
+  eeg$annotations <- data.frame(
+    onset = numeric(0), duration = numeric(0),
+    description = character(0), channel = character(0),
+    stringsAsFactors = FALSE
+  )
+
+  epochs <- epoch_eeg(eeg, events = "all",
+                      tmin = -0.1, tmax = 0.4,
+                      baseline = NULL,
+                      reject_by_annotation = TRUE,
+                      verbose = FALSE)
+
+  expect_equal(epochs$n_epochs, 2)
+})
+
+
+# ============================================================================
+# TEST SUITE 3: plot_epochs() — Epoch Visualisation
+# ============================================================================
+
 # ----------------------------------------------------------------------------
 # Test 3.1: Input validation — non-eeg_epochs is rejected
 # ----------------------------------------------------------------------------

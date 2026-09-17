@@ -31,6 +31,19 @@
 #'            exclude list, so marking a channel bad once is enough for it
 #'            to stay excluded everywhere downstream.
 #'
+#' @param annotations Data frame of bad time ranges (optional). Default:
+#'            NULL, which creates a zero-row frame with columns
+#'            \code{onset} (numeric, seconds), \code{duration} (numeric,
+#'            seconds), \code{description} (character, e.g.
+#'            \code{"BAD_muscle"}), and \code{channel} (character, NA
+#'            unless the row is channel-specific). The time-domain sibling
+#'            of \code{bads}: where \code{bads} disqualifies a whole
+#'            channel, a row here disqualifies only a stretch of time, for
+#'            downstream steps (epoching, ICA fitting) to check against.
+#'            Written by \code{\link{annotate_amplitude}},
+#'            \code{\link{annotate_muscle}}, \code{\link{annotate_nan}},
+#'            and \code{\link{annotate_break}} (see R/annotations.R).
+#'
 #' @param sampling_rate Numeric value - sampling rate in Hz
 #'                      Common values: 256, 512, 1024, 2048 Hz
 #'
@@ -71,6 +84,10 @@
 #'      character vector if none). A shared, persistent list - other
 #'      functions should read/write this instead of taking their own
 #'      per-call exclude list.}
+#'    \item{annotations}{Data frame of bad time ranges, columns
+#'      \code{onset, duration, description, channel} (zero rows if none).
+#'      The time-domain sibling of \code{bads} - see
+#'      \code{\link{annotate_amplitude}} and friends in R/annotations.R.}
 #'    \item{sampling_rate}{Numeric sampling rate}
 #'    \item{times}{Numeric time vector}
 #'    \item{events}{Data frame with event information}
@@ -102,7 +119,8 @@ new_eeg <- function(data,
                     reference = "original",
                     preprocessing_history = NULL,
                     montage = NULL,
-                    bads = NULL) {
+                    bads = NULL,
+                    annotations = NULL) {
   
   # ========== INPUT VALIDATION ==========
   
@@ -154,6 +172,15 @@ new_eeg <- function(data,
     }
   }
 
+  # ========== DEFAULT ANNOTATIONS ==========
+
+  # Time-domain sibling of `bads` (see R/annotations.R): a zero-row frame
+  # by default so annotate_*() functions never have to fall back on their
+  # own .ensure_annotations() check for a NULL field.
+  if (is.null(annotations)) {
+    annotations <- .empty_annotations()
+  }
+
   # ========== CREATE EVENTS DATAFRAME ==========
   
   if (is.null(events)) {
@@ -187,6 +214,7 @@ new_eeg <- function(data,
       channels = as.character(channels),
       channel_types = channel_types,
       bads = bads,
+      annotations = annotations,
       sampling_rate = as.numeric(sampling_rate),
       times = as.numeric(times),
       events = events,
@@ -312,6 +340,14 @@ print.eeg <- function(x, ...) {
         " (", length(x$bads), ")\n", sep = "")
   } else {
     cat("  Marked bad:       None\n")
+  }
+
+  # ========== ANNOTATIONS ==========
+  cat("\nANNOTATIONS:\n")
+  cat("  Total annotations:", nrow(x$annotations), "\n")
+  if (nrow(x$annotations) > 0) {
+    annotation_types <- unique(x$annotations$description)
+    cat("  Types:            ", paste(annotation_types, collapse = ", "), "\n")
   }
 
   # ========== EVENT INFORMATION ==========

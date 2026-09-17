@@ -17,13 +17,13 @@ annotate_muscle(
 \item{eeg_obj}{An object of class 'eeg'.}
 
 \item{threshold}{Numeric. Z-score threshold above which a sample counts
-as muscle activity. Default: 4, matching MNE's default.}
+as muscle activity. Default: 4.}
 
 \item{filter_freq}{Numeric vector of length 2, \verb{c(low, high)} in Hz.
-Band tested for EMG envelope activity. Default: \code{c(110, 140)},
-matching MNE's default - requires \code{eeg_obj$sampling_rate} well
-above \code{2 * filter_freq[2]} to leave room for the filter's
-transition band; lower sampling rates error out (see Details).}
+Band tested for EMG envelope activity. Default: \code{c(110, 140)} -
+requires \code{eeg_obj$sampling_rate} well above
+\code{2 * filter_freq[2]} to leave room for the filter's transition
+band; lower sampling rates error out (see Details).}
 
 \item{min_length_good}{Numeric. Shortest allowed run of "good" data (in
 seconds) between two flagged stretches; shorter runs are folded into
@@ -37,8 +37,8 @@ that is not already in \code{eeg_obj$bads}.}
 the updated \code{eeg_obj}. If \code{TRUE}, returns
 \code{list(eeg_obj, annotations, scores)}, where \code{annotations} is
 a data frame of just the rows this call added and \code{scores} is the
-smoothed combined z-score trace (length \code{ncol(eeg_obj$data)}) -
-MNE itself returns this alongside its annotations; useful for plotting.}
+smoothed combined z-score trace (length \code{ncol(eeg_obj$data)}),
+useful for plotting.}
 }
 \value{
 If \code{return_details = FALSE} (default), the input
@@ -49,8 +49,7 @@ with elements \code{eeg_obj} (as above), \code{annotations} (just the
 rows added by this call), and \code{scores} (the z-score trace).
 }
 \description{
-Ports MNE-Python's \code{mne.preprocessing.annotate_muscle_zscore()}:
-band-pass filters the picked channels to \code{filter_freq} (jaw-clench
+Band-pass filters the picked channels to \code{filter_freq} (jaw-clench
 and other EMG activity shows up here, well above EEG's own frequency
 range), takes the Hilbert envelope of each, z-scores every channel's
 envelope across time, sums the z-scores across channels (divided by
@@ -65,12 +64,12 @@ Flagged stretches are written to \code{eeg_obj$annotations} as
 \details{
 This function bandpass- and lowpass-filters data via the same FFT-based
 overlap-add convolution \code{\link{eeg_bandpass}} uses (see
-R/filter1.R), which has no concept of skipping over already-bad stretches
-of a continuous signal the way MNE's own \code{raw.filter()} does
-internally. Because both steps are FFT-based (global support), a single
-\code{NA} anywhere in the picked channels would silently turn the entire
-filtered trace to \code{NA} rather than just the affected stretch - so
-this function errors instead if it finds one. Run
+R/filter1.R), which has no concept of skipping over already-bad
+stretches of a continuous signal - it filters straight through. Because
+both steps are FFT-based (global support), a single \code{NA} anywhere
+in the picked channels would silently turn the entire filtered trace to
+\code{NA} rather than just the affected stretch - so this function
+errors instead if it finds one. Run
 \code{\link{annotate_nan}} first to locate such gaps; there is no
 automatic way to filter around them yet.
 }

@@ -29,12 +29,12 @@ with elements \code{eeg_obj} (as above) and \code{annotations} (just
 the rows added by this call).
 }
 \description{
-Ports MNE-Python's \code{mne.preprocessing.annotate_nan()}: scans every
-picked channel independently for runs of \code{NA} and writes each run to
-\code{eeg_obj$annotations} as a channel-specific \code{"BAD_NAN"} row -
-this is the one detector in this file that fills in the \code{channel}
-column, since a dropout is a fact about one amplifier line, not the whole
-recording, and shouldn't block channels that stayed connected.
+Scans every picked channel independently for runs of \code{NA} and
+writes each run to \code{eeg_obj$annotations} as a channel-specific
+\code{"BAD_NAN"} row - this is the one detector in this file that fills
+in the \code{channel} column, since a dropout is a fact about one
+amplifier line, not the whole recording, and shouldn't block channels
+that stayed connected.
 }
 \examples{
 \dontrun{

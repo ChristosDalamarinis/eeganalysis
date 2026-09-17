@@ -204,11 +204,18 @@ test_that("annotate_amplitude flags a sharp spike stretch as BAD_peak", {
 
 test_that("annotate_amplitude initializes eeg_obj$annotations when absent", {
   eeg <- .make_plain_eeg()
-  expect_null(eeg$annotations)
+  eeg$annotations <- NULL  # simulate an object predating the annotations field
   result <- annotate_amplitude(eeg, peak = 1e6)  # threshold nothing can hit
   expect_s3_class(result$annotations, "data.frame")
   expect_named(result$annotations, c("onset", "duration", "description", "channel"))
   expect_equal(nrow(result$annotations), 0)
+})
+
+test_that("new_eeg initializes annotations to an empty frame by default", {
+  eeg <- .make_plain_eeg()
+  expect_s3_class(eeg$annotations, "data.frame")
+  expect_named(eeg$annotations, c("onset", "duration", "description", "channel"))
+  expect_equal(nrow(eeg$annotations), 0)
 })
 
 

@@ -18,7 +18,6 @@
 }
 \description{
 Combines \code{new_rows} onto \code{eeg_obj$annotations} and re-sorts the
-result by \code{onset}, mirroring MNE's own \code{Annotations}, which
-keeps itself sorted after every \code{append()}.
+result by \code{onset}, so the table always reads in chronological order.
 }
 \keyword{internal}

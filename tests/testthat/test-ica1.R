@@ -645,6 +645,99 @@ test_that("fit_ica algorithm = 'deflation' also recovers the two known sources",
   expect_true(all(apply(abs(cor_mat), 1, max) > 0.9))
 })
 
+# ---- .annotation_bad_mask() / fit_ica(reject_by_annotation = ...) --------
+
+test_that(".annotation_bad_mask returns all-FALSE when eeg$annotations is NULL or empty", {
+  fx <- make_ica_fixture(n_samples = 10, sampling_rate = 10)
+  expect_equal(nrow(fx$eeg$annotations), 0)  # new_eeg() default: empty frame, not NULL
+  expect_equal(.annotation_bad_mask(fx$eeg), rep(FALSE, 10))
+
+  fx$eeg$annotations <- NULL
+  expect_equal(.annotation_bad_mask(fx$eeg), rep(FALSE, 10))
+})
+
+test_that(".annotation_bad_mask flags only samples inside BAD_* rows, case-insensitively", {
+  fx <- make_ica_fixture(n_samples = 10, sampling_rate = 10)
+  fx$eeg$annotations <- data.frame(
+    onset       = c(0.2, 0.6),
+    duration    = c(0.3, 0.1),
+    description = c("Bad_test", "good_stuff"),
+    channel     = NA_character_
+  )
+  expect_equal(.annotation_bad_mask(fx$eeg),
+               c(FALSE, FALSE, TRUE, TRUE, TRUE, FALSE, FALSE, FALSE, FALSE, FALSE))
+})
+
+test_that(".annotation_bad_mask ignores the channel column - a channel-specific row still masks every channel's time column", {
+  fx <- make_ica_fixture(n_samples = 10, sampling_rate = 10)
+  fx$eeg$annotations <- data.frame(onset = 0.5, duration = 0.2,
+                                    description = "BAD_NAN", channel = "Fp1")
+  expect_equal(.annotation_bad_mask(fx$eeg),
+               c(FALSE, FALSE, FALSE, FALSE, FALSE, TRUE, TRUE, FALSE, FALSE, FALSE))
+})
+
+test_that("fit_ica(reject_by_annotation = TRUE) fits identically to physically dropping the annotated stretch", {
+  fx <- make_source_separation_fixture()
+
+  bad_window <- 1000:1199
+  eeg_annotated <- fx$eeg
+  eeg_annotated$data[, bad_window] <- 1e6  # corrupt values that must never influence the fit
+  eeg_annotated$annotations <- data.frame(
+    onset       = eeg_annotated$times[bad_window[1]],
+    duration    = length(bad_window) / eeg_annotated$sampling_rate,
+    description = "BAD_test",
+    channel     = NA_character_
+  )
+
+  eeg_trimmed <- new_eeg(data = fx$eeg$data[, -bad_window, drop = FALSE],
+                          channels = fx$eeg$channels,
+                          sampling_rate = fx$eeg$sampling_rate)
+
+  ica_annotated <- suppressWarnings(
+    fit_ica(new_ica(n_components = 2, random_state = 1), eeg_annotated)
+  )
+  ica_trimmed <- suppressWarnings(
+    fit_ica(new_ica(n_components = 2, random_state = 1), eeg_trimmed)
+  )
+
+  expect_equal(ica_annotated$n_samples_, ncol(fx$eeg$data) - length(bad_window))
+  expect_equal(ica_annotated$unmixing_matrix_, ica_trimmed$unmixing_matrix_)
+  expect_equal(ica_annotated$mixing_matrix_,   ica_trimmed$mixing_matrix_)
+})
+
+test_that("fit_ica(reject_by_annotation = FALSE) keeps the annotated stretch and n_samples_ reflects the full recording", {
+  fx <- make_source_separation_fixture()
+
+  bad_window <- 1000:1199
+  eeg_annotated <- fx$eeg
+  eeg_annotated$data[, bad_window] <- 1e6
+  eeg_annotated$annotations <- data.frame(
+    onset       = eeg_annotated$times[bad_window[1]],
+    duration    = length(bad_window) / eeg_annotated$sampling_rate,
+    description = "BAD_test",
+    channel     = NA_character_
+  )
+
+  ica_kept <- suppressWarnings(
+    fit_ica(new_ica(n_components = 2, random_state = 1), eeg_annotated,
+            reject_by_annotation = FALSE)
+  )
+  ica_dropped <- suppressWarnings(
+    fit_ica(new_ica(n_components = 2, random_state = 1), eeg_annotated)
+  )
+
+  expect_equal(ica_kept$n_samples_, ncol(fx$eeg$data))
+  expect_false(isTRUE(all.equal(ica_kept$unmixing_matrix_, ica_dropped$unmixing_matrix_)))
+})
+
+test_that("fit_ica errors when annotations reject nearly all timepoints", {
+  fx <- make_source_separation_fixture(n_samples = 10)
+  fx$eeg$annotations <- data.frame(onset = 0, duration = 100,
+                                    description = "BAD_everything",
+                                    channel = NA_character_)
+  expect_error(fit_ica(new_ica(), fx$eeg), "fewer than 2 timepoints")
+})
+
 # ============================================================================
 #              TEST SUITE 11: get_sources() - component time-courses
 # ============================================================================

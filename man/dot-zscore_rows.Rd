@@ -13,10 +13,8 @@
 Numeric matrix, same shape as \code{x}.
 }
 \description{
-Z-scores each row of \code{x} independently using the population standard
-deviation (divide by \code{n}, not \code{n - 1}), matching
-\code{scipy.stats.zscore()}'s default \code{ddof = 0} - the function
-\code{\link{annotate_muscle}} ports (\code{annotate_muscle_zscore()})
-relies on this exact convention.
+Z-scores each row of \code{x} independently using the population
+standard deviation (divide by \code{n}, not \code{n - 1}) -
+\code{\link{annotate_muscle}} relies on this exact convention.
 }
 \keyword{internal}

@@ -45,7 +45,7 @@ test_that("new_eeg creates valid object with minimal parameters", {
   
   # Test data structure
   expect_true(is.list(eeg))
-  expect_equal(length(eeg), 11)  # Should have 11 components (incl. channel_types, montage, bads)
+  expect_equal(length(eeg), 12)  # Should have 12 components (incl. channel_types, montage, bads, annotations)
   
   # Test data dimensions and values
   expect_equal(dim(eeg$data), c(3, 100))

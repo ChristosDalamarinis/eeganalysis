@@ -14,7 +14,8 @@ new_eeg(
   reference = "original",
   preprocessing_history = NULL,
   montage = NULL,
-  bads = NULL
+  bads = NULL,
+  annotations = NULL
 )
 }
 \arguments{
@@ -58,6 +59,19 @@ touch channels (re-referencing, ICA, interpolation) should
 read/write \code{eeg$bads} instead of each one taking its own
 exclude list, so marking a channel bad once is enough for it
 to stay excluded everywhere downstream.}
+
+\item{annotations}{Data frame of bad time ranges (optional). Default:
+NULL, which creates a zero-row frame with columns
+\code{onset} (numeric, seconds), \code{duration} (numeric,
+seconds), \code{description} (character, e.g.
+\code{"BAD_muscle"}), and \code{channel} (character, NA
+unless the row is channel-specific). The time-domain sibling
+of \code{bads}: where \code{bads} disqualifies a whole
+channel, a row here disqualifies only a stretch of time, for
+downstream steps (epoching, ICA fitting) to check against.
+Written by \code{\link{annotate_amplitude}},
+\code{\link{annotate_muscle}}, \code{\link{annotate_nan}},
+and \code{\link{annotate_break}} (see R/annotations.R).}
 }
 \value{
 An object of class 'eeg' containing:
@@ -75,6 +89,10 @@ should read this field rather than re-deriving it from
 character vector if none). A shared, persistent list - other
 functions should read/write this instead of taking their own
 per-call exclude list.}
+\item{annotations}{Data frame of bad time ranges, columns
+\code{onset, duration, description, channel} (zero rows if none).
+The time-domain sibling of \code{bads} - see
+\code{\link{annotate_amplitude}} and friends in R/annotations.R.}
 \item{sampling_rate}{Numeric sampling rate}
 \item{times}{Numeric time vector}
 \item{events}{Data frame with event information}

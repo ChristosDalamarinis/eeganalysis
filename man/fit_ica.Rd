@@ -26,8 +26,7 @@ is taken as-is and can include bad channels if requested.}
 covered by a \code{"BAD_*"} row of \code{eeg$annotations} (see
 R/annotations.R) are dropped from the data before fitting, so transient
 artifacts (movement, muscle bursts, amplifier dropouts) don't get baked
-into the components - mirrors MNE's
-\code{ICA.fit(reject_by_annotation = TRUE)}. A row's \code{channel}
+into the components. A row's \code{channel}
 column is ignored: ICA needs the same time columns across every picked
 channel, so even a channel-specific annotation (e.g.
 \code{\link{annotate_nan}}'s per-channel rows) drops that stretch for

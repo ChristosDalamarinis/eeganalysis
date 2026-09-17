@@ -14,11 +14,9 @@ A list with integer vectors \code{onsets} and \code{offsets}, the
 same length (zero-length if \code{mask} has no \code{TRUE} runs).
 }
 \description{
-Ports MNE's \code{_mask_to_onsets_offsets()}: finds the rising and falling
-edges of \code{TRUE} runs in \code{mask}. \code{onsets} are 1-based and
-inclusive (the first \code{TRUE} sample of a run); \code{offsets} are
-1-based and exclusive, i.e. \code{mask[onset:(offset - 1)]} is the run -
-matching the Python convention \code{mask[onset:offset]} one-to-one, just
-shifted for R's 1-based indexing.
+Finds the rising and falling edges of \code{TRUE} runs in \code{mask}.
+\code{onsets} are 1-based and inclusive (the first \code{TRUE} sample of
+a run); \code{offsets} are 1-based and exclusive, i.e.
+\code{mask[onset:(offset - 1)]} is the run.
 }
 \keyword{internal}

@@ -19,6 +19,7 @@ epoch_eeg(
   detrend = NULL,
   event_repeated = c("warn", "error", "drop"),
   on_missing = c("warn", "error", "ignore"),
+  reject_by_annotation = TRUE,
   preload = TRUE,
   verbose = TRUE
 )
@@ -60,6 +61,14 @@ correction. NULL = off (default), 0 = mean removal, 1 = linear detrending.}
 
 \item{on_missing}{Character. What to do when requested event codes are not found in the data.
 "warn" continues with a warning (default), "error" stops, "ignore" continues silently.}
+
+\item{reject_by_annotation}{Logical or character vector. If \code{TRUE} (default),
+any epoch whose time window overlaps a row in \code{eeg_obj$annotations} is
+rejected regardless of amplitude. If a character vector (e.g.
+\code{c("BAD_muscle", "BAD_flat")}), only annotations whose \code{description}
+matches one of those strings trigger rejection. \code{FALSE} disables annotation-
+based rejection entirely. This is the primary fix for muscle artifacts that do not
+produce a large swing but were detected by \code{\link{annotate_muscle}}.}
 
 \item{preload}{Logical. If TRUE, extract all epoch data into memory (default: TRUE).
 Must be TRUE for reject_threshold and flat_threshold to work. A warning is issued if

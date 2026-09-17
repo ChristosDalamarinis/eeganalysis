@@ -4,7 +4,7 @@
 \alias{fit_ica}
 \title{Fit an ICA Decomposition to EEG Data}
 \usage{
-fit_ica(ica, eeg, picks = NULL)
+fit_ica(ica, eeg, picks = NULL, reject_by_annotation = TRUE)
 }
 \arguments{
 \item{ica}{An unfitted \code{eeg_ica} object, as returned by
@@ -21,6 +21,19 @@ used (i.e. \code{"eeg"} and \code{"external"} channels, minus any
 marked bad; the BioSemi status channel is always excluded, matching
 \code{.compute_pre_whitener()}'s expectations). An explicit \code{picks}
 is taken as-is and can include bad channels if requested.}
+
+\item{reject_by_annotation}{Logical. If \code{TRUE} (default), timepoints
+covered by a \code{"BAD_*"} row of \code{eeg$annotations} (see
+R/annotations.R) are dropped from the data before fitting, so transient
+artifacts (movement, muscle bursts, amplifier dropouts) don't get baked
+into the components - mirrors MNE's
+\code{ICA.fit(reject_by_annotation = TRUE)}. A row's \code{channel}
+column is ignored: ICA needs the same time columns across every picked
+channel, so even a channel-specific annotation (e.g.
+\code{\link{annotate_nan}}'s per-channel rows) drops that stretch for
+all of them. Only the fit is affected - \code{\link{get_sources}} and
+\code{\link{apply_ica}} still run on the full recording. Has no effect
+if \code{eeg$annotations} is \code{NULL} or empty.}
 }
 \value{
 The same \code{eeg_ica} object passed in as \code{ica}, with its

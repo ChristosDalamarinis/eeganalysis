@@ -31,18 +31,19 @@ are clipped to 0.}
 \description{
 Mean-centers \code{data}, eigendecomposes its channel x channel covariance
 matrix, and rescales each principal-component score to unit variance -
-i.e. \code{whiten = TRUE} in \code{sklearn.decomposition.PCA}, as used by
-\code{ICA._fit()} at \code{python/ica/ica.py:900}. Always returns the
-\emph{full} set of components; selecting how many of them (\code{n_components_})
-go on to the ICA rotation step is a separate, later concern, mirroring how
-MNE fits PCA at \code{max_pca_components} and only slices
-\code{data[:, sel]} afterward. Because of that, trailing components whose
-eigenvalue is (numerically) zero - e.g. the one rank-deficient dimension
-introduced by average referencing - will legitimately contain \code{Inf}/
-\code{NaN} in \code{data} after the unit-variance division; this matches
-what MNE's own full PCA output looks like before its component-selection
-step trims those dimensions away, and is why \code{new_ica()} defaults to
-resolving \code{n_components = 0.999999} rather than requesting the full
-rank.
+i.e. \code{whiten = TRUE} in \code{sklearn.decomposition.PCA}. Always
+returns the \emph{full} set of components; selecting how many of them
+(\code{n_components_}) go on to the ICA rotation step is a separate,
+later concern handled downstream, by fitting PCA at the full component
+count and only slicing the top \code{n_components_} afterward. Because
+of that, trailing components whose eigenvalue is (numerically) zero -
+e.g. the one rank-deficient dimension introduced by average referencing
+\itemize{
+\item will legitimately contain \code{Inf}/\code{NaN} in \code{data} after
+the unit-variance division; this is expected before the later
+component-selection step trims those dimensions away, and is why
+\code{new_ica()} defaults to resolving \code{n_components = 0.999999}
+rather than requesting the full rank.
+}
 }
 \keyword{internal}

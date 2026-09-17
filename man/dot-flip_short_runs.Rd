@@ -24,9 +24,8 @@ Run-length-encodes \code{mask} and flips any run equal to \code{run_value}
 shorter than \code{min_samples} samples to \code{flip_to}. Used two ways
 in this file: \code{\link{annotate_muscle}} uses it to fold short "good"
 gaps into the surrounding flagged stretch (\code{run_value = FALSE,
-flip_to = TRUE}, mirroring MNE's \code{scipy.ndimage.label} loop);
-\code{\link{annotate_amplitude}} uses it to discard flagged runs that
-don't last long enough to count (\code{run_value = TRUE, flip_to =
-FALSE}, mirroring MNE's \code{_reject_short_segments()}).
+flip_to = TRUE}); \code{\link{annotate_amplitude}} uses it to discard
+flagged runs that don't last long enough to count (\code{run_value =
+TRUE, flip_to = FALSE}).
 }
 \keyword{internal}

@@ -35,6 +35,7 @@ Version 0.0.0.9000 — under active development. Currently reads BioSemi `.bdf` 
 | Channel inspection & labeling | `inspect_bdf_channels()`, `identify_external_channels()`, `detect_external_channels()` | ✅ |
 | Downsampling / Filtering | `downsample()`, `eeg_bandpass()`, `eeg_notch()` | ✅ |
 | Bad-channel detection & repair | `find_bad_channels()`, `interpolate_bads()` | ✅ |
+| Time-range annotations (bad stretches) | `annotate_amplitude()`, `annotate_muscle()`, `annotate_nan()`, `annotate_break()` | ✅ |
 | Re-referencing | `eeg_rereference()` | ✅ |
 | ICA artifact removal | `fit_ica()`, `plot_ica_sources()`, `apply_ica()` | ✅ |
 | Epoching & visualization | `epoch_eeg()`, `plot_epochs()` | ✅ |
@@ -110,7 +111,7 @@ Contributions to the *eeganalysis* package are welcome! If you would like to con
 
 ## Folder structure
 
-```text
+``` text
 eeganalysis
 │
 ├── R/                                       ← Package source code
@@ -156,6 +157,12 @@ eeganalysis
 │   │
 │   ├── interpolate.R                        ← Bad-channel repair
 │   │   └── interpolate_bads()               ← Spherical-spline interpolation (MNE-matched)
+│   │
+│   ├── annotations.R                        ← Time-range bad-data marking
+│   │   ├── annotate_amplitude()             ← Flag flat/spiking stretches (or bad channels)
+│   │   ├── annotate_muscle()                ← Flag EMG bursts (high-freq envelope z-score)
+│   │   ├── annotate_nan()                   ← Flag amplifier dropouts (NA runs), per channel
+│   │   └── annotate_break()                 ← Flag dead time between experimental blocks
 │   │
 │   ├── rereference.R                        ← Re-referencing utilities
 │   │   └── eeg_rereference()                ← Change reference scheme (average/custom)

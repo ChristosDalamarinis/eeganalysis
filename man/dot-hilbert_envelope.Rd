@@ -15,8 +15,6 @@ Numeric vector, same length as \code{x} - the envelope.
 \description{
 Computes the analytic signal of \code{x} via the standard FFT recipe
 (double the positive frequencies, zero the negative ones, keep DC and
-Nyquist unscaled - the same algorithm behind \code{scipy.signal.hilbert}
-and MNE's \code{apply_hilbert(envelope=True)}) and returns its magnitude,
-i.e. the envelope.
+Nyquist unscaled) and returns its magnitude, i.e. the envelope.
 }
 \keyword{internal}

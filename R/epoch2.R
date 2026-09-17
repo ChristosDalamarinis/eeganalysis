@@ -368,6 +368,13 @@ inspect_triggers <- function(eeg_obj,                             # EEG object w
 #'   "warn" keeps the first and warns (default), "drop" keeps the first silently, "error" stops.
 #' @param on_missing Character. What to do when requested event codes are not found in the data.
 #'   "warn" continues with a warning (default), "error" stops, "ignore" continues silently.
+#' @param reject_by_annotation Logical or character vector. If \code{TRUE} (default),
+#'   any epoch whose time window overlaps a row in \code{eeg_obj$annotations} is
+#'   rejected regardless of amplitude. If a character vector (e.g.
+#'   \code{c("BAD_muscle", "BAD_flat")}), only annotations whose \code{description}
+#'   matches one of those strings trigger rejection. \code{FALSE} disables annotation-
+#'   based rejection entirely. This is the primary fix for muscle artifacts that do not
+#'   produce a large swing but were detected by \code{\link{annotate_muscle}}.
 #' @param preload Logical. If TRUE, extract all epoch data into memory (default: TRUE).
 #'   Must be TRUE for reject_threshold and flat_threshold to work. A warning is issued if
 #'   thresholds are set but preload is FALSE.
@@ -402,6 +409,7 @@ epoch_eeg <- function(eeg_obj,                                           # Loade
                       detrend = NULL,                                    # Detrending mode: NULL = off, 0 = mean removal, 1 = linear detrend
                       event_repeated = c("warn", "error", "drop"),       # How to handle duplicate events at the same sample
                       on_missing = c("warn", "error", "ignore"),          # What to do when requested event codes are not found
+                      reject_by_annotation = TRUE,                       # TRUE/FALSE or character vector of description prefixes to reject on annotation overlap
                       preload = TRUE,                                    # Whether to load all epoch data into memory immediately
                       verbose = TRUE) {                                  # Shows you what's happening during epoching
   
@@ -530,6 +538,18 @@ epoch_eeg <- function(eeg_obj,                                           # Loade
   reject_idx_max <- if (!is.null(reject_tmax)) which.min(abs(epoch_times - reject_tmax)) else length(epoch_times)
   rejection_indices <- reject_idx_min:reject_idx_max
   
+  # ========== PRE-FILTER ANNOTATIONS FOR REJECTION ==========
+  bad_anns <- NULL
+  if (!isFALSE(reject_by_annotation)) {
+    anns <- eeg_obj$annotations
+    if (!is.null(anns) && nrow(anns) > 0) {
+      if (is.character(reject_by_annotation)) {
+        anns <- anns[anns$description %in% reject_by_annotation, , drop = FALSE]
+      }
+      if (nrow(anns) > 0) bad_anns <- anns
+    }
+  }
+
   # ========== EXTRACT EPOCHS ==========
   if (verbose) cat("Extracting epochs...\n")
   
@@ -567,6 +587,27 @@ epoch_eeg <- function(eeg_obj,                                           # Loade
         stringsAsFactors = FALSE
       ))
       next
+    }
+
+    # Check annotation overlap
+    if (!is.null(bad_anns)) {
+      epoch_t_start <- selected_events$onset_time[i] + tmin
+      epoch_t_end   <- selected_events$onset_time[i] + tmax
+      overlaps <- bad_anns$onset < epoch_t_end &
+                  (bad_anns$onset + bad_anns$duration) > epoch_t_start
+      if (any(overlaps)) {
+        hit <- which(overlaps)[1L]
+        valid_epochs[i] <- FALSE
+        rejection_log <- rbind(rejection_log, data.frame(
+          epoch_id   = i,
+          event_type = as.character(selected_events$type[i]),
+          event_time = selected_events$onset_time[i],
+          channel    = bad_anns$channel[hit],
+          reason     = paste0("Overlaps annotation: ", bad_anns$description[hit]),
+          stringsAsFactors = FALSE
+        ))
+        next
+      }
     }
 
     # Extract epoch data

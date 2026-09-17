@@ -101,7 +101,7 @@ EEG pipelines, including:
 \item Reconstruction of clean data after component exclusion
 }
 
-Design mirrors mne.preprocessing.ICA: the object returned by new_ica()
+Follows a fit/transform estimator design: the object returned by new_ica()
 stores the requested \emph{parameters} immediately, while data-derived
 \emph{fitted attributes} (named with a trailing underscore, e.g.
 n_components_, mixing_matrix_) stay NULL until fit_ica() runs. The
@@ -112,8 +112,9 @@ Depends on: eeg_class.R (for eeg object structure)
 }
 \section{Author: Christos Dalamarinis
 Date: July 2026
-Status: pre-whitening fixed to pool std by channel type (matches MNE's
-_compute_pre_whitener()). PCA whitening still to be ported
+Status: pre-whitening fixed to pool std by channel type (one shared
+standard deviation per channel type, not per individual channel).
+PCA whitening still to be ported
 natively (plain SVD, no external dependency needed). The FastICA
 rotation step itself remains the one open question - port
 sklearn's _fastica.py line-by-line, or call it via reticulate.
@@ -121,13 +122,13 @@ Tested: Tested}{
 Create a New ICA Object
 
 Creates an unfitted \code{eeg_ica} object that stores the configuration
-for an Independent Component Analysis decomposition, following the design
-of \code{mne.preprocessing.ICA}. Parameters are available immediately;
+for an Independent Component Analysis decomposition, following a
+fit/transform estimator design. Parameters are available immediately;
 data-derived attributes (named with a trailing underscore, e.g.
 \code{n_components_}, \code{mixing_matrix_}) stay \code{NULL} until the
 object is fit to data (via a future \code{fit_ica()}).
 
-Following scikit-learn/MNE convention, attribute names ending in a
+Following scikit-learn's convention, attribute names ending in a
 trailing underscore (\code{n_components_}, \code{mixing_matrix_}, ...)
 signify that the attribute is derived from data and only exists once the
 object has been fit. Before fitting, these fields are present but

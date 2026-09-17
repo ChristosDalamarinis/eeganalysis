@@ -33,11 +33,10 @@ produce a non-positive-duration annotation).}
 
 \item{ignore}{Character vector of description prefixes to exclude,
 matched case-insensitively, when \code{use_events = FALSE}. Default:
-\code{"bad"}. MNE's own default also ignores \code{"edge"} annotations,
-produced by concatenating separate recordings together - this package
-has no equivalent of \code{mne.concatenate_raws()} yet, so there is no
-\code{"edge"} annotation to ignore. Has no effect when
-\code{use_events = TRUE}. Pass \code{character(0)} to keep everything.}
+\code{"bad"}. This package has no concept of "edge" annotations from
+concatenating separate recordings together, so there is nothing else
+ignored by default. Has no effect when \code{use_events = TRUE}. Pass
+\code{character(0)} to keep everything.}
 
 \item{return_details}{Logical. If \code{FALSE} (default), returns just
 the updated \code{eeg_obj}. If \code{TRUE}, returns
@@ -53,8 +52,7 @@ with elements \code{eeg_obj} (as above) and \code{annotations} (just
 the rows added by this call).
 }
 \description{
-Ports MNE-Python's \code{mne.preprocessing.annotate_break()}: looks for
-gaps at least \code{min_break_duration} seconds long between
+Looks for gaps at least \code{min_break_duration} seconds long between
 known-occupied stretches of the recording, and writes each gap to
 \code{eeg_obj$annotations} as a \code{"BAD_break"} row - trimmed on both
 ends so the annotation doesn't start or stop right on top of a real
@@ -70,12 +68,11 @@ with one of \code{ignore} (case-insensitive) - typically whatever
 \code{\link{annotate_amplitude}}/\code{\link{annotate_muscle}}/
 \code{\link{annotate_nan}} already wrote, though by default those all
 start with \code{"BAD_"} and so are themselves excluded by
-\code{ignore = "bad"}, same as MNE's own default. Pass
-\code{ignore = character(0)} to count every annotation instead.
+\code{ignore = "bad"}. Pass \code{ignore = character(0)} to count
+every annotation instead.
 \item \code{use_events = TRUE}: every trigger in \code{eeg_obj$events}
-(see R/extract_bdf_events.R), each treated as an instantaneous marker
-rather than a stretch - mirrors passing an events array directly to
-MNE's \code{annotate_break()}. Natural for finding dead time between
+(see R/extract_bdf_events.R), each treated as an instantaneous
+marker rather than a stretch. Natural for finding dead time between
 experimental blocks delimited by real trigger codes.
 }
 Overlapping occupied stretches are merged before gaps are computed, so

@@ -19,17 +19,15 @@ steps (epoching, ICA fitting) have something to check against before
 touching a given moment - without throwing away the whole channel over it.
 }
 \details{
-Four independent detectors, ported from MNE-Python
-(mne/preprocessing/_annotate_amplitude.py, artifact_detection.py,
-_annotate_nan.py):
+Four independent detectors:
 \itemize{
 \item annotate_amplitude() - consecutive-sample jumps that are too small
 (flat/disconnected) or too large (spikes), sustained for longer than
 a minimum duration. A channel bad for most of the recording is added
 to eeg_obj$bads instead of annotated (mirrors find_bad_channels()) -
 that's a channel problem, not a moment problem.
-\item annotate_muscle()    - jaw-clench/EMG bursts, via MNE's 110-140 Hz
-envelope-and-z-score method (MNE's annotate_muscle_zscore()).
+\item annotate_muscle()    - jaw-clench/EMG bursts, via a 110-140 Hz
+envelope-and-z-score method.
 \item annotate_nan()       - amplifier dropouts (NA runs), per channel.
 \item annotate_break()     - dead time between experimental blocks: gaps
 between existing annotations (or, with use_events = TRUE, between
@@ -46,7 +44,7 @@ eeg_obj$annotations is a data frame with columns:
 onset       - start time in seconds from the beginning of the recording
 duration    - length in seconds
 description - reason, e.g. "BAD_muscle", "BAD_flat", "BAD_peak",
-"BAD_NAN", "BAD_break" (mirrors MNE's Annotations.description)
+"BAD_NAN", "BAD_break"
 channel     - channel name, if the row is channel-specific (only
 annotate_nan() produces these); NA otherwise
 

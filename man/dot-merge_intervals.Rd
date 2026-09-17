@@ -16,6 +16,5 @@ A 2-column numeric matrix of merged, non-overlapping intervals.
 \description{
 Sweeps \code{intervals} (already sorted by start) left to right, merging
 any interval that overlaps or touches the previous merged interval.
-Ported from the interval-merging loop inside MNE's \code{annotate_break()}.
 }
 \keyword{internal}

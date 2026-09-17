@@ -14,7 +14,7 @@
 #'   - Component labelling helpers (correlation with EOG/ECG channels)
 #'   - Reconstruction of clean data after component exclusion
 #'
-#' Design mirrors mne.preprocessing.ICA: the object returned by new_ica()
+#' Follows a fit/transform estimator design: the object returned by new_ica()
 #' stores the requested *parameters* immediately, while data-derived
 #' *fitted attributes* (named with a trailing underscore, e.g.
 #' n_components_, mixing_matrix_) stay NULL until fit_ica() runs. The
@@ -25,8 +25,9 @@
 #'
 #' Author: Christos Dalamarinis
 #' Date: July 2026
-#' Status: pre-whitening fixed to pool std by channel type (matches MNE's
-#'         _compute_pre_whitener()). PCA whitening still to be ported
+#' Status: pre-whitening fixed to pool std by channel type (one shared
+#'         standard deviation per channel type, not per individual channel).
+#'         PCA whitening still to be ported
 #'         natively (plain SVD, no external dependency needed). The FastICA
 #'         rotation step itself remains the one open question - port
 #'         sklearn's _fastica.py line-by-line, or call it via reticulate.
@@ -36,8 +37,8 @@
 #' Create a New ICA Object
 #'
 #' Creates an unfitted \code{eeg_ica} object that stores the configuration
-#' for an Independent Component Analysis decomposition, following the design
-#' of \code{mne.preprocessing.ICA}. Parameters are available immediately;
+#' for an Independent Component Analysis decomposition, following a
+#' fit/transform estimator design. Parameters are available immediately;
 #' data-derived attributes (named with a trailing underscore, e.g.
 #' \code{n_components_}, \code{mixing_matrix_}) stay \code{NULL} until the
 #' object is fit to data (via a future \code{fit_ica()}).
@@ -106,7 +107,7 @@
 #'  }
 #'
 #' @details
-#' Following scikit-learn/MNE convention, attribute names ending in a
+#' Following scikit-learn's convention, attribute names ending in a
 #' trailing underscore (\code{n_components_}, \code{mixing_matrix_}, ...)
 #' signify that the attribute is derived from data and only exists once the
 #' object has been fit. Before fitting, these fields are present but
@@ -318,12 +319,10 @@ print.eeg_ica <- function(x, ...) {
 # The step run before PCA/ICA: every channel of a given *type* is scaled by
 # one shared standard deviation (pooled across all channels of that type),
 # so that channel types with naturally larger amplitude (e.g. EOG vs EEG)
-# don't dominate the decomposition purely because of scale. Mirrors
-# ICA._compute_pre_whitener() / ICA._pre_whiten() in python/ica/ica.py
-# (python/ica/ica.py:841-857), but only the default (noise_cov = NULL)
-# branch, which is self-contained in ica.py. The noise_cov branch there
-# calls compute_whitener() from cov.py (a full noise-covariance
-# eigendecomposition) - that path is not implemented here yet.
+# don't dominate the decomposition purely because of scale. Only the
+# default (noise_cov = NULL) branch is implemented here; a non-NULL
+# noise_cov would instead require a full noise-covariance eigendecomposition
+# to build a proper whitening matrix - that path is not implemented yet.
 #
 # ----------------------------------------------------------------------------
 # .population_sd() - population standard deviation (numpy's ddof = 0)
@@ -331,9 +330,9 @@ print.eeg_ica <- function(x, ...) {
 #' Population standard deviation, matching numpy's default ddof
 #'
 #' R's \code{sd()} divides by \code{n - 1} (Bessel's correction). numpy's
-#' \code{np.std()} - what \code{ICA._compute_pre_whitener()} actually calls
-#' - divides by \code{n} (\code{ddof = 0}). Use this instead of \code{sd()}
-#' anywhere exact numerical parity with the MNE reference matters.
+#' \code{np.std()} divides by \code{n} (\code{ddof = 0}) instead. Use this
+#' instead of \code{sd()} anywhere exact numerical parity with that
+#' population-variance convention matters.
 #'
 #' @param x Numeric vector or matrix (flattened before computing, matching
 #'   numpy's default \code{axis = None} behavior).
@@ -352,17 +351,16 @@ print.eeg_ica <- function(x, ...) {
 #'
 #' Computes the pre-whitening scale used to z-standardize data before PCA
 #' whitening. This is the default (\code{noise_cov = NULL}) pre-whitening
-#' path from \code{mne.preprocessing.ICA}: MNE pools a single standard
-#' deviation across *all* channels of a given type - e.g. every EEG channel
-#' shares one scale factor - rather than scaling each channel independently
-#' (see \code{ICA._compute_pre_whitener()}, \code{python/ica/ica.py:841-857}).
+#' path: pools a single standard deviation across *all* channels of a given
+#' type - e.g. every EEG channel shares one scale factor - rather than
+#' scaling each channel independently.
 #'
 #' @param data Numeric matrix, channels x time points (same layout as
 #'   \code{eeg$data}). Must already be restricted to the channels intended
 #'   for ICA fitting - e.g. the BioSemi status channel excluded - since that
-#'   selection is a \code{fit_ica()}-level concern upstream of this helper,
-#'   mirroring how MNE applies \code{picks} before \code{_fit()} ever sees
-#'   the data.
+#'   selection is a \code{fit_ica()}-level concern upstream of this helper:
+#'   channel picks are always applied before this function ever sees the
+#'   data.
 #' @param channels Character vector of channel names, \code{length(channels)
 #'   == nrow(data)}. Used only to name the returned vector.
 #' @param channel_types Character vector, same length and order as
@@ -433,12 +431,9 @@ print.eeg_ica <- function(x, ...) {
 # ============================================================================
 #
 # The full-rank PCA step run on the pre-whitened data before the ICA
-# rotation itself. Mirrors the
-#   pca = _PCA(n_components=self._max_pca_components, whiten=True)
-#   data = pca.fit_transform(data.T)
-# lines in ICA._fit() (python/ica/ica.py:900-901) - specifically sklearn's
-# "covariance_eigh" solver path (eigendecompose the channel x channel
-# covariance matrix), which is what PCA(svd_solver = "auto") resolves to
+# rotation itself. Implements sklearn's "covariance_eigh" solver path
+# (eigendecompose the channel x channel covariance matrix) with
+# whiten = TRUE, which is what PCA(svd_solver = "auto") resolves to
 # whenever n_channels <= 1000 and n_samples >= 10 * n_channels - true for
 # essentially any real EEG recording (tens of thousands of samples against
 # a few dozen to a few hundred channels). The "full"/"randomized"/"arpack"
@@ -452,19 +447,18 @@ print.eeg_ica <- function(x, ...) {
 #'
 #' Mean-centers \code{data}, eigendecomposes its channel x channel covariance
 #' matrix, and rescales each principal-component score to unit variance -
-#' i.e. \code{whiten = TRUE} in \code{sklearn.decomposition.PCA}, as used by
-#' \code{ICA._fit()} at \code{python/ica/ica.py:900}. Always returns the
-#' *full* set of components; selecting how many of them (\code{n_components_})
-#' go on to the ICA rotation step is a separate, later concern, mirroring how
-#' MNE fits PCA at \code{max_pca_components} and only slices
-#' \code{data[:, sel]} afterward. Because of that, trailing components whose
-#' eigenvalue is (numerically) zero - e.g. the one rank-deficient dimension
-#' introduced by average referencing - will legitimately contain \code{Inf}/
-#' \code{NaN} in \code{data} after the unit-variance division; this matches
-#' what MNE's own full PCA output looks like before its component-selection
-#' step trims those dimensions away, and is why \code{new_ica()} defaults to
-#' resolving \code{n_components = 0.999999} rather than requesting the full
-#' rank.
+#' i.e. \code{whiten = TRUE} in \code{sklearn.decomposition.PCA}. Always
+#' returns the *full* set of components; selecting how many of them
+#' (\code{n_components_}) go on to the ICA rotation step is a separate,
+#' later concern handled downstream, by fitting PCA at the full component
+#' count and only slicing the top \code{n_components_} afterward. Because
+#' of that, trailing components whose eigenvalue is (numerically) zero -
+#' e.g. the one rank-deficient dimension introduced by average referencing
+#' - will legitimately contain \code{Inf}/\code{NaN} in \code{data} after
+#' the unit-variance division; this is expected before the later
+#' component-selection step trims those dimensions away, and is why
+#' \code{new_ica()} defaults to resolving \code{n_components = 0.999999}
+#' rather than requesting the full rank.
 #'
 #' @param data Numeric matrix, channels x time points, already pre-whitened
 #'   (see \code{.compute_pre_whitener()} / \code{.pre_whiten()}).
@@ -969,9 +963,9 @@ print.eeg_ica <- function(x, ...) {
 # and an eeg object's data, runs them through pre-whitening -> PCA whitening
 # -> n_components resolution -> the FastICA rotation (.ica_par()/.ica_def()),
 # and writes the *results* back onto the eeg_ica object's fitted (trailing
-# underscore) fields. Mirrors mne.preprocessing.ICA.fit(raw, picks=...), with
-# one deliberate difference: R has no in-place mutation, so - unlike MNE,
-# which mutates self and returns it - this returns a new, now-fitted
+# underscore) fields. Follows the fit/transform estimator pattern, with one
+# deliberate R-specific difference: R has no in-place mutation, so rather
+# than mutating an object and returning it, this returns a new, now-fitted
 # eeg_ica object; the caller must reassign it (ica <- fit_ica(ica, eeg)).
 #
 # ----------------------------------------------------------------------------
@@ -1037,8 +1031,7 @@ print.eeg_ica <- function(x, ...) {
 #'   covered by a \code{"BAD_*"} row of \code{eeg$annotations} (see
 #'   R/annotations.R) are dropped from the data before fitting, so transient
 #'   artifacts (movement, muscle bursts, amplifier dropouts) don't get baked
-#'   into the components - mirrors MNE's
-#'   \code{ICA.fit(reject_by_annotation = TRUE)}. A row's \code{channel}
+#'   into the components. A row's \code{channel}
 #'   column is ignored: ICA needs the same time columns across every picked
 #'   channel, so even a channel-specific annotation (e.g.
 #'   \code{\link{annotate_nan}}'s per-channel rows) drops that stretch for
@@ -1186,14 +1179,13 @@ fit_ica <- function(ica, eeg, picks = NULL, reject_by_annotation = TRUE) {
 #
 # Applies an already-fitted eeg_ica object's transform (pre-whiten -> PCA
 # project -> unmix) to eeg data, producing the actual independent component
-# time-courses. Mirrors mne.preprocessing.ICA.get_sources(inst): reuses the
-# *fitted* pre_whitener_ / pca_mean_ / pca_components_ /
-# pca_explained_variance_ / unmixing_matrix_ rather than recomputing anything
-# from scratch, so this is always a transform of a fixed decomposition -
-# never a new fit. Because of that, eeg does not have to be the same object
-# fit_ica() was called on, as long as it has channels matching
-# ica$ch_names - mirrors MNE, which lets get_sources() run on a different
-# Raw than the one ICA was fit on.
+# time-courses. Reuses the *fitted* pre_whitener_ / pca_mean_ /
+# pca_components_ / pca_explained_variance_ / unmixing_matrix_ rather than
+# recomputing anything from scratch, so this is always a transform of a
+# fixed decomposition - never a new fit. Because of that, eeg does not
+# have to be the same object fit_ica() was called on, as long as it has
+# channels matching ica$ch_names - the transform only depends on the
+# fitted attributes, not on which recording originally produced them.
 #
 # ----------------------------------------------------------------------------
 # get_sources() - compute independent component time-courses
@@ -1550,7 +1542,7 @@ plot_ica_sources <- function(ica,
 # Spatial inspection tool: for one component, computes "how much does each
 # electrode contribute to this component" - one number per channel - so it
 # can be handed straight to the existing plot_topography() (R/topography.R)
-# for a scalp heatmap, exactly like MNE's ica.plot_components().
+# for a scalp heatmap.
 #
 # Derivation: fit_ica()/get_sources() computes, forward,
 #   sources = unmixing_matrix_ %*% D %*% pca_components_ %*% (data / pre_whitener_ - pca_mean_)
@@ -1694,8 +1686,9 @@ plot_ica_topography <- function(ica, eeg, component, montage = NULL, ...) {
 #     variance: sum(topo_k^2) * var(source_k) / total_data_variance. This is
 #     not the same as ranking by whitened-space variance (which is close to
 #     uniform across components by construction, since the ICA rotation is
-#     orthonormal on unit-variance-whitened data) - it is the same idea MNE
-#     uses to rank components by real-world importance. Because ICA sources
+#     orthonormal on unit-variance-whitened data) - this is what gives a
+#     real-world-importance ordering across components, rather than an
+#     arbitrary one. Because ICA sources
 #     are (at least pairwise) decorrelated by construction, these ratios sum
 #     to exactly 1 across all components whenever n_components_ == the
 #     number of channels used to fit (verified empirically for both
@@ -1903,7 +1896,7 @@ set_exclude <- function(ica, components) {
 # pinv-by-construction logic verified for get_component_topography()'s
 # round-trip test (reconstructing with nothing excluded reproduces the
 # original data to floating-point precision when n_components_ equals the
-# number of channels fit on). Mirrors mne.preprocessing.ICA.apply(raw).
+# number of channels fit on).
 #
 # ----------------------------------------------------------------------------
 # apply_ica() - reconstruct eeg data with ica$exclude removed
@@ -2009,10 +2002,9 @@ apply_ica <- function(ica, eeg) {
 # ============================================================================
 #
 # Lets the user preview what apply_ica() would do to a channel *before*
-# actually calling it (matching open_dvm's / MNE's ica.plot_overlay()
-# workflow: pick components, see the effect, only then commit). Internally
-# just calls apply_ica() and overlays the original and cleaned traces for
-# one channel - no reconstruction logic is duplicated here.
+# actually calling it - pick components, see the effect, only then commit.
+# Internally just calls apply_ica() and overlays the original and cleaned
+# traces for one channel - no reconstruction logic is duplicated here.
 #
 # ----------------------------------------------------------------------------
 # plot_ica_overlay() - preview the before/after effect of ica$exclude

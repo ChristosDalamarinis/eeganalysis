@@ -37,7 +37,7 @@ Version 0.0.0.9000 — under active development. Currently reads BioSemi `.bdf` 
 | Bad-channel detection & repair | `find_bad_channels()`, `interpolate_bads()` | ✅ |
 | Time-range annotations (bad stretches) | `annotate_amplitude()`, `annotate_muscle()`, `annotate_nan()`, `annotate_break()` | ✅ |
 | Re-referencing | `eeg_rereference()` | ✅ |
-| ICA artifact removal | `fit_ica()`, `plot_ica_sources()`, `apply_ica()` | ✅ |
+| ICA artifact removal (fit, auto-detect, exclude, apply) | `fit_ica()`, `find_bads_eog()`, `find_bads_ecg()`, `find_bads_muscle()`, `apply_ica()` | ✅ |
 | Epoching & visualization | `epoch_eeg()`, `plot_epochs()` | ✅ |
 | Spectral analysis | `eeg_fft()`, `eeg_psd_welch()`, `eeg_band_power()` | ✅ |
 | Topography & montage | `plot_topography()`, `create_montage()` | ✅ |
@@ -179,6 +179,11 @@ eeganalysis
 │   │   ├── apply_ica()                      ← Reconstruct data without excluded components
 │   │   ├── plot_ica_overlay()               ← Before/after overlay for a channel
 │   │   └── print.eeg_ica()                  ← Display ICA object nicely
+│   │
+│   ├── ica_detect.R                         ← ICA Phase 2: automatic bad-component detection
+│   │   ├── find_bads_eog()                  ← Flag eye-movement components (EOG correlation)
+│   │   ├── find_bads_ecg()                  ← Flag heartbeat components (ECG correlation)
+│   │   └── find_bads_muscle()               ← Flag muscle components (spectral slope + topography)
 │   │
 │   ├── montage.R                            ← Electrode montage handling
 │   │   ├── new_montage()                    ← Create a montage object

@@ -40,8 +40,7 @@ in place, the caller must reassign the result
 }
 \description{
 Flags components whose own shape looks like muscle activity - no
-reference channel needed. Ported from \code{ica.py:find_bads_muscle}
-(1934-2078) with its exact constants, combining up to three criteria
+reference channel needed. Combines up to three criteria
 (each squashed through a logistic curve into \code{[0, 1]}, then
 multiplied together):
 \enumerate{
@@ -61,8 +60,8 @@ centered at a smoothness value of 300.
 If fewer than 3 of the fitted channels (\code{ica$ch_names}) have a
 montage position, only criterion 1 is used and a warning is issued -
 \code{channel_types == "external"} channels never have montage positions
-in this package by design (see \code{\link{create_montage}}), so an
-MNE-strict "every channel needs a position" check would trigger this
+in this package by design (see \code{\link{create_montage}}), so
+requiring every fitted channel to have a position would trigger this
 fallback far more often than useful; instead, criteria 2-3 use whichever
 subset of \code{ica$ch_names} does have one. The combined threshold is
 raised to the power of however many criteria were actually used, so the
@@ -73,20 +72,20 @@ default \code{0.5} behaves consistently whether 1 or 3 are active.
 (see file header); call \code{\link{set_exclude}} yourself to actually
 remove anything.
 
-Two deliberate, disclosed divergences from MNE, in the spirit of the
-existing \code{.compute_pre_whitener()} \code{noise_cov} precedent ("match
-exactly or knowingly diverge and document why"):
+Two deliberate, disclosed simplifications, in the spirit of the existing
+\code{.compute_pre_whitener()} \code{noise_cov} precedent ("match exactly
+or knowingly diverge and document why"):
 \enumerate{
 \item The spectral-slope criterion uses a single whole-segment
-periodogram (\code{\link{.fft_one_sided}}, R/fourier.R), not MNE's
-Welch-averaged \code{compute_psd()} - reasonable since only a robust
-log-log \emph{slope} is needed, not a precisely calibrated spectrum
-(a constant scale factor shifts \code{log10(power)} but never changes
+periodogram (\code{\link{.fft_one_sided}}, R/fourier.R) rather than a
+Welch-averaged spectrum - reasonable since only a robust log-log
+\emph{slope} is needed, not a precisely calibrated spectrum (a
+constant scale factor shifts \code{log10(power)} but never changes
 the fitted slope).
-\item Criteria 2-3 use raw 3D \code{(x, y, z)} montage positions, not
-MNE's 2D azimuthal-equidistant topomap projection - captures the same
-peripherality/smoothness concept without porting MNE's 2D projection
-algorithm.
+\item Criteria 2-3 use raw 3D \code{(x, y, z)} montage positions rather
+than a 2D azimuthal-equidistant topomap projection - captures the
+same peripherality/smoothness concept without needing that
+projection step.
 }
 }
 \examples{

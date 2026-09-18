@@ -51,7 +51,7 @@ does not mutate arguments in place, the caller must reassign the result
 \description{
 Correlates every independent component against an EOG channel (or every
 matching channel, if more than one) and flags outliers as candidate eye-
-movement artifacts. Ported from \code{ica.py:find_bads_eog} (2081-2172).
+movement artifacts.
 \strong{Only writes to \code{ica$labels_}} - never to \code{ica$exclude}
 (see file header); call \code{\link{set_exclude}} yourself to actually
 remove anything.

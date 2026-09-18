@@ -11,15 +11,13 @@
 #'
 #' "Detect, don't decide": every function here only ever writes to
 #' ica$labels_ (see new_ica(), R/ica1.R) - never to ica$exclude. Deciding
-#' what actually gets removed stays a separate, explicit set_exclude() call,
-#' mirroring MNE's own contract (ICA.find_bads_*() populates ica.labels_ but
-#' leaves ica.exclude untouched unless the caller extends it themselves).
+#' what actually gets removed stays a separate, explicit set_exclude() call -
+#' a detector populates ica$labels_ but leaves ica$exclude untouched unless
+#' the caller extends it themselves.
 #'
-#' Ported from the vendored MNE source (python/ica/bads.py, python/ica/eog.py,
-#' python/ica/ecg.py, python/ica/ctps_.py, python/ica/ica.py lines 1385-2172
-#' and 1934-2078), not just the prose summary in
-#' notes/mne-ica-pipeline-reference.md, so constants and merge logic match
-#' exactly.
+#' Ported from the reference implementation's actual source, not just the
+#' prose summary in notes/mne-ica-pipeline-reference.md, so constants and
+#' merge logic match exactly.
 #'
 #' Scope (see the "R status" table in notes/mne-ica-pipeline-reference.md):
 #' find_bads_eog(), find_bads_ecg() (both method = "correlation" and
@@ -43,8 +41,8 @@
 # ----------------------------------------------------------------------------
 #' Find Outliers via Iterated Z-Scoring (internal)
 #'
-#' Ported from \code{python/ica/bads.py:_find_outliers} (the shared decision
-#' rule behind MNE's EOG/ECG-correlation/MEG-reference detectors). Z-scores
+#' The shared decision rule behind the EOG/ECG-correlation/MEG-reference
+#' detectors. Z-scores
 #' the elements not yet flagged, flags anything with \code{|z| > threshold}
 #' (or one-sided, via \code{tail}), then repeats - excluding already-flagged
 #' elements from the z-score computation each time - since one huge outlier
@@ -53,7 +51,8 @@
 #'
 #' Uses \code{\link{.population_sd}} (ddof = 0), matching
 #' \code{scipy.stats.zscore}'s default exactly - R's own \code{sd()}/
-#' \code{scale()} use ddof = 1 and would silently diverge from MNE's numbers.
+#' \code{scale()} use ddof = 1 and would silently diverge from the reference
+#' implementation's numbers.
 #'
 #' @param scores Numeric vector of per-component scores.
 #' @param threshold Numeric. Flag \code{|z| > threshold} (or one-sided, per
@@ -102,9 +101,8 @@
 # ----------------------------------------------------------------------------
 #' Resolve Reference Channel Name(s) for Artifact Detection (internal)
 #'
-#' MNE auto-detects EOG/ECG channels via a dedicated channel \emph{type}
-#' (\code{eog}/\code{ecg}) it stores in its own info structure
-#' (\code{_get_eog_channel_index()}, \code{python/ica/eog.py:186}). This
+#' Some EEG toolchains auto-detect EOG/ECG channels via a dedicated channel
+#' \emph{type} stored in the recording's own metadata. This
 #' package has no such sub-type - \code{eeg_obj$channel_types} only
 #' distinguishes \code{"eeg"}/\code{"external"}/\code{"status"} (see
 #' \code{classify_channels()}, R/eeg_class.R) - the specific physiological
@@ -152,10 +150,9 @@
 # ----------------------------------------------------------------------------
 #' Score Every Independent Component Against a Reference Signal (internal)
 #'
-#' Ported from \code{ica.py:score_sources} (1385) + \code{_band_pass_filter},
-#' restricted to Pearson correlation against a fixed target (MNE's more
-#' general \code{score_func}/no-target-skewness path is not needed by any
-#' detector in this file). Band-pass filters every IC time-course and the
+#' Restricted to Pearson correlation against a fixed target (a more general
+#' score-function/no-target-skewness path is not needed by any detector in
+#' this file). Band-pass filters every IC time-course and the
 #' target signal to \code{[l_freq, h_freq]} via the existing
 #' \code{\link{.fir_filter_vector}} (R/annotations.R - already used by
 #' \code{\link{annotate_muscle}} for the same kind of per-vector bandpass),
@@ -191,7 +188,7 @@
 # ----------------------------------------------------------------------------
 #' Detect Components Correlated With One or More Reference Channels (internal)
 #'
-#' Ported from \code{ica.py:_find_bads_ch} (1503-1576) - the shared machinery
+#' The shared machinery
 #' behind both \code{\link{find_bads_eog}} and
 #' \code{\link{find_bads_ecg}(method = "correlation")}. For each channel in
 #' \code{chs}: scores every component (\code{\link{.score_sources}}), flags
@@ -201,8 +198,8 @@
 #' \code{ica$labels_[["<prefix>/<i>/<ch>"]]}. Results across every channel in
 #' \code{chs} are then merged: sorted by \strong{descending
 #' \code{abs(score)}}, deduplicated keeping the first (highest-scoring)
-#' occurrence of a repeated component - exactly reproducing the Python merge
-#' loop at lines 1561-1574 - and written to \code{ica$labels_[[prefix]]}.
+#' occurrence of a repeated component - and written to
+#' \code{ica$labels_[[prefix]]}.
 #' Never touches \code{ica$exclude} (see file header).
 #'
 #' @param ica A fitted \code{eeg_ica} object.
@@ -260,7 +257,7 @@
 # ----------------------------------------------------------------------------
 #' Detect QRS (Heartbeat) Peaks in an ECG Channel (internal)
 #'
-#' Ported from \code{python/ica/ecg.py:qrs_detector()} (18-154). Slides a
+#' Slides a
 #' half-second window over \code{abs(ecg)}; whenever a window's first sample
 #' exceeds an adaptive threshold, records the window's peak position, keeping
 #' only candidates whose window RMS is below \code{mean(rms) + levels *
@@ -268,10 +265,9 @@
 #' ddof = 0 parity) and whose in-window threshold-crossing count is below
 #' \code{n_thresh}. Assumes \code{ecg} is already appropriately band-pass
 #' filtered by the caller (see \code{\link{find_bads_ecg}}'s
-#' \code{method = "ctps"} branch) - unlike the vendored source, this function
-#' takes no \code{l_freq}/\code{h_freq} of its own, since in the one call
-#' path that reaches it, filtering always happens upstream and its own
-#' filtering step is always disabled.
+#' \code{method = "ctps"} branch) - this function takes no \code{l_freq}/
+#' \code{h_freq} of its own, since in the one call path that reaches it,
+#' filtering always happens upstream instead.
 #'
 #' When \code{thresh_value = "auto"} (default), tries 16 threshold
 #' multipliers (\code{seq(0.30, 1.05, by = 0.05)}) and keeps whichever run's
@@ -347,8 +343,7 @@
     if (length(rms) == 0) {
       # No candidates at all for this threshold - a dummy entry that can
       # never pass the RMS/crossing checks below, so this run contributes
-      # no events (avoids mean()/sd() of an empty vector, matches the
-      # vendored source's equivalent empty-safe fallback).
+      # no events (avoids mean()/sd() of an empty vector).
       rms      <- 0
       time_pos <- 0L
       numcross <- n_thresh
@@ -385,7 +380,6 @@
 #' Sibling of \code{\link{.hilbert_envelope}} (R/annotations.R) - identical
 #' analytic-signal FFT construction, but returns the normalized
 #' \emph{phase} (\code{[0, 1)}, one full cycle) instead of the magnitude.
-#' Matches \code{python/ica/ctps_.py:_compute_normalized_phase()}.
 #'
 #' @param x Numeric vector.
 #' @return Numeric vector, same length as \code{x}, values in \code{[0, 1)}.
@@ -414,7 +408,7 @@
 # ----------------------------------------------------------------------------
 #' Kuiper's Statistic for Each Column of a Phase Matrix (internal)
 #'
-#' Ported from \code{python/ica/ctps_.py:kuiper()} (82-118). For each column
+#' For each column
 #' of \code{phase_matrix} (one within-epoch time point), sorts the epoch
 #' values ascending and compares them against the ideal uniform-CDF
 #' reference points, returning the Kuiper statistic \code{d1 + d2}.
@@ -446,11 +440,10 @@
 # ----------------------------------------------------------------------------
 #' Normalized Significance of a Kuiper Statistic (internal)
 #'
-#' Ported from \code{python/ica/ctps_.py:_prob_kuiper()} (121-167) - the
-#' asymptotic significance formula (Stephens 1970; Kuiper 1962), evaluated as
-#' a 100-term series per \code{d} value. Uses a numerically stable
-#' "subtract the max exponent before exponentiating" reduction (the same
-#' role \code{scipy.special.logsumexp} plays in the source), written out
+#' The asymptotic significance formula (Stephens 1970; Kuiper 1962),
+#' evaluated as a 100-term series per \code{d} value. Uses a numerically
+#' stable "subtract the max exponent before exponentiating" reduction (the
+#' same role \code{scipy.special.logsumexp} would play), written out
 #' directly here since this is its only call site - not worth a
 #' general-purpose \code{logsumexp()} utility for one use.
 #'
@@ -491,15 +484,15 @@
 # ----------------------------------------------------------------------------
 #' Automatic Threshold for CTPS Detection (internal)
 #'
-#' Ported from \code{ica.py:_get_ctps_threshold()} (1578-1600). Searches 99
+#' Searches 99
 #' candidate Kuiper-index values for whichever one's implied significance is
 #' closest to \code{10^-pk_threshold} - what
 #' \code{find_bads_ecg(threshold = "auto", method = "ctps")} resolves to.
 #'
 #' @param sfreq Numeric. Sampling rate in Hz.
 #' @param pk_threshold Numeric. Target significance exponent. Default:
-#'   \code{20} (i.e. target \code{1e-20}), matching MNE's own default -
-#'   deliberately strict, since CTPS is a trial-by-trial test and false
+#'   \code{20} (i.e. target \code{1e-20}) - deliberately strict, since CTPS
+#'   is a trial-by-trial test and false
 #'   positives compound across many components.
 #' @return A single numeric value in \code{(0, 1)}.
 #' @keywords internal
@@ -521,7 +514,7 @@
 #'
 #' Correlates every independent component against an EOG channel (or every
 #' matching channel, if more than one) and flags outliers as candidate eye-
-#' movement artifacts. Ported from \code{ica.py:find_bads_eog} (2081-2172).
+#' movement artifacts.
 #' \strong{Only writes to \code{ica$labels_}} - never to \code{ica$exclude}
 #' (see file header); call \code{\link{set_exclude}} yourself to actually
 #' remove anything.
@@ -601,8 +594,7 @@ find_bads_eog <- function(ica, eeg, ch_name = NULL, threshold = "auto",
 #'
 #' Correlates every independent component against an ECG channel (or every
 #' matching channel, if more than one) and flags outliers as candidate
-#' heartbeat artifacts. Ported from \code{ica.py:find_bads_ecg}'s
-#' \code{method = "correlation"} branch (1603-1760). \strong{Only writes to
+#' heartbeat artifacts. \strong{Only writes to
 #' \code{ica$labels_}} - never to \code{ica$exclude} (see file header); call
 #' \code{\link{set_exclude}} yourself to actually remove anything.
 #'
@@ -621,23 +613,20 @@ find_bads_eog <- function(ica, eeg, ch_name = NULL, threshold = "auto",
 #' @param l_freq,h_freq Numeric. Band-pass edges in Hz applied to both the IC
 #'   time-courses and the ECG channel before correlating. Default:
 #'   \code{c(8, 16)} - the heartbeat band.
-#' @param method \code{"correlation"} (default) or \code{"ctps"} - MNE's
-#'   actual default, and a meaningfully more powerful phase-locking method:
-#'   instead of asking whether a component roughly moves with the ECG
-#'   channel, it asks whether the component's instantaneous phase lands in
-#'   nearly the same spot, every single heartbeat, reliably. Ported from
-#'   \code{ica.py}'s ctps branch (1707-1741) plus \code{python/ica/ecg.py}'s
-#'   \code{qrs_detector()} and \code{python/ica/ctps_.py} in full - see
-#'   \code{\link{.qrs_detector}}, \code{\link{.hilbert_phase}},
-#'   \code{\link{.kuiper_test}}, \code{\link{.prob_kuiper}},
-#'   \code{\link{.get_ctps_threshold}}. \code{threshold = "auto"} resolves
-#'   via \code{\link{.get_ctps_threshold}} instead of the correlation path's
-#'   \code{3.0}/\code{0.9}. \code{l_freq}/\code{h_freq} only filter the ECG
-#'   channel for heartbeat detection here - unlike the correlation path, the
-#'   IC epochs analyzed are never filtered (matches the vendored source's own
-#'   assumption that "the sources are already appropriately filtered" before
-#'   \code{ctps()} ever sees them). \code{measure} has no effect when
-#'   \code{method = "ctps"} (still validated, just unused - matches MNE).
+#' @param method \code{"correlation"} (default) or \code{"ctps"} - a
+#'   meaningfully more powerful phase-locking method: instead of asking
+#'   whether a component roughly moves with the ECG channel, it asks
+#'   whether the component's instantaneous phase lands in nearly the same
+#'   spot, every single heartbeat, reliably. See \code{\link{.qrs_detector}},
+#'   \code{\link{.hilbert_phase}}, \code{\link{.kuiper_test}},
+#'   \code{\link{.prob_kuiper}}, \code{\link{.get_ctps_threshold}}.
+#'   \code{threshold = "auto"} resolves via \code{\link{.get_ctps_threshold}}
+#'   instead of the correlation path's \code{3.0}/\code{0.9}.
+#'   \code{l_freq}/\code{h_freq} only filter the ECG channel for heartbeat
+#'   detection here - unlike the correlation path, the IC epochs analyzed
+#'   are never filtered (the phase/Kuiper-test step assumes the sources it
+#'   receives are already appropriately filtered). \code{measure} has no
+#'   effect when \code{method = "ctps"} (still validated, just unused).
 #' @param measure \code{"zscore"} (default) - iterative adaptive z-scoring of
 #'   the correlations (\code{\link{.find_outliers}}) - or
 #'   \code{"correlation"} - a direct threshold on \code{abs(correlation)}.
@@ -648,8 +637,8 @@ find_bads_eog <- function(ica, eeg, ch_name = NULL, threshold = "auto",
 #'   \code{method = "correlation"}, per-channel detail is also stored at
 #'   \code{labels_[["ecg/<i>/<ch_name>"]]} (one or more reference channels);
 #'   for \code{method = "ctps"} (always exactly one ECG channel), at
-#'   \code{labels_[["ecg/<ch_name>"]]} instead (matches MNE's own naming in
-#'   each path). Since R does not mutate arguments in place, the caller must
+#'   \code{labels_[["ecg/<ch_name>"]]} instead. Since R does not mutate
+#'   arguments in place, the caller must
 #'   reassign the result (\code{ica <- find_bads_ecg(ica, eeg)}).
 #'
 #' @examples
@@ -766,8 +755,7 @@ find_bads_ecg <- function(ica, eeg, ch_name = NULL, threshold = "auto",
 #' Detect Muscle (EMG) Related Components
 #'
 #' Flags components whose own shape looks like muscle activity - no
-#' reference channel needed. Ported from \code{ica.py:find_bads_muscle}
-#' (1934-2078) with its exact constants, combining up to three criteria
+#' reference channel needed. Combines up to three criteria
 #' (each squashed through a logistic curve into \code{[0, 1]}, then
 #' multiplied together):
 #' \enumerate{
@@ -787,8 +775,8 @@ find_bads_ecg <- function(ica, eeg, ch_name = NULL, threshold = "auto",
 #' If fewer than 3 of the fitted channels (\code{ica$ch_names}) have a
 #' montage position, only criterion 1 is used and a warning is issued -
 #' \code{channel_types == "external"} channels never have montage positions
-#' in this package by design (see \code{\link{create_montage}}), so an
-#' MNE-strict "every channel needs a position" check would trigger this
+#' in this package by design (see \code{\link{create_montage}}), so
+#' requiring every fitted channel to have a position would trigger this
 #' fallback far more often than useful; instead, criteria 2-3 use whichever
 #' subset of \code{ica$ch_names} does have one. The combined threshold is
 #' raised to the power of however many criteria were actually used, so the
@@ -816,20 +804,20 @@ find_bads_ecg <- function(ica, eeg, ch_name = NULL, threshold = "auto",
 #'   (\code{ica <- find_bads_muscle(ica, eeg)}).
 #'
 #' @details
-#' Two deliberate, disclosed divergences from MNE, in the spirit of the
-#' existing \code{.compute_pre_whitener()} \code{noise_cov} precedent ("match
-#' exactly or knowingly diverge and document why"):
+#' Two deliberate, disclosed simplifications, in the spirit of the existing
+#' \code{.compute_pre_whitener()} \code{noise_cov} precedent ("match exactly
+#' or knowingly diverge and document why"):
 #' \enumerate{
 #'   \item The spectral-slope criterion uses a single whole-segment
-#'     periodogram (\code{\link{.fft_one_sided}}, R/fourier.R), not MNE's
-#'     Welch-averaged \code{compute_psd()} - reasonable since only a robust
-#'     log-log \emph{slope} is needed, not a precisely calibrated spectrum
-#'     (a constant scale factor shifts \code{log10(power)} but never changes
+#'     periodogram (\code{\link{.fft_one_sided}}, R/fourier.R) rather than a
+#'     Welch-averaged spectrum - reasonable since only a robust log-log
+#'     \emph{slope} is needed, not a precisely calibrated spectrum (a
+#'     constant scale factor shifts \code{log10(power)} but never changes
 #'     the fitted slope).
-#'   \item Criteria 2-3 use raw 3D \code{(x, y, z)} montage positions, not
-#'     MNE's 2D azimuthal-equidistant topomap projection - captures the same
-#'     peripherality/smoothness concept without porting MNE's 2D projection
-#'     algorithm.
+#'   \item Criteria 2-3 use raw 3D \code{(x, y, z)} montage positions rather
+#'     than a 2D azimuthal-equidistant topomap projection - captures the
+#'     same peripherality/smoothness concept without needing that
+#'     projection step.
 #' }
 #'
 #' @examples
@@ -879,7 +867,7 @@ find_bads_muscle <- function(ica, eeg, threshold = 0.5, l_freq = 7, h_freq = 45,
   }, numeric(1))
 
   # Typical muscle slope ~ +0.15, non-muscle negative: logistic shift -0.5,
-  # slope 0.25, so -0.5 -> 0.5 and 0 -> 1 (matches ica.py:2013-2015 exactly).
+  # slope 0.25, so -0.5 -> 0.5 and 0 -> 1.
   slope_score <- 1 / (1 + exp(-((slopes + 0.5) / 0.25)))
 
   # ========== CRITERIA 2-3: NEED ELECTRODE POSITIONS ==========
@@ -908,13 +896,13 @@ find_bads_muscle <- function(ica, eeg, threshold = 0.5, l_freq = 7, h_freq = 45,
   comp_norm <- sweep(abs(comp_sub), 2, apply(abs(comp_sub), 2, max), FUN = "/")
 
   # Metric #2: distance from the centroid, weighted by each component's
-  # (normalized) loading at that electrode (matches ica.py:2033-2050).
+  # (normalized) loading at that electrode.
   dists <- sqrt(rowSums(pos^2))
   dists <- dists / max(dists)
   focus_dists <- as.vector(dists %*% comp_norm)
   focus_score <- 1 / (1 + exp(-((focus_dists - 0.65) / 0.1)))
 
-  # Metric #3: spatial smoothness (matches ica.py:2052-2063).
+  # Metric #3: spatial smoothness.
   geo_dist <- as.matrix(dist(pos))
   geo_dist <- 1 - (geo_dist / max(geo_dist))
 
@@ -926,7 +914,7 @@ find_bads_muscle <- function(ica, eeg, threshold = 0.5, l_freq = 7, h_freq = 45,
 
   smoothness_score <- 1 - 1 / (1 + exp(-((smoothnesses - 300) / 100)))
 
-  # ========== COMBINE (matches ica.py:2065-2077) ==========
+  # ========== COMBINE ==========
 
   scores <- slope_score * focus_score * smoothness_score
   ica$labels_[["muscle"]] <- which(scores > threshold^3)

@@ -16,6 +16,5 @@ Numeric vector, same length as \code{x}, values in \code{[0, 1)}.
 Sibling of \code{\link{.hilbert_envelope}} (R/annotations.R) - identical
 analytic-signal FFT construction, but returns the normalized
 \emph{phase} (\code{[0, 1)}, one full cycle) instead of the magnitude.
-Matches \code{python/ica/ctps_.py:_compute_normalized_phase()}.
 }
 \keyword{internal}

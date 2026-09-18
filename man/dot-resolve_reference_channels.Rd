@@ -21,9 +21,8 @@ among external channel names when \code{ch_name} is \code{NULL} (e.g.
 Character vector of resolved channel name(s), length >= 1.
 }
 \description{
-MNE auto-detects EOG/ECG channels via a dedicated channel \emph{type}
-(\code{eog}/\code{ecg}) it stores in its own info structure
-(\code{_get_eog_channel_index()}, \code{python/ica/eog.py:186}). This
+Some EEG toolchains auto-detect EOG/ECG channels via a dedicated channel
+\emph{type} stored in the recording's own metadata. This
 package has no such sub-type - \code{eeg_obj$channel_types} only
 distinguishes \code{"eeg"}/\code{"external"}/\code{"status"} (see
 \code{classify_channels()}, R/eeg_class.R) - the specific physiological

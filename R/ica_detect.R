@@ -921,3 +921,218 @@ find_bads_muscle <- function(ica, eeg, threshold = 0.5, l_freq = 7, h_freq = 45,
 
   ica
 }
+
+
+# ============================================================================
+#                    corrmap() - PUBLIC: CROSS-SUBJECT TEMPLATE MATCHING
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# .find_max_corrs() - match a template topography across every subject
+# ----------------------------------------------------------------------------
+#' Match a Template Topography Against Every Subject's Components (internal)
+#'
+#' The matching engine \code{\link{corrmap}} calls twice. Correlates
+#' \code{target} against every component's topography in every subject,
+#' selects the components clearing \code{threshold} in each subject, and
+#' builds a new averaged topography from the selection: sign-corrected
+#' (components correlating \emph{negatively} with \code{target} are flipped
+#' before averaging) and RMS-normalized (each selected topography divided by
+#' its own Frobenius norm first, so no single component's scale dominates
+#' the average).
+#'
+#' @param all_maps List of numeric matrices, one per subject, each
+#'   \code{n_components x n_channels} (see \code{\link{get_component_topography}}).
+#' @param target Numeric vector, length \code{n_channels} - the topography to
+#'   match against.
+#' @param threshold Numeric. If \code{<= 1}, components are selected by a
+#'   direct \code{abs(correlation) > threshold} test. If \code{> 1},
+#'   components are selected via iterative z-scoring
+#'   (\code{\link{.find_outliers}}) of the per-subject correlations instead.
+#' @return A list with \code{newtarget} (the averaged topography, or
+#'   \code{NULL} if nothing matched), \code{median_corr} (median
+#'   \code{abs(correlation)} among every selected component, \code{0} if
+#'   none), \code{sim_i_o} (\code{abs(correlation)} between \code{target} and
+#'   \code{newtarget}, \code{0} if none), and \code{subj_idx} (list, one
+#'   integer vector per subject, of that subject's selected component
+#'   indices - possibly empty).
+#' @keywords internal
+.find_max_corrs <- function(all_maps, target, threshold) {
+
+  all_corrs       <- lapply(all_maps, function(m) apply(m, 1, function(row) cor(target, row)))
+  abs_corrs       <- lapply(all_corrs, abs)
+  corr_polarities <- lapply(all_corrs, sign)
+
+  subj_idx <- lapply(abs_corrs, function(ac) {
+    if (threshold <= 1) {
+      which(ac > threshold)
+    } else {
+      .find_outliers(ac, threshold = threshold)
+    }
+  })
+
+  am <- unlist(mapply(function(ac, idx) ac[idx], abs_corrs, subj_idx, SIMPLIFY = FALSE))
+
+  if (length(am) == 0) {
+    return(list(newtarget = NULL, median_corr = 0, sim_i_o = 0, subj_idx = subj_idx))
+  }
+
+  median_corr <- stats::median(am)
+
+  newtarget <- Reduce(`+`, unlist(mapply(function(m, pols, idx) {
+    lapply(idx, function(i) m[i, ] * (pols[i] / sqrt(sum(m[i, ]^2))))
+  }, all_maps, corr_polarities, subj_idx, SIMPLIFY = FALSE), recursive = FALSE))
+  newtarget <- newtarget / length(am)
+
+  sim_i_o <- abs(cor(target, newtarget))
+
+  list(newtarget = newtarget, median_corr = median_corr, sim_i_o = sim_i_o,
+       subj_idx = subj_idx)
+}
+
+#' Find Similar Independent Components Across Subjects by Map Similarity
+#'
+#' Given a topography you've already manually confirmed as an artifact (e.g.
+#' "this is what a blink looks like" in one subject's fitted ICA), finds the
+#' best-matching component in every other subject's decomposition - so you
+#' confirm an artifact's shape once instead of visually re-inspecting every
+#' recording. Two-pass matching: the first pass finds, across a range of
+#' candidate thresholds, whichever produces an averaged map most similar to
+#' \code{target} itself; the second pass reruns the match using that
+#' averaged map instead of the raw \code{target}, keeping whichever
+#' threshold gives the highest median correlation - that run's selections
+#' are the final answer (\code{\link{.find_max_corrs}} implements both
+#' passes).
+#'
+#' Unlike every other detector in this file (which each take one \code{ica}
+#' \code{+} one \code{eeg}), \code{corrmap()} takes a \strong{list} of
+#' already-fitted \code{eeg_ica} objects (one per subject/recording) and
+#' returns the same list, each updated - there is no \code{eeg} argument,
+#' since \code{\link{get_component_topography}} only needs the fitted
+#' \code{ica} object itself.
+#'
+#' \strong{Only writes to \code{labels_}} - never to \code{exclude} (see
+#' file header); call \code{\link{set_exclude}} yourself, per subject, to
+#' actually remove anything.
+#'
+#' @param icas List of fitted \code{eeg_ica} objects
+#'   (\code{current_fit != "unfitted"} - see \code{\link{fit_ica}}), all
+#'   sharing the same \code{ch_names}.
+#' @param template Numeric vector, length matching every subject's number of
+#'   fitted channels - the topography to match (e.g.
+#'   \code{get_component_topography(icas[[1]], 3)} for subject 1's component
+#'   3).
+#' @param threshold \code{"auto"} (default), a single numeric value, or a
+#'   numeric vector of candidate values to try. \code{"auto"} tries
+#'   \code{seq(60, 94) / 100} (i.e. \code{0.60} to \code{0.94}). See
+#'   \code{\link{.find_max_corrs}} for what a value \code{<= 1} vs.
+#'   \code{> 1} means.
+#' @param label \code{NULL} (default), or a character scalar. If supplied,
+#'   each subject's newly-selected component indices are unioned into that
+#'   subject's \code{labels_[[label]]} (existing entries kept, duplicates
+#'   dropped) - or, if nothing matched and the key doesn't already exist,
+#'   set to an explicit empty vector. If \code{NULL}, \code{labels_} is left
+#'   untouched for every subject (a dry run).
+#'
+#' @return The same list of \code{eeg_ica} objects passed in as \code{icas},
+#'   each with \code{labels_[[label]]} updated when \code{label} is
+#'   supplied. Since R does not mutate arguments in place, the caller must
+#'   reassign the result (\code{icas <- corrmap(icas, template)}).
+#'
+#' @details
+#' One deliberate, disclosed API simplification: the topography-matching
+#' source this was ported from also accepts a \code{(subject_index,
+#' component_index)} pair in place of a raw topography, disambiguated from
+#' an actual topography purely by length (\code{2} vs. the channel count) -
+#' genuinely ambiguous for a 2-channel recording, and only ever a one-line
+#' shorthand for indexing into a topography you could compute yourself.
+#' \code{template} here is always a topography vector; use
+#' \code{\link{get_component_topography}} to build one from an existing
+#' component first.
+#'
+#' @examples
+#' \dontrun{
+#'   icas <- list(
+#'     fit_ica(new_ica(n_components = 0.95), eeg1),
+#'     fit_ica(new_ica(n_components = 0.95), eeg2),
+#'     fit_ica(new_ica(n_components = 0.95), eeg3)
+#'   )
+#'   blink_template <- get_component_topography(icas[[1]], 3)
+#'   icas <- corrmap(icas, blink_template, label = "blink")
+#'   icas[[2]]$labels_$blink
+#' }
+#'
+#' @seealso \code{\link{find_bads_eog}}, \code{\link{find_bads_ecg}},
+#'   \code{\link{find_bads_muscle}}, \code{\link{get_component_topography}},
+#'   \code{\link{set_exclude}}
+#'
+#' @export
+corrmap <- function(icas, template, threshold = "auto", label = NULL) {
+
+  if (!is.list(icas) || length(icas) == 0 ||
+      !all(vapply(icas, inherits, logical(1), "eeg_ica"))) {
+    stop("ERROR: 'icas' must be a non-empty list of 'eeg_ica' objects.",
+         call. = FALSE)
+  }
+  if (any(vapply(icas, function(ica) identical(ica$current_fit, "unfitted"), logical(1)))) {
+    stop("ERROR: every 'ica' in 'icas' must be fit first. Call fit_ica().",
+         call. = FALSE)
+  }
+  ch_names_1 <- icas[[1]]$ch_names
+  if (!all(vapply(icas, function(ica) identical(ica$ch_names, ch_names_1), logical(1)))) {
+    stop("ERROR: every 'ica' in 'icas' must share the same ch_names - ",
+         "corrmap() compares topographies positionally, with no channel-",
+         "name alignment step.", call. = FALSE)
+  }
+  if (!is.numeric(template) || length(template) != length(ch_names_1)) {
+    stop("ERROR: 'template' must be a numeric topography vector of length ",
+         length(ch_names_1), " (one value per fitted channel) - see ",
+         "get_component_topography().", call. = FALSE)
+  }
+
+  thresholds <- if (identical(threshold, "auto")) {
+    seq(60, 94) / 100
+  } else {
+    threshold
+  }
+
+  all_maps <- lapply(icas, function(ica) {
+    t(vapply(seq_len(ica$n_components_), function(k) {
+      get_component_topography(ica, k)
+    }, numeric(length(ica$ch_names))))
+  })
+
+  # ========== PASS 1: build an averaged map from the user's target ==========
+
+  paths1 <- lapply(thresholds, function(t) .find_max_corrs(all_maps, template, t))
+  new_target <- paths1[[which.max(vapply(paths1, `[[`, numeric(1), "sim_i_o"))]]$newtarget
+
+  if (is.null(new_target)) {
+    stop("ERROR: no component anywhere in 'icas' correlates with 'template' ",
+         "at any threshold tried - consider a more lenient 'threshold'.",
+         call. = FALSE)
+  }
+
+  # ========== PASS 2: rerun using that averaged map ==========
+
+  paths2 <- lapply(thresholds, function(t) .find_max_corrs(all_maps, new_target, t))
+  best   <- paths2[[which.max(vapply(paths2, `[[`, numeric(1), "median_corr"))]]
+  max_corrs <- best$subj_idx
+
+  # ========== WRITE labels_ (if requested) ==========
+
+  if (!is.null(label)) {
+    icas <- lapply(seq_along(icas), function(i) {
+      ica <- icas[[i]]
+      sel <- max_corrs[[i]]
+      if (length(sel) > 0) {
+        ica$labels_[[label]] <- sort(union(ica$labels_[[label]], sel))
+      } else if (is.null(ica$labels_[[label]])) {
+        ica$labels_[[label]] <- integer(0)
+      }
+      ica
+    })
+  }
+
+  icas
+}

@@ -15,7 +15,7 @@ per heartbeat epoch, values in \code{[0, 1)} (see
 Numeric vector, length \code{ncol(phase_matrix)}.
 }
 \description{
-Ported from \code{python/ica/ctps_.py:kuiper()} (82-118). For each column
+For each column
 of \code{phase_matrix} (one within-epoch time point), sorts the epoch
 values ascending and compares them against the ideal uniform-CDF
 reference points, returning the Kuiper statistic \code{d1 + d2}.

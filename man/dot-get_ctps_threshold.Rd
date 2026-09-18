@@ -10,15 +10,15 @@
 \item{sfreq}{Numeric. Sampling rate in Hz.}
 
 \item{pk_threshold}{Numeric. Target significance exponent. Default:
-\code{20} (i.e. target \code{1e-20}), matching MNE's own default -
-deliberately strict, since CTPS is a trial-by-trial test and false
+\code{20} (i.e. target \code{1e-20}) - deliberately strict, since CTPS
+is a trial-by-trial test and false
 positives compound across many components.}
 }
 \value{
 A single numeric value in \code{(0, 1)}.
 }
 \description{
-Ported from \code{ica.py:_get_ctps_threshold()} (1578-1600). Searches 99
+Searches 99
 candidate Kuiper-index values for whichever one's implied significance is
 closest to \code{10^-pk_threshold} - what
 \code{find_bads_ecg(threshold = "auto", method = "ctps")} resolves to.

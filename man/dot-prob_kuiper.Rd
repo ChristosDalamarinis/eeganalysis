@@ -18,11 +18,10 @@ Numeric vector, same length as \code{d}, values in \code{[0, 1]} -
 distinguishable from a uniform distribution (\code{k_lambda < 0.4}).
 }
 \description{
-Ported from \code{python/ica/ctps_.py:_prob_kuiper()} (121-167) - the
-asymptotic significance formula (Stephens 1970; Kuiper 1962), evaluated as
-a 100-term series per \code{d} value. Uses a numerically stable
-"subtract the max exponent before exponentiating" reduction (the same
-role \code{scipy.special.logsumexp} plays in the source), written out
+The asymptotic significance formula (Stephens 1970; Kuiper 1962),
+evaluated as a 100-term series per \code{d} value. Uses a numerically
+stable "subtract the max exponent before exponentiating" reduction (the
+same role \code{scipy.special.logsumexp} would play), written out
 directly here since this is its only call site - not worth a
 general-purpose \code{logsumexp()} utility for one use.
 }

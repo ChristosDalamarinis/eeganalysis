@@ -16,21 +16,20 @@
 #' leaves ica.exclude untouched unless the caller extends it themselves).
 #'
 #' Ported from the vendored MNE source (python/ica/bads.py, python/ica/eog.py,
-#' python/ica/ica.py lines 1385-2172 and 1934-2078), not just the prose
-#' summary in notes/mne-ica-pipeline-reference.md, so constants and merge
-#' logic match exactly.
+#' python/ica/ecg.py, python/ica/ctps_.py, python/ica/ica.py lines 1385-2172
+#' and 1934-2078), not just the prose summary in
+#' notes/mne-ica-pipeline-reference.md, so constants and merge logic match
+#' exactly.
 #'
-#' Scope (Phase 1 of this file's own build, see the "R status" table in
-#' notes/mne-ica-pipeline-reference.md): find_bads_eog(),
-#' find_bads_ecg(method = "correlation"), find_bads_muscle(). Deferred:
-#' find_bads_ecg(method = "ctps") (a separate, much larger DSP subsystem -
-#' QRS detection, epoching, Hilbert phase, Kuiper's test) and corrmap()
-#' (cross-subject template matching).
+#' Scope (see the "R status" table in notes/mne-ica-pipeline-reference.md):
+#' find_bads_eog(), find_bads_ecg() (both method = "correlation" and
+#' method = "ctps"), find_bads_muscle(). Deferred: corrmap() (cross-subject
+#' template matching).
 #'
 #' Author: Christos Dalamarinis
 #' Date: Sep - 2026
-#' Status: find_bads_eog(), find_bads_ecg(method = "correlation"),
-#'         find_bads_muscle() built. method = "ctps" and corrmap() deferred.
+#' Status: find_bads_eog(), find_bads_ecg() (correlation + ctps),
+#'         find_bads_muscle() built. corrmap() deferred.
 #' Tested: Tested
 #' ============================================================================
 #
@@ -256,6 +255,263 @@
   ica
 }
 
+# ----------------------------------------------------------------------------
+# .qrs_detector() - locate heartbeats in an ECG channel
+# ----------------------------------------------------------------------------
+#' Detect QRS (Heartbeat) Peaks in an ECG Channel (internal)
+#'
+#' Ported from \code{python/ica/ecg.py:qrs_detector()} (18-154). Slides a
+#' half-second window over \code{abs(ecg)}; whenever a window's first sample
+#' exceeds an adaptive threshold, records the window's peak position, keeping
+#' only candidates whose window RMS is below \code{mean(rms) + levels *
+#' population_sd(rms)} (see \code{\link{.population_sd}}, R/ica1.R, for exact
+#' ddof = 0 parity) and whose in-window threshold-crossing count is below
+#' \code{n_thresh}. Assumes \code{ecg} is already appropriately band-pass
+#' filtered by the caller (see \code{\link{find_bads_ecg}}'s
+#' \code{method = "ctps"} branch) - unlike the vendored source, this function
+#' takes no \code{l_freq}/\code{h_freq} of its own, since in the one call
+#' path that reaches it, filtering always happens upstream and its own
+#' filtering step is always disabled.
+#'
+#' When \code{thresh_value = "auto"} (default), tries 16 threshold
+#' multipliers (\code{seq(0.30, 1.05, by = 0.05)}) and keeps whichever run's
+#' implied heart rate lands closest to the median of any in-range (40-160
+#' bpm) result, or closest to 80 bpm if none qualify - ported exactly,
+#' including that fallback.
+#'
+#' @param ecg Numeric vector. The (already filtered) ECG channel.
+#' @param sfreq Numeric. Sampling rate in Hz.
+#' @param thresh_value \code{"auto"} (default), or a single numeric threshold
+#'   multiplier.
+#' @param levels Numeric. RMS-based noise rejection strictness. Default:
+#'   \code{2.5}.
+#' @param n_thresh Integer. Max in-window threshold-crossing count to accept.
+#'   Default: \code{3}.
+#' @param tstart Numeric. Seconds to skip at the start before detecting.
+#'   Default: \code{0}.
+#' @return Integer vector of detected heartbeat sample positions (1-indexed,
+#'   into \code{ecg}), empty if none found.
+#' @keywords internal
+.qrs_detector <- function(ecg, sfreq, thresh_value = "auto", levels = 2.5,
+                           n_thresh = 3, tstart = 0) {
+
+  win_size <- round((60 * sfreq) / 120)  # = round(sfreq / 2)
+  init     <- round(sfreq)               # 1 second, in samples
+
+  n_samples_start <- round(sfreq * tstart)
+  ecg_abs  <- abs(ecg)[(n_samples_start + 1):length(ecg)]
+  n_points <- length(ecg_abs)
+
+  if (n_points < 3 * init) {
+    stop("ERROR: .qrs_detector() needs at least 3 seconds of data after ",
+         "'tstart' to seed its initial threshold, got ",
+         round(n_points / sfreq, 2), " s.", call. = FALSE)
+  }
+
+  maxpt <- c(
+    max(ecg_abs[1:init]),
+    max(ecg_abs[(init + 1):(2 * init)]),
+    max(ecg_abs[(2 * init + 1):(3 * init)])
+  )
+  init_max <- mean(maxpt)
+
+  thresh_runs <- if (identical(thresh_value, "auto")) {
+    seq(0.30, 1.05, by = 0.05)
+  } else {
+    thresh_value
+  }
+
+  clean_events <- list()
+
+  for (tv in thresh_runs) {
+    thresh1  <- init_max * tv
+    numcross <- integer(0)
+    time_pos <- integer(0)
+    rms      <- numeric(0)
+
+    ii <- 0L  # kept 0-indexed throughout, mirroring the source exactly;
+    # only ever offset by +1 when actually subsetting an R vector below.
+    while (ii < (n_points - win_size)) {
+      window <- ecg_abs[(ii + 1):(ii + win_size)]
+      if (window[1] > thresh1) {
+        max_time <- which.max(window) - 1L  # 0-indexed, matches np.argmax
+        time_pos <- c(time_pos, ii + max_time)
+        numcross <- c(numcross, sum(diff(as.integer(window > thresh1))))
+        rms      <- c(rms, sqrt(mean(window^2)))
+        ii <- ii + win_size
+      } else {
+        ii <- ii + 1L
+      }
+    }
+
+    if (length(rms) == 0) {
+      # No candidates at all for this threshold - a dummy entry that can
+      # never pass the RMS/crossing checks below, so this run contributes
+      # no events (avoids mean()/sd() of an empty vector, matches the
+      # vendored source's equivalent empty-safe fallback).
+      rms      <- 0
+      time_pos <- 0L
+      numcross <- n_thresh
+    }
+
+    rms_thresh <- mean(rms) + .population_sd(rms) * levels
+    keep <- which(rms < rms_thresh & numcross < n_thresh)
+    ce   <- time_pos[keep] + n_samples_start  # still 0-indexed
+
+    if (length(ce) > 0) clean_events[[length(clean_events) + 1]] <- ce
+  }
+
+  if (length(clean_events) > 0) {
+    rates <- vapply(clean_events, function(cev) {
+      60 * length(cev) / (length(ecg) / sfreq)
+    }, numeric(1))
+
+    in_range   <- which(rates <= 160 & rates >= 40)
+    ideal_rate <- if (length(in_range) > 0) stats::median(rates[in_range]) else 80
+
+    events_0indexed <- clean_events[[which.min(abs(rates - ideal_rate))]]
+  } else {
+    events_0indexed <- integer(0)
+  }
+
+  events_0indexed + 1L  # 0-indexed -> 1-indexed R sample positions
+}
+
+# ----------------------------------------------------------------------------
+# .hilbert_phase() - normalized instantaneous phase via FFT
+# ----------------------------------------------------------------------------
+#' Hilbert Instantaneous Phase via FFT (internal)
+#'
+#' Sibling of \code{\link{.hilbert_envelope}} (R/annotations.R) - identical
+#' analytic-signal FFT construction, but returns the normalized
+#' \emph{phase} (\code{[0, 1)}, one full cycle) instead of the magnitude.
+#' Matches \code{python/ica/ctps_.py:_compute_normalized_phase()}.
+#'
+#' @param x Numeric vector.
+#' @return Numeric vector, same length as \code{x}, values in \code{[0, 1)}.
+#' @keywords internal
+.hilbert_phase <- function(x) {
+
+  n  <- length(x)
+  Xf <- fft(x)
+  h  <- numeric(n)
+
+  if (n %% 2 == 0) {
+    h[1] <- 1
+    h[n / 2 + 1] <- 1
+    if (n > 2) h[2:(n / 2)] <- 2
+  } else {
+    h[1] <- 1
+    if (n > 1) h[2:((n + 1) / 2)] <- 2
+  }
+
+  analytic <- fft(Xf * h, inverse = TRUE) / n
+  (Arg(analytic) + pi) / (2 * pi)
+}
+
+# ----------------------------------------------------------------------------
+# .kuiper_test() - Kuiper's test of uniformity, per time-column
+# ----------------------------------------------------------------------------
+#' Kuiper's Statistic for Each Column of a Phase Matrix (internal)
+#'
+#' Ported from \code{python/ica/ctps_.py:kuiper()} (82-118). For each column
+#' of \code{phase_matrix} (one within-epoch time point), sorts the epoch
+#' values ascending and compares them against the ideal uniform-CDF
+#' reference points, returning the Kuiper statistic \code{d1 + d2}.
+#'
+#' @param phase_matrix Numeric matrix, \code{n_epochs x n_times}: one row
+#'   per heartbeat epoch, values in \code{[0, 1)} (see
+#'   \code{\link{.hilbert_phase}}).
+#' @return Numeric vector, length \code{ncol(phase_matrix)}.
+#' @keywords internal
+.kuiper_test <- function(phase_matrix) {
+
+  n_trials <- nrow(phase_matrix)
+  n_times  <- ncol(phase_matrix)
+
+  sorted <- apply(phase_matrix, 2, sort)
+  dim(sorted) <- c(n_trials, n_times)  # apply() simplifies to a vector when n_times == 1
+
+  j1 <- seq_len(n_trials) / n_trials        # 1/n, 2/n, ..., n/n
+  j2 <- (seq_len(n_trials) - 1) / n_trials  # 0/n, 1/n, ..., (n-1)/n
+
+  d1 <- apply(j1 - sorted, 2, max)
+  d2 <- apply(sorted - j2, 2, max)
+
+  d1 + d2
+}
+
+# ----------------------------------------------------------------------------
+# .prob_kuiper() - Kuiper statistic -> normalized [0,1] significance
+# ----------------------------------------------------------------------------
+#' Normalized Significance of a Kuiper Statistic (internal)
+#'
+#' Ported from \code{python/ica/ctps_.py:_prob_kuiper()} (121-167) - the
+#' asymptotic significance formula (Stephens 1970; Kuiper 1962), evaluated as
+#' a 100-term series per \code{d} value. Uses a numerically stable
+#' "subtract the max exponent before exponentiating" reduction (the same
+#' role \code{scipy.special.logsumexp} plays in the source), written out
+#' directly here since this is its only call site - not worth a
+#' general-purpose \code{logsumexp()} utility for one use.
+#'
+#' @param d Numeric vector. Kuiper statistic(s) (see \code{\link{.kuiper_test}}).
+#' @param n_eff Integer. Effective number of trials (epochs) the statistic
+#'   was computed from.
+#' @return Numeric vector, same length as \code{d}, values in \code{[0, 1]} -
+#'   \code{0} forced whenever the statistic is too small to be
+#'   distinguishable from a uniform distribution (\code{k_lambda < 0.4}).
+#' @keywords internal
+.prob_kuiper <- function(d, n_eff) {
+
+  n_points <- 100
+
+  en       <- sqrt(n_eff)
+  k_lambda <- (en + 0.155 + 0.24 / en) * d
+  l2       <- k_lambda^2
+
+  j2 <- seq_len(n_points)^2                                   # length 100
+  a    <- outer(j2, l2, function(jj, ll) -2 * jj * ll)         # 100 x length(d)
+  fact <- outer(j2, l2, function(jj, ll) 4 * jj * ll - 1)
+  b    <- 2 * fact
+
+  max_a  <- apply(a, 2, max)
+  scaled <- sweep(a, 2, max_a, FUN = "-")
+  lse    <- max_a + log(colSums(b * exp(scaled)))
+
+  pk_norm <- -lse / (2 * n_eff)
+
+  pk_norm[k_lambda < 0.4] <- 0  # no difference from uniform
+  pk_norm[pk_norm > 1]    <- 1  # round-off guard
+
+  pk_norm
+}
+
+# ----------------------------------------------------------------------------
+# .get_ctps_threshold() - automatic CTPS significance cutoff
+# ----------------------------------------------------------------------------
+#' Automatic Threshold for CTPS Detection (internal)
+#'
+#' Ported from \code{ica.py:_get_ctps_threshold()} (1578-1600). Searches 99
+#' candidate Kuiper-index values for whichever one's implied significance is
+#' closest to \code{10^-pk_threshold} - what
+#' \code{find_bads_ecg(threshold = "auto", method = "ctps")} resolves to.
+#'
+#' @param sfreq Numeric. Sampling rate in Hz.
+#' @param pk_threshold Numeric. Target significance exponent. Default:
+#'   \code{20} (i.e. target \code{1e-20}), matching MNE's own default -
+#'   deliberately strict, since CTPS is a trial-by-trial test and false
+#'   positives compound across many components.
+#' @return A single numeric value in \code{(0, 1)}.
+#' @keywords internal
+.get_ctps_threshold <- function(sfreq, pk_threshold = 20) {
+
+  Vs <- seq_len(99) / 100  # 0.01, 0.02, ..., 0.99
+  C  <- sqrt(sfreq) + 0.155 + 0.24 / sqrt(sfreq)
+  Pks <- 2 * (4 * (Vs * C)^2 - 1) * exp(-2 * (Vs * C)^2)
+
+  Vs[which.min(abs(Pks - 10^(-pk_threshold)))]
+}
+
 
 # ============================================================================
 #                    find_bads_eog() - PUBLIC: EYE-MOVEMENT DETECTION
@@ -365,28 +621,41 @@ find_bads_eog <- function(ica, eeg, ch_name = NULL, threshold = "auto",
 #' @param l_freq,h_freq Numeric. Band-pass edges in Hz applied to both the IC
 #'   time-courses and the ECG channel before correlating. Default:
 #'   \code{c(8, 16)} - the heartbeat band.
-#' @param method \code{"correlation"} (default, and currently the only
-#'   supported value). \code{"ctps"} is MNE's actual default and a
-#'   meaningfully more powerful phase-locking method, but is a separate,
-#'   much larger piece of signal-processing (QRS detection, epoching,
-#'   Hilbert-transform phase, Kuiper's test) not yet ported - see
-#'   \code{notes/mne-ica-pipeline-reference.md}, section 4.4.
-#'   Passing \code{"ctps"} raises a clear "not yet implemented" error rather
-#'   than silently falling back to correlation.
+#' @param method \code{"correlation"} (default) or \code{"ctps"} - MNE's
+#'   actual default, and a meaningfully more powerful phase-locking method:
+#'   instead of asking whether a component roughly moves with the ECG
+#'   channel, it asks whether the component's instantaneous phase lands in
+#'   nearly the same spot, every single heartbeat, reliably. Ported from
+#'   \code{ica.py}'s ctps branch (1707-1741) plus \code{python/ica/ecg.py}'s
+#'   \code{qrs_detector()} and \code{python/ica/ctps_.py} in full - see
+#'   \code{\link{.qrs_detector}}, \code{\link{.hilbert_phase}},
+#'   \code{\link{.kuiper_test}}, \code{\link{.prob_kuiper}},
+#'   \code{\link{.get_ctps_threshold}}. \code{threshold = "auto"} resolves
+#'   via \code{\link{.get_ctps_threshold}} instead of the correlation path's
+#'   \code{3.0}/\code{0.9}. \code{l_freq}/\code{h_freq} only filter the ECG
+#'   channel for heartbeat detection here - unlike the correlation path, the
+#'   IC epochs analyzed are never filtered (matches the vendored source's own
+#'   assumption that "the sources are already appropriately filtered" before
+#'   \code{ctps()} ever sees them). \code{measure} has no effect when
+#'   \code{method = "ctps"} (still validated, just unused - matches MNE).
 #' @param measure \code{"zscore"} (default) - iterative adaptive z-scoring of
 #'   the correlations (\code{\link{.find_outliers}}) - or
 #'   \code{"correlation"} - a direct threshold on \code{abs(correlation)}.
+#'   Only applies to \code{method = "correlation"}.
 #'
 #' @return The same \code{eeg_ica} object passed in as \code{ica}, with
-#'   \code{labels_[["ecg"]]} (merged, sorted by strength) and
-#'   \code{labels_[["ecg/<i>/<ch_name>"]]} (per-channel) populated. Since R
-#'   does not mutate arguments in place, the caller must reassign the result
-#'   (\code{ica <- find_bads_ecg(ica, eeg)}).
+#'   \code{labels_[["ecg"]]} (sorted by strength) populated. For
+#'   \code{method = "correlation"}, per-channel detail is also stored at
+#'   \code{labels_[["ecg/<i>/<ch_name>"]]} (one or more reference channels);
+#'   for \code{method = "ctps"} (always exactly one ECG channel), at
+#'   \code{labels_[["ecg/<ch_name>"]]} instead (matches MNE's own naming in
+#'   each path). Since R does not mutate arguments in place, the caller must
+#'   reassign the result (\code{ica <- find_bads_ecg(ica, eeg)}).
 #'
 #' @examples
 #' \dontrun{
 #'   ica <- fit_ica(new_ica(n_components = 0.95), eeg)
-#'   ica <- find_bads_ecg(ica, eeg)
+#'   ica <- find_bads_ecg(ica, eeg, method = "ctps")
 #'   ica$labels_$ecg
 #'   ica <- set_exclude(ica, ica$labels_$ecg)
 #' }
@@ -410,19 +679,73 @@ find_bads_ecg <- function(ica, eeg, ch_name = NULL, threshold = "auto",
     stop("ERROR: 'eeg' must be an object of class 'eeg' (see new_eeg()).",
          call. = FALSE)
   }
-  if (identical(method, "ctps")) {
-    stop("ERROR: method = 'ctps' is not yet implemented - only ",
-         "method = 'correlation' is currently supported. See ",
-         "notes/mne-ica-pipeline-reference.md section 4.4 for the deferred ",
-         "CTPS build spec.", call. = FALSE)
-  }
-  if (!identical(method, "correlation")) {
-    stop("ERROR: 'method' must be 'correlation' (or, not yet implemented, ",
-         "'ctps'), got '", method, "'.", call. = FALSE)
-  }
   if (!identical(measure, "zscore") && !identical(measure, "correlation")) {
     stop("ERROR: 'measure' must be 'zscore' or 'correlation', got '",
          measure, "'.", call. = FALSE)
+  }
+  if (identical(method, "ctps")) {
+
+    ecg_chs <- .resolve_reference_channels(eeg, ch_name, pattern = "ECG")
+    if (length(ecg_chs) > 1) {
+      warning("More than one ECG-like channel found for method = 'ctps' ",
+              "(which only supports one) - using '", ecg_chs[1], "' only. ",
+              "Pass 'ch_name' explicitly to choose a different one.",
+              call. = FALSE)
+    }
+    ecg_ch <- ecg_chs[1]
+    sfreq  <- eeg$sampling_rate
+
+    ecg_filt <- .fir_filter_vector(eeg$data[match(ecg_ch, eeg$channels), ],
+                                    sfreq, l_freq = l_freq, h_freq = h_freq)
+    beats <- .qrs_detector(ecg_filt, sfreq)
+
+    if (identical(threshold, "auto")) {
+      threshold <- .get_ctps_threshold(sfreq)
+    }
+
+    tmin_samp <- round(-0.5 * sfreq)
+    tmax_samp <- round( 0.5 * sfreq)
+    n_total   <- ncol(eeg$data)
+
+    starts <- beats + tmin_samp
+    stops  <- beats + tmax_samp
+    keep   <- which(starts >= 1 & stops <= n_total)
+
+    if (length(keep) == 0) {
+      stop("ERROR: no complete heartbeat epochs found (either no heartbeats ",
+           "were detected in '", ecg_ch, "', or every detected one was too ",
+           "close to the start/end of the recording). Consider changing ",
+           "'l_freq'/'h_freq', or check the ECG channel.", call. = FALSE)
+    }
+    starts   <- starts[keep]
+    stops    <- stops[keep]
+    n_epochs <- length(starts)
+    n_times  <- tmax_samp - tmin_samp + 1
+
+    sources <- get_sources(ica, eeg)
+    n_comp  <- ica$n_components_
+
+    scores <- vapply(seq_len(n_comp), function(k) {
+      epoch_mat <- t(vapply(seq_len(n_epochs), function(e) {
+        sources[k, starts[e]:stops[e]]
+      }, numeric(n_times)))
+      phase_mat <- t(apply(epoch_mat, 1, .hilbert_phase))
+      d  <- .kuiper_test(phase_mat)
+      pk <- .prob_kuiper(d, n_epochs)
+      max(pk)
+    }, numeric(1))
+
+    ecg_idx <- which(scores >= threshold)
+    ecg_idx <- ecg_idx[order(-scores[ecg_idx])]
+
+    ica$labels_[["ecg"]] <- ecg_idx
+    ica$labels_[[paste0("ecg/", ecg_ch)]] <- ecg_idx
+
+    return(ica)
+  }
+  if (!identical(method, "correlation")) {
+    stop("ERROR: 'method' must be 'correlation' or 'ctps', got '",
+         method, "'.", call. = FALSE)
   }
 
   if (identical(threshold, "auto")) {

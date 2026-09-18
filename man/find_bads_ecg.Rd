@@ -38,23 +38,20 @@ resolves to \code{3.0} if \code{measure = "zscore"}, or \code{0.9} if
 time-courses and the ECG channel before correlating. Default:
 \code{c(8, 16)} - the heartbeat band.}
 
-\item{method}{\code{"correlation"} (default) or \code{"ctps"} - MNE's
-actual default, and a meaningfully more powerful phase-locking method:
-instead of asking whether a component roughly moves with the ECG
-channel, it asks whether the component's instantaneous phase lands in
-nearly the same spot, every single heartbeat, reliably. Ported from
-\code{ica.py}'s ctps branch (1707-1741) plus \code{python/ica/ecg.py}'s
-\code{qrs_detector()} and \code{python/ica/ctps_.py} in full - see
-\code{\link{.qrs_detector}}, \code{\link{.hilbert_phase}},
-\code{\link{.kuiper_test}}, \code{\link{.prob_kuiper}},
-\code{\link{.get_ctps_threshold}}. \code{threshold = "auto"} resolves
-via \code{\link{.get_ctps_threshold}} instead of the correlation path's
-\code{3.0}/\code{0.9}. \code{l_freq}/\code{h_freq} only filter the ECG
-channel for heartbeat detection here - unlike the correlation path, the
-IC epochs analyzed are never filtered (matches the vendored source's own
-assumption that "the sources are already appropriately filtered" before
-\code{ctps()} ever sees them). \code{measure} has no effect when
-\code{method = "ctps"} (still validated, just unused - matches MNE).}
+\item{method}{\code{"correlation"} (default) or \code{"ctps"} - a
+meaningfully more powerful phase-locking method: instead of asking
+whether a component roughly moves with the ECG channel, it asks
+whether the component's instantaneous phase lands in nearly the same
+spot, every single heartbeat, reliably. See \code{\link{.qrs_detector}},
+\code{\link{.hilbert_phase}}, \code{\link{.kuiper_test}},
+\code{\link{.prob_kuiper}}, \code{\link{.get_ctps_threshold}}.
+\code{threshold = "auto"} resolves via \code{\link{.get_ctps_threshold}}
+instead of the correlation path's \code{3.0}/\code{0.9}.
+\code{l_freq}/\code{h_freq} only filter the ECG channel for heartbeat
+detection here - unlike the correlation path, the IC epochs analyzed
+are never filtered (the phase/Kuiper-test step assumes the sources it
+receives are already appropriately filtered). \code{measure} has no
+effect when \code{method = "ctps"} (still validated, just unused).}
 
 \item{measure}{\code{"zscore"} (default) - iterative adaptive z-scoring of
 the correlations (\code{\link{.find_outliers}}) - or
@@ -67,15 +64,14 @@ The same \code{eeg_ica} object passed in as \code{ica}, with
 \code{method = "correlation"}, per-channel detail is also stored at
 \code{labels_[["ecg/<i>/<ch_name>"]]} (one or more reference channels);
 for \code{method = "ctps"} (always exactly one ECG channel), at
-\code{labels_[["ecg/<ch_name>"]]} instead (matches MNE's own naming in
-each path). Since R does not mutate arguments in place, the caller must
+\code{labels_[["ecg/<ch_name>"]]} instead. Since R does not mutate
+arguments in place, the caller must
 reassign the result (\code{ica <- find_bads_ecg(ica, eeg)}).
 }
 \description{
 Correlates every independent component against an ECG channel (or every
 matching channel, if more than one) and flags outliers as candidate
-heartbeat artifacts. Ported from \code{ica.py:find_bads_ecg}'s
-\code{method = "correlation"} branch (1603-1760). \strong{Only writes to
+heartbeat artifacts. \strong{Only writes to
 \code{ica$labels_}} - never to \code{ica$exclude} (see file header); call
 \code{\link{set_exclude}} yourself to actually remove anything.
 }

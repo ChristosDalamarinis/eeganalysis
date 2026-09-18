@@ -31,7 +31,7 @@ The same \code{eeg_ica} object passed in as \code{ica}, with
 \code{labels_} updated.
 }
 \description{
-Ported from \code{ica.py:_find_bads_ch} (1503-1576) - the shared machinery
+The shared machinery
 behind both \code{\link{find_bads_eog}} and
 \code{\link{find_bads_ecg}(method = "correlation")}. For each channel in
 \code{chs}: scores every component (\code{\link{.score_sources}}), flags
@@ -41,8 +41,8 @@ and records the per-channel result into
 \code{ica$labels_[["<prefix>/<i>/<ch>"]]}. Results across every channel in
 \code{chs} are then merged: sorted by \strong{descending
 \code{abs(score)}}, deduplicated keeping the first (highest-scoring)
-occurrence of a repeated component - exactly reproducing the Python merge
-loop at lines 1561-1574 - and written to \code{ica$labels_[[prefix]]}.
+occurrence of a repeated component - and written to
+\code{ica$labels_[[prefix]]}.
 Never touches \code{ica$exclude} (see file header).
 }
 \keyword{internal}

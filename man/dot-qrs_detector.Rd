@@ -35,7 +35,7 @@ Integer vector of detected heartbeat sample positions (1-indexed,
 into \code{ecg}), empty if none found.
 }
 \description{
-Ported from \code{python/ica/ecg.py:qrs_detector()} (18-154). Slides a
+Slides a
 half-second window over \code{abs(ecg)}; whenever a window's first sample
 exceeds an adaptive threshold, records the window's peak position, keeping
 only candidates whose window RMS is below \code{mean(rms) + levels *
@@ -43,10 +43,9 @@ population_sd(rms)} (see \code{\link{.population_sd}}, R/ica1.R, for exact
 ddof = 0 parity) and whose in-window threshold-crossing count is below
 \code{n_thresh}. Assumes \code{ecg} is already appropriately band-pass
 filtered by the caller (see \code{\link{find_bads_ecg}}'s
-\code{method = "ctps"} branch) - unlike the vendored source, this function
-takes no \code{l_freq}/\code{h_freq} of its own, since in the one call
-path that reaches it, filtering always happens upstream and its own
-filtering step is always disabled.
+\code{method = "ctps"} branch) - this function takes no \code{l_freq}/
+\code{h_freq} of its own, since in the one call path that reaches it,
+filtering always happens upstream instead.
 }
 \details{
 When \code{thresh_value = "auto"} (default), tries 16 threshold

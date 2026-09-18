@@ -215,16 +215,105 @@ test_that("find_bads_ecg recovers the true heartbeat component and leaves ica$ex
   expect_length(ica2$exclude, 0)
 })
 
-test_that("find_bads_ecg(method = 'ctps') errors clearly instead of silently falling back", {
-  fx  <- make_detect_fixture()
-  ica <- suppressWarnings(fit_ica(new_ica(n_components = fx$n_components, random_state = 1), fx$eeg))
-  expect_error(find_bads_ecg(ica, fx$eeg, method = "ctps"), "not yet implemented")
-})
-
 test_that("find_bads_ecg rejects an unknown method", {
   fx  <- make_detect_fixture()
   ica <- suppressWarnings(fit_ica(new_ica(n_components = fx$n_components, random_state = 1), fx$eeg))
   expect_error(find_bads_ecg(ica, fx$eeg, method = "bogus"), "'method' must be")
+})
+
+test_that("find_bads_ecg validates 'measure' even when method = 'ctps' (matches MNE, unused but still checked)", {
+  fx  <- make_detect_fixture()
+  ica <- suppressWarnings(fit_ica(new_ica(n_components = fx$n_components, random_state = 1), fx$eeg))
+  expect_error(find_bads_ecg(ica, fx$eeg, method = "ctps", measure = "bogus"), "'measure' must be")
+})
+
+# ============================================================================
+#         TEST SUITE 4b: find_bads_ecg(method = "ctps") - private helpers
+# ============================================================================
+
+test_that(".qrs_detector finds evenly-spaced synthetic heartbeats to within a couple of samples", {
+  set.seed(1)
+  sfreq <- 256
+  n_samples <- 20 * sfreq
+  true_beats <- seq(200, n_samples - 200, by = round(0.6 * sfreq))
+  ecg <- rep(0, n_samples)
+  for (bt in true_beats) {
+    win <- max(1, bt - 5):min(n_samples, bt + 5)
+    ecg[win] <- ecg[win] + exp(-((win - bt)^2) / (2 * 2^2)) * 5
+  }
+  ecg <- ecg + rnorm(n_samples, sd = 0.05)
+
+  detected <- .qrs_detector(ecg, sfreq)
+  expect_equal(length(detected), length(true_beats))
+  errs <- vapply(true_beats, function(tb) min(abs(detected - tb)), numeric(1))
+  expect_true(max(errs) <= 2)
+})
+
+test_that(".qrs_detector errors on less than 3 seconds of data", {
+  expect_error(.qrs_detector(rnorm(256), sfreq = 256), "at least 3 seconds")
+})
+
+test_that(".hilbert_phase returns values in [0, 1)", {
+  t  <- seq_len(512) / 256
+  ph <- .hilbert_phase(sin(2 * pi * 5 * t))
+  expect_true(all(ph >= 0 & ph <= 1))
+})
+
+test_that(".kuiper_test + .prob_kuiper score locked phase near 1 and random phase near 0", {
+  n_trials <- 50
+  locked <- matrix((rep(0.3, n_trials * 10) + rnorm(n_trials * 10, sd = 0.01)) %% 1,
+                    nrow = n_trials, ncol = 10)
+  pk_locked <- .prob_kuiper(.kuiper_test(locked), n_trials)
+  expect_true(all(pk_locked > 0.8))
+
+  set.seed(2)
+  random <- matrix(runif(n_trials * 10), nrow = n_trials, ncol = 10)
+  pk_random <- .prob_kuiper(.kuiper_test(random), n_trials)
+  expect_true(all(pk_random < 0.1))
+})
+
+test_that(".get_ctps_threshold returns a plausible, sfreq-dependent cutoff in (0, 1)", {
+  thr_128  <- .get_ctps_threshold(128)
+  thr_256  <- .get_ctps_threshold(256)
+  thr_1000 <- .get_ctps_threshold(1000)
+
+  expect_true(all(c(thr_128, thr_256, thr_1000) > 0 & c(thr_128, thr_256, thr_1000) < 1))
+  expect_true(thr_128 > thr_256)
+  expect_true(thr_256 > thr_1000)
+})
+
+test_that("find_bads_ecg(method = 'ctps') recovers the true heartbeat component and agrees with correlation", {
+  fx  <- make_detect_fixture()
+  ica <- suppressWarnings(fit_ica(new_ica(n_components = fx$n_components, random_state = 1), fx$eeg))
+
+  ica_corr <- find_bads_ecg(ica, fx$eeg, method = "correlation")
+  ica_ctps <- find_bads_ecg(ica, fx$eeg, method = "ctps")
+
+  expect_equal(ica_ctps$labels_$ecg, ica_corr$labels_$ecg)
+  expect_true("ecg/ECG (EXG2)" %in% names(ica_ctps$labels_))
+  expect_length(ica_ctps$exclude, 0)
+})
+
+test_that("find_bads_ecg(method = 'ctps', threshold = 'auto') resolves via .get_ctps_threshold", {
+  fx  <- make_detect_fixture()
+  ica <- suppressWarnings(fit_ica(new_ica(n_components = fx$n_components, random_state = 1), fx$eeg))
+
+  ica_auto     <- find_bads_ecg(ica, fx$eeg, method = "ctps")
+  ica_explicit <- find_bads_ecg(ica, fx$eeg, method = "ctps",
+                                 threshold = .get_ctps_threshold(fx$eeg$sampling_rate))
+
+  expect_equal(ica_auto$labels_$ecg, ica_explicit$labels_$ecg)
+})
+
+test_that("find_bads_ecg(method = 'ctps') warns and uses only the first channel when several ECG-like channels exist", {
+  fx <- make_detect_fixture()
+  ecg_l <- fx$eeg$data[match("ECG (EXG2)", fx$eeg$channels), ]
+  eeg2 <- new_eeg(data = rbind(fx$eeg$data, ecg_l),
+                   channels = c(fx$eeg$channels, "ECG2 (EXG3)"),
+                   sampling_rate = fx$eeg$sampling_rate)
+  ica <- suppressWarnings(fit_ica(new_ica(n_components = fx$n_components, random_state = 1), eeg2))
+
+  expect_warning(find_bads_ecg(ica, eeg2, method = "ctps"), "More than one ECG-like channel")
 })
 
 # ============================================================================

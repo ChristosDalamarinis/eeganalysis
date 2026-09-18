@@ -22,10 +22,9 @@ Named numeric vector, length \code{ica$n_components_}, one Pearson
 correlation per component, named \code{"IC1"}, \code{"IC2"}, ...
 }
 \description{
-Ported from \code{ica.py:score_sources} (1385) + \code{_band_pass_filter},
-restricted to Pearson correlation against a fixed target (MNE's more
-general \code{score_func}/no-target-skewness path is not needed by any
-detector in this file). Band-pass filters every IC time-course and the
+Restricted to Pearson correlation against a fixed target (a more general
+score-function/no-target-skewness path is not needed by any detector in
+this file). Band-pass filters every IC time-course and the
 target signal to \code{[l_freq, h_freq]} via the existing
 \code{\link{.fir_filter_vector}} (R/annotations.R - already used by
 \code{\link{annotate_muscle}} for the same kind of per-vector bandpass),

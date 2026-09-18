@@ -344,3 +344,138 @@ test_that("find_bads_muscle falls back to slope-only (with a warning) when there
   expect_true(is.list(ica2$labels_))
   expect_length(ica2$exclude, 0)
 })
+
+# ============================================================================
+#                    TEST SUITE 6: corrmap()
+# ============================================================================
+
+# 6-channel, 3-source fixture with spatially DISTINCT topographies per
+# source (frontal / central-parietal / occipital) - unlike make_detect_fixture()
+# (whose two "brain" distractors share the same, spatially uniform loading,
+# fine for score-against-a-channel detectors but not for a topography-
+# matching detector like corrmap(), which would then have no reliable way
+# to tell the distractors apart from the template purely by shape). One
+# recognizable "blink-like" component (heavy Fp1/Fp2 loading) is shared in
+# spirit across every subject, standing in for a manually-confirmed template.
+# has_blink = FALSE fits only the two non-blink sources, for the "a subject
+# genuinely has no match" case.
+make_corrmap_subject <- function(seed, has_blink = TRUE, n_samples = 3000, sampling_rate = 256) {
+  set.seed(seed)
+  t <- seq_len(n_samples) / sampling_rate
+  chans <- c("Fp1", "Fp2", "Cz", "Pz", "O1", "O2")
+
+  s_brain1 <- sin(2 * pi * (5 + seed) * t)
+  s_brain2 <- sign(sin(2 * pi * (9 + seed) * t))
+
+  if (has_blink) {
+    s_blink <- rep(0, n_samples)
+    for (bt in seq(150, n_samples - 150, by = 300)) {
+      win <- max(1, bt - 20):min(n_samples, bt + 20)
+      s_blink[win] <- s_blink[win] + exp(-((win - bt)^2) / (2 * 8^2))
+    }
+    S <- rbind(s_blink, s_brain1, s_brain2)
+    A <- matrix(0.05, nrow = length(chans), ncol = 3)
+    A[c(1, 2), 1] <- 3.0  # blink: frontal
+    A[c(3, 4), 2] <- 2.0  # brain1: central/parietal
+    A[c(5, 6), 3] <- 2.0  # brain2: occipital
+    n_comp <- 3
+  } else {
+    S <- rbind(s_brain1, s_brain2)
+    A <- matrix(0.05, nrow = length(chans), ncol = 2)
+    A[c(3, 4), 1] <- 2.0
+    A[c(5, 6), 2] <- 2.0
+    n_comp <- 2
+  }
+
+  data <- A %*% S + matrix(rnorm(length(chans) * n_samples, sd = 0.02), nrow = length(chans))
+  eeg  <- new_eeg(data = data, channels = chans, sampling_rate = sampling_rate)
+  suppressWarnings(fit_ica(new_ica(n_components = n_comp, random_state = 1), eeg))
+}
+
+# Programmatically finds whichever component loads most heavily on Fp1/Fp2
+# relative to the rest - used to get the "blink" template without hardcoding
+# a component index that FastICA's convergence order could shuffle.
+find_frontal_component <- function(ica) {
+  scores <- vapply(seq_len(ica$n_components_), function(k) {
+    topo <- abs(get_component_topography(ica, k))
+    mean(topo[c("Fp1", "Fp2")]) - mean(topo[c("Cz", "Pz", "O1", "O2")])
+  }, numeric(1))
+  which.max(scores)
+}
+
+test_that(".find_max_corrs matches sign-flipped topographies and RMS-normalizes the average", {
+  target <- c(1, 1, -1, -1)
+  m1 <- rbind(c(0.1, -0.2, 0.3, 0.1), c(0.9, 0.95, -0.9, -0.85), c(-0.1, 0.2, 0.1, -0.3))
+  m2 <- rbind(c(-0.9, -0.95, 0.9, 0.85), c(0.2, -0.1, 0.3, 0.2), c(0.1, 0.1, -0.2, 0.1))
+
+  res <- .find_max_corrs(list(m1, m2), target, threshold = 0.8)
+  expect_equal(res$subj_idx, list(2L, 1L))
+  # m2[1, ] == -m1[2, ] exactly, so after sign-correction both normalized
+  # topographies are identical and their average equals either one alone.
+  expected <- m1[2, ] / sqrt(sum(m1[2, ]^2))
+  expect_equal(res$newtarget, expected, tolerance = 1e-8)
+})
+
+test_that(".find_max_corrs returns a NULL newtarget when nothing clears the threshold", {
+  target <- c(1, 1, -1, -1)
+  m1 <- rbind(c(0.1, -0.2, 0.3, 0.1), c(0.9, 0.95, -0.9, -0.85))
+  res <- .find_max_corrs(list(m1), target, threshold = 0.9999)
+  expect_null(res$newtarget)
+  expect_equal(res$median_corr, 0)
+})
+
+test_that("corrmap recovers the shared component across every subject", {
+  icas <- list(make_corrmap_subject(1), make_corrmap_subject(2), make_corrmap_subject(3))
+  template <- get_component_topography(icas[[1]], find_frontal_component(icas[[1]]))
+
+  icas2 <- corrmap(icas, template, label = "blink")
+
+  for (i in seq_along(icas2)) {
+    expect_equal(icas2[[i]]$labels_$blink, find_frontal_component(icas[[i]]))
+    expect_length(icas2[[i]]$exclude, 0)  # detect, don't decide
+  }
+})
+
+test_that("corrmap gives a subject with no matching component an explicit empty entry", {
+  icas <- list(make_corrmap_subject(1, TRUE), make_corrmap_subject(2, TRUE),
+               make_corrmap_subject(4, FALSE))
+  template <- get_component_topography(icas[[1]], find_frontal_component(icas[[1]]))
+
+  icas2 <- corrmap(icas, template, label = "blink")
+
+  expect_length(icas2[[3]]$labels_$blink, 0)
+  expect_false(is.null(icas2[[3]]$labels_$blink))  # present but empty, not absent
+})
+
+test_that("corrmap with label = NULL is a dry run - labels_ stays untouched", {
+  icas <- list(make_corrmap_subject(1), make_corrmap_subject(2))
+  template <- get_component_topography(icas[[1]], find_frontal_component(icas[[1]]))
+
+  icas2 <- corrmap(icas, template)
+  expect_true(all(vapply(icas2, function(ic) length(ic$labels_) == 0, logical(1))))
+})
+
+test_that("corrmap appends to (not overwrites) an existing label on a second call", {
+  icas <- list(make_corrmap_subject(1), make_corrmap_subject(2))
+  template <- get_component_topography(icas[[1]], find_frontal_component(icas[[1]]))
+
+  icas2 <- corrmap(icas, template, label = "blink")
+  icas3 <- corrmap(icas2, template, label = "blink")
+
+  expect_equal(icas3[[1]]$labels_$blink, icas2[[1]]$labels_$blink)
+})
+
+test_that("corrmap errors when the icas don't share the same ch_names", {
+  icas <- list(make_corrmap_subject(1))
+  eeg_other <- new_eeg(data = matrix(rnorm(3 * 200), nrow = 3),
+                        channels = c("A", "B", "C"), sampling_rate = 256)
+  ica_other <- suppressWarnings(fit_ica(new_ica(n_components = 2, random_state = 1), eeg_other))
+
+  template <- get_component_topography(icas[[1]], find_frontal_component(icas[[1]]))
+  expect_error(corrmap(list(icas[[1]], ica_other), template), "same ch_names")
+})
+
+test_that("corrmap validates 'template' length against the fitted channel count", {
+  icas <- list(make_corrmap_subject(1))
+  expect_error(corrmap(icas, template = c(1, 2, 3)), "topography vector of length")
+})

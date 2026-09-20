@@ -1538,6 +1538,43 @@ test_that("epoch_eeg rejects invalid detrend values", {
 # ----------------------------------------------------------------------------
 
 # ----------------------------------------------------------------------------
+# Test 2.43b: channel_types, bads, reference, preprocessing_history are
+#             carried from the eeg object into the eeg_epochs object; and
+#             the function does not crash when those fields are absent (as
+#             in the bare mock objects used throughout this test file).
+# ----------------------------------------------------------------------------
+test_that("epoch_eeg carries channel_types, bads, reference, preprocessing_history to output", {
+  eeg <- make_mock_eeg(n_timepoints = 2000,
+                       event_onsets = c(300L, 700L),
+                       event_types  = c("1", "1"))
+
+  # Bare mock has no channel_types or bads but does have reference and
+  # preprocessing_history — all must round-trip as-is without crashing
+  epochs_bare <- epoch_eeg(eeg, events = "all",
+                           tmin = -0.1, tmax = 0.4,
+                           baseline = NULL, verbose = FALSE)
+  expect_null(epochs_bare$channel_types)
+  expect_null(epochs_bare$bads)
+  expect_equal(epochs_bare$reference, "original")
+  expect_equal(epochs_bare$preprocessing_history, list())
+
+  # Now add them and verify round-trip
+  eeg$channel_types        <- c("eeg", "eeg")
+  eeg$bads                 <- "Ch2"
+  eeg$reference            <- "average"
+  eeg$preprocessing_history <- list("bandpass 1-40 Hz")
+
+  epochs_full <- epoch_eeg(eeg, events = "all",
+                           tmin = -0.1, tmax = 0.4,
+                           baseline = NULL, verbose = FALSE)
+
+  expect_equal(epochs_full$channel_types,        c("eeg", "eeg"))
+  expect_equal(epochs_full$bads,                 "Ch2")
+  expect_equal(epochs_full$reference,            "average")
+  expect_equal(epochs_full$preprocessing_history, list("bandpass 1-40 Hz"))
+})
+
+# ----------------------------------------------------------------------------
 # Test 2.44: reject_by_annotation = TRUE (default) rejects an epoch that
 #            overlaps a bad annotation, regardless of amplitude
 # ----------------------------------------------------------------------------

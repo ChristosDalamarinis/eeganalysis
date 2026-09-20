@@ -202,6 +202,7 @@ eeg_rereference <- function(eeg,
 
       eeg_out$data     <- eeg_out$data[-ref_idx, , drop = FALSE]
       eeg_out$channels <- eeg_out$channels[-ref_idx]
+      eeg_out$channel_types <- eeg_out$channel_types[-ref_idx]
 
       eeg_out$preprocessing_history <- c(
         eeg_out$preprocessing_history,

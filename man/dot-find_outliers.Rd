@@ -43,13 +43,13 @@ merge logic match exactly.
 
 Scope (see the "R status" table in notes/mne-ica-pipeline-reference.md):
 find_bads_eog(), find_bads_ecg() (both method = "correlation" and
-method = "ctps"), find_bads_muscle(). Deferred: corrmap() (cross-subject
-template matching).
+method = "ctps"), find_bads_muscle(), corrmap(). This completes the
+originally scoped detection build.
 }
 \section{Author: Christos Dalamarinis
 Date: Sep - 2026
 Status: find_bads_eog(), find_bads_ecg() (correlation + ctps),
-find_bads_muscle() built. corrmap() deferred.
+find_bads_muscle(), corrmap() all built.
 Tested: Tested}{
 Find Outliers via Iterated Z-Scoring (internal)
 

@@ -712,7 +712,11 @@ epoch_eeg <- function(eeg_obj,                                           # Loade
       n_epochs = n_accepted,
       rejected = !valid_epochs,
       rejection_log = rejection_log,
-      metadata = eeg_obj$metadata
+      metadata = eeg_obj$metadata,
+      channel_types = eeg_obj$channel_types,
+      bads = eeg_obj$bads,
+      reference = eeg_obj$reference,
+      preprocessing_history = eeg_obj$preprocessing_history
     ),
     class = "eeg_epochs"
   )

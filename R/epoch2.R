@@ -393,6 +393,11 @@ inspect_triggers <- function(eeg_obj,                             # EEG object w
 #'     \item{n_epochs}{Total number of epochs extracted}
 #'     \item{rejected}{Logical vector indicating rejected epochs}
 #'     \item{rejection_log}{Data frame with rejection reasons, including the channel name that triggered each rejection}
+#'     \item{metadata}{List with experiment metadata, copied from the eeg object}
+#'     \item{channel_types}{Channel types ("eeg", "external", "status"), copied from the eeg object}
+#'     \item{bads}{Channels marked bad, copied from the eeg object}
+#'     \item{reference}{Reference scheme, copied from the eeg object}
+#'     \item{preprocessing_history}{Processing log, copied from the eeg object}
 #'   }
 #'
 #' @export

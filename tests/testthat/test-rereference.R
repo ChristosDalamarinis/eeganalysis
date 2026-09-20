@@ -713,6 +713,24 @@ test_that("drop_ref removes a single named reference channel", {
   expect_equal(nrow(result$data), 3)
 })
 
+test_that("drop_ref also drops the reference channels from channel_types", {
+  eeg    <- make_eeg(channel_names = c("Cz", "Pz", "M1", "M2"), seed = 22)
+  result <- eeg_rereference(eeg, ref = c("M1", "M2"), drop_ref = TRUE)
+
+  expect_equal(result$channel_types, eeg$channel_types[c(1, 2)])
+  expect_equal(length(result$channel_types), length(result$channels))
+})
+
+test_that("drop_ref works on legacy objects that have no channel_types", {
+  eeg <- make_eeg(channel_names = c("Cz", "Pz", "M1", "M2"), seed = 23)
+  eeg$channel_types <- NULL
+
+  result <- eeg_rereference(eeg, ref = c("M1", "M2"), drop_ref = TRUE)
+
+  expect_equal(result$channels, c("Cz", "Pz"))
+  expect_null(result$channel_types)
+})
+
 test_that("drop_ref = FALSE (default) keeps reference channels in the data", {
   eeg    <- make_eeg(channel_names = c("Cz", "Pz", "M1", "M2"), seed = 8)
   result <- eeg_rereference(eeg, ref = c("M1", "M2"))

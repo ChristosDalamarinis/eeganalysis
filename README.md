@@ -32,7 +32,7 @@ Version 0.0.0.9000 — under active development. Currently reads BioSemi `.bdf` 
 | Stage | Function(s) | Status |
 |------------------------|------------------------|------------------------|
 | Import BioSemi `.bdf` | `read_bdf_native()` | ✅ |
-| Channel inspection & labeling | `inspect_bdf_channels()`, `identify_external_channels()`, `detect_external_channels()` | ✅ |
+| Channel inspection & labeling | `inspect_biosemi_file()`, `identify_external_channels()`, `detect_external_channels()` | ✅ |
 | Downsampling / Filtering | `downsample()`, `eeg_bandpass()`, `eeg_notch()` | ✅ |
 | Bad-channel detection & repair | `find_bad_channels()`, `interpolate_bads()` | ✅ |
 | Time-range annotations (bad stretches) | `annotate_amplitude()`, `annotate_muscle()`, `annotate_nan()`, `annotate_break()` | ✅ |
@@ -64,14 +64,14 @@ library(eeganalysis)
 
 ``` r
 eeg_data <- read_bdf_native("path/to/your/file.bdf")
-inspect_bdf_channels("path/to/your/file.bdf")
+inspect_biosemi_file("path/to/your/file.bdf")
 inspect_triggers(eeg_data)
 ```
 
 ### Downsample and filter
 
 ``` r
-eeg_data <- downsample(eeg_data, target_srate = 256)
+eeg_data <- downsample(eeg_data, target_rate = 256)
 eeg_data <- eeg_bandpass(eeg_data, l_freq = 0.1, h_freq = 40)
 eeg_data <- eeg_notch(eeg_data, freqs = 50)
 ```
@@ -79,6 +79,7 @@ eeg_data <- eeg_notch(eeg_data, freqs = 50)
 ### Find and repair bad channels
 
 ``` r
+eeg_data <- set_montage(eeg_data, create_montage())   # scalp positions, needed for repair
 eeg_data <- find_bad_channels(eeg_data)
 eeg_data <- interpolate_bads(eeg_data)
 ```
@@ -86,7 +87,7 @@ eeg_data <- interpolate_bads(eeg_data)
 ### Re-reference to average
 
 ``` r
-eeg_data <- eeg_rereference(eeg_data, ref_type = "average")
+eeg_data <- eeg_rereference(eeg_data, ref = "average")
 ```
 
 ### Remove artifacts with ICA
@@ -102,7 +103,7 @@ eeg_data <- apply_ica(ica, eeg_data)
 ### Extract epochs around events
 
 ``` r
-epochs <- epoch_eeg(eeg_data, events = c(1, 2), time_window = c(-0.2, 0.8))
+epochs <- epoch_eeg(eeg_data, events = c(1, 2), tmin = -0.2, tmax = 0.8)
 ```
 
 ## Contributing
@@ -182,8 +183,15 @@ eeganalysis
 │   │
 │   ├── ica_detect.R                         ← ICA Phase 2: automatic bad-component detection
 │   │   ├── find_bads_eog()                  ← Flag eye-movement components (EOG correlation)
-│   │   ├── find_bads_ecg()                  ← Flag heartbeat components (ECG correlation)
-│   │   └── find_bads_muscle()               ← Flag muscle components (spectral slope + topography)
+│   │   ├── find_bads_ecg()                  ← Flag heartbeat components (ECG correlation or CTPS)
+│   │   ├── find_bads_muscle()               ← Flag muscle components (spectral slope + topography)
+│   │   └── corrmap()                        ← Match a template topography across subjects' ICAs
+│   │
+│   ├── regression.R                         ← EOG regression for eye artifacts (continuous data)
+│   │   ├── new_eog_regression()             ← Create/validate an EOG regression model
+│   │   ├── fit_eog_regression()             ← Learn per-channel weights from the EOG channel(s)
+│   │   ├── apply_eog_regression()           ← Subtract weight × EOG from each EEG channel
+│   │   └── print.eeg_eog_regression()       ← Display regression model nicely
 │   │
 │   ├── montage.R                            ← Electrode montage handling
 │   │   ├── new_montage()                    ← Create a montage object
@@ -217,7 +225,7 @@ eeganalysis
 │   │
 │   └── imports.R                            ← Centralized @importFrom declarations
 │
-├── man/                                     ← Auto-generated help files (93, one per exported/internal function)
+├── man/                                     ← Auto-generated help files (130, one per exported/internal function)
 │   ├── new_eeg.Rd
 │   ├── read_bdf_native.Rd
 │   ├── find_bad_channels.Rd
@@ -226,7 +234,7 @@ eeganalysis
 │   ├── apply_ica.Rd
 │   └── ...Rd                                ← Remaining help files
 │
-├── tests/testthat/                          ← Unit tests (testthat, one file per module, 17 total)
+├── tests/testthat/                          ← Unit tests (testthat, one file per module, 20 total)
 │   ├── test-read_bdf_native.R
 │   ├── test-ica1.R
 │   ├── test-bad_channels.R
@@ -234,7 +242,7 @@ eeganalysis
 │   └── ...R                                 ← Remaining test files
 │
 ├── NAMESPACE                                ← Exported functions (auto-generated)
-├── DESCRIPTION                               ← Package metadata
+├── DESCRIPTION                              ← Package metadata
 ├── LICENSE                                  ← License information
 ├── README.md                                ← Package overview
 ├── .gitignore                               ← Git ignore rules

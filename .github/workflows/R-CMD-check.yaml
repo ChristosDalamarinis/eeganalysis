@@ -18,7 +18,10 @@ jobs:
       fail-fast: false
       matrix:
         config:
-          - {os: macos-latest,   r: 'release'}
+          # TEMPORARY pin: CRAN's macOS binaries for R 4.6 are partly zstd-compressed (still named .tgz)
+          # and pak (used by setup-r-dependencies) can't unpack them yet (r-lib/pkgdepends#485).
+          # Go back to 'release' once a pak release supports zstd.
+          - {os: macos-latest,   r: '4.5'}
           - {os: windows-latest, r: 'release'}
 
     env:

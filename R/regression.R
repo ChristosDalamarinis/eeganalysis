@@ -3,37 +3,52 @@
 # ============================================================================
 #
 # A fast, deterministic alternative to ICA for removing eye blinks and eye
-# movements. Two functions that each do one job, plus a small model object:
+# movements. Works on continuous recordings AND on epoched (trial-cut) data,
+# via one shared model object:
 #
+#   subtract_evoked()       hide each trial's evoked response before fitting
 #   fit_eog_regression()    learn one weight per EEG channel per EOG channel
 #   apply_eog_regression()  subtract weight x EOG from each EEG channel
 #   new_eog_regression()    constructor / validator for the model object
 #
 # Ported from MNE-Python's mne/preprocessing/_regress.py (EOGRegression and
-# regress_artifact). Design points, all checked against that source:
+# regress_artifact), extended here with the epoch/Gratton path that source
+# only documents as a usage recipe (fit on evoked-subtracted epochs, apply
+# to the originals - see subtract_evoked()'s docs). Design points, all
+# checked against that source for the continuous case:
 #
 #  - Ordinary least squares, all EOG channels fitted jointly, one fit per
 #    target channel. The EOG and each target are mean-removed first, so no
 #    intercept is stored and a channel's overall level (DC offset) is left
-#    alone when the weights are applied.
-#  - Every sample is used and annotations are NOT consulted (MNE's regression
-#    has no reject_by_annotation either, unlike ICA fitting).
+#    alone when the weights are applied. Continuous data is demeaned once,
+#    over the whole recording; epoched data is demeaned per trial (a
+#    trial's own resting level says nothing about the blink, only its
+#    within-trial fluctuation does) - see .eog_solve_weights() and the
+#    epoch branches of fit_eog_regression()/apply_eog_regression().
+#  - Every sample is used and annotations are NOT consulted directly (MNE's
+#    regression has no reject_by_annotation either, unlike ICA fitting) -
+#    for epochs, annotation-based rejection already happened earlier, inside
+#    epoch_eeg(), so by the time data reaches this file that step is done.
 #  - The EEG must already be re-referenced: the weights depend on the
 #    reference (MNE raises an error otherwise, and so does this file).
-#  - Fit and apply are separate steps, so a model can be inspected, saved with
-#    saveRDS() and reused on another recording. apply matches channels BY NAME
-#    (MNE requires identical order), the same way get_sources() / apply_ica()
-#    do.
+#  - Fit and apply are separate steps, so a model can be inspected, saved
+#    with saveRDS() and reused on another recording - or on the other data
+#    shape entirely (a model fit on epochs works on continuous data and vice
+#    versa, since apply matches channels BY NAME, the same way get_sources()
+#    / apply_ica() do; MNE itself requires identical channel order).
 #  - Never touches ICA or ica$exclude: a separate choice from ica1.R /
 #    ica_detect.R for the same artifact.
 #
-# Phase 1 (this file): continuous 'eeg' objects. Planned next: epoched data
-# (Gratton et al. 1983 and Croft & Barry 2000, via a subtract_evoked() step),
-# a weights topography plot, and a bipolar VEOG/HEOG helper.
+# Phase 1: continuous 'eeg' objects. Phase 2: epoched 'eeg_epochs' objects,
+# via subtract_evoked() (Gratton et al. 1983 - subtract the response, fit on
+# what is left; Croft & Barry 2000 - fit directly on averaged blinks, apply
+# to continuous data, still possible here by fitting with no subtraction)
+# and apply_eog_regression()'s reapply_baseline. Planned next: a weights
+# topography plot and a bipolar VEOG/HEOG helper.
 #
 # Author: Christos Dalamarinis
 # Date: Sep - 2026
-# Status: Phase 1 (continuous data) built.
+# Status: Phase 1 (continuous data) and Phase 2 (epoched data) built.
 # Tested: see tests/testthat/test-regression.R
 # ============================================================================
 
@@ -64,6 +79,8 @@
 #' @param fit_on \code{"continuous"} (default) or \code{"epochs"}: what kind
 #'   of data the weights were fit on. Informational only.
 #' @param n_samples Number of samples the fit used, or \code{NA} if unknown.
+#'   For an epoch fit this is the flattened total (time points per trial x
+#'   number of trials).
 #'
 #' @return An object of class \code{eeg_eog_regression}: a list with
 #'  \describe{
@@ -240,7 +257,8 @@ print.eeg_eog_regression <- function(x, ...) {
 #' (\code{"Common Average"}, \code{"M1+M2"}, ...). A missing or \code{NA}
 #' reference counts as "not applied" as well.
 #'
-#' @param reference \code{eeg$reference}.
+#' @param reference \code{eeg$reference} (works the same for an \code{eeg} or
+#'   an \code{eeg_epochs} object - both carry this field the same way).
 #' @return \code{TRUE} if no real reference has been applied, else \code{FALSE}.
 #' @keywords internal
 .eog_reference_missing <- function(reference) {
@@ -257,7 +275,7 @@ print.eeg_eog_regression <- function(x, ...) {
 #' (\code{_needs_eeg_average_ref_proj}); the weights are only valid in the
 #' reference frame they were fit in.
 #'
-#' @param eeg An object of class 'eeg'.
+#' @param eeg An object of class 'eeg' or 'eeg_epochs'.
 #' @return Invisibly \code{TRUE}; otherwise stops with a message that says how
 #'   to fix it.
 #' @keywords internal
@@ -280,7 +298,7 @@ print.eeg_eog_regression <- function(x, ...) {
 #'
 #' @param picks Character vector of channel names, or numeric vector of
 #'   channel indices.
-#' @param eeg An object of class 'eeg'.
+#' @param eeg An object of class 'eeg' or 'eeg_epochs'.
 #' @param arg Name of the calling argument, used in error messages.
 #' @return Character vector of channel names, in the order given.
 #' @keywords internal
@@ -317,6 +335,210 @@ print.eeg_eog_regression <- function(x, ...) {
 }
 
 # ----------------------------------------------------------------------------
+# .eog_solve_weights() - shared last step of fit_eog_regression()
+# ----------------------------------------------------------------------------
+#' Solve the Normal Equations for EOG Regression Weights (internal)
+#'
+#' The shared last step of \code{\link{fit_eog_regression}} for both
+#' continuous and epoched data: given the EOG channels' Gram matrix and their
+#' cross-product with each (already demeaned) target channel, solves for the
+#' least-squares weights. The two input shapes build \code{G}/\code{B}
+#' differently (continuous: demeaned once over the whole recording; epochs:
+#' demeaned per trial, accumulated trial by trial) but from here on the
+#' maths - and the collinearity error/warning - are identical either way.
+#'
+#' @param G Numeric matrix, k x k (EOG channels): \code{R \%*\% t(R)} for
+#'   whatever demeaned EOG matrix \code{R} the caller built (or the sum of
+#'   that quantity across trials, for epochs).
+#' @param B Numeric matrix, k x p (EOG channels x target channels), column j
+#'   is \code{R \%*\% demeaned_target_j} (summed across trials, for epochs).
+#' @return Numeric matrix, p x k (target channels x EOG channels) - ready to
+#'   store as \code{coef_} (see \code{\link{new_eog_regression}}).
+#' @keywords internal
+.eog_solve_weights <- function(G, B) {
+  coef_t <- tryCatch(
+    solve(G, B),                            # k x p
+    error = function(e) {
+      stop("ERROR: the EOG channels are collinear (one is an exact or ",
+           "near-exact linear combination of the others), so the weights ",
+           "cannot be estimated. Use fewer EOG channels in ",
+           "'picks_artifact', or replace redundant ones with a bipolar ",
+           "derivation such as upper minus lower. (", conditionMessage(e),
+           ")", call. = FALSE)
+    }
+  )
+
+  rc <- rcond(G)
+  if (rc < 1e-10) {
+    warning("The EOG channels are nearly collinear (reciprocal condition ",
+            "number ", signif(rc, 2), "), so the weights may be unstable. ",
+            "Consider using fewer EOG channels.", call. = FALSE)
+  }
+
+  t(coef_t)                                 # p x k
+}
+
+# ----------------------------------------------------------------------------
+# .reapply_baseline() - put corrected channels' baseline back at zero
+# ----------------------------------------------------------------------------
+#' Re-Baseline Specific Channels of an Epoch Array (internal)
+#'
+#' After \code{\link{apply_eog_regression}} subtracts weight x EOG from each
+#' target channel of an \code{eeg_epochs} object, a trial's baseline-window
+#' average can drift away from zero (the correction is not itself
+#' baseline-anchored). This re-applies the SAME baseline window and method
+#' \code{epoch_eeg()} already used to build the epochs
+#' (\code{epochs$baseline}, \code{epochs$baseline_method}) - but only to the
+#' given channel rows; every other channel is left exactly as
+#' \code{apply_eog_regression()} produced it.
+#'
+#' @param data Numeric array, channels x times x trials (\code{epochs$data}
+#'   after the correction has already been subtracted).
+#' @param idx Integer vector - which rows of \code{data} to re-baseline (the
+#'   model's target channels).
+#' @param times Numeric vector, length \code{dim(data)[2]} (\code{epochs$times}).
+#' @param baseline Numeric \code{c(start, end)}, in seconds
+#'   (\code{epochs$baseline}).
+#' @param baseline_method \code{"mean"} or \code{"median"}
+#'   (\code{epochs$baseline_method}).
+#' @return \code{data}, with rows \code{idx} re-baselined; every other row
+#'   unchanged.
+#' @keywords internal
+.reapply_baseline <- function(data, idx, times, baseline, baseline_method) {
+
+  bl_min <- which.min(abs(times - baseline[1]))
+  bl_max <- which.min(abs(times - baseline[2]))
+  bl_idx <- bl_min:bl_max
+
+  fun <- if (identical(baseline_method, "median")) median else mean
+  p <- length(idx)
+
+  for (n in seq_len(dim(data)[3])) {
+    trial  <- matrix(data[idx, , n], nrow = p)                  # p x n_times
+    bl_val <- apply(trial[, bl_idx, drop = FALSE], 1, fun, na.rm = TRUE)
+    data[idx, , n] <- trial - bl_val
+  }
+
+  data
+}
+
+# ----------------------------------------------------------------------------
+# subtract_evoked() - hide each trial's evoked response before fitting
+# ----------------------------------------------------------------------------
+#' Subtract Each Trial's Own Average Response (Gratton-Style Pre-Processing)
+#'
+#' Removes the repeatable, time-locked brain response from every trial of an
+#' \code{eeg_epochs} object, leaving mostly what varies trial to trial - a
+#' stray eye movement chief among it, since a blink happens at a random
+#' moment rather than locked to the event. Feeding this to
+#' \code{\link{fit_eog_regression}} instead of the raw epochs keeps the real
+#' evoked response from being mistaken for eye-artifact leakage while
+#' fitting, following Gratton, Coles & Donchin (1983).
+#'
+#' @param epochs An \code{eeg_epochs} object (see \code{\link{epoch_eeg}}),
+#'   fit with \code{preload = TRUE} (the default), so \code{epochs$data} is
+#'   loaded.
+#' @param by \code{"event_type"} (default) or \code{"all"}.
+#'   \code{"event_type"} subtracts each condition's own average from its own
+#'   trials (see Details); \code{"all"} subtracts one grand average from
+#'   every trial, matching what a single-condition analysis reduces to.
+#'
+#' @return A new object of class \code{eeg_epochs}, the same shape as
+#'   \code{epochs}, with \code{data} replaced by the evoked-subtracted
+#'   version and a note appended to \code{preprocessing_history}. Every other
+#'   field (\code{events}, \code{channels}, \code{bads}, ...) is copied over
+#'   unchanged. This is scratch data for fitting only - pass the
+#'   \strong{original} \code{epochs} (not this function's output) to
+#'   \code{\link{apply_eog_regression}}, so the real evoked response stays in
+#'   the cleaned result.
+#'
+#' @details
+#' Which average is used matters when conditions have genuinely different
+#' responses: subtracting one grand average leaves a leftover trace of each
+#' condition's own response behind (the gap between the true response and
+#' the blended average), which the regression can mistake for part of the
+#' eye artifact. Subtracting each condition's own average removes that
+#' leftover almost completely. When blinks are large this difference barely
+#' matters; when blinks are small or infrequent, per-condition subtraction
+#' recovers noticeably more accurate weights.
+#'
+#' A condition with only a single trial has that trial's own data as its
+#' "average", so subtracting it leaves that trial at exactly zero - a
+#' warning is issued when this happens, since a zeroed-out trial contributes
+#' nothing useful to the fit.
+#'
+#' @examples
+#' \dontrun{
+#'   epochs   <- epoch_eeg(eeg, events = "all", tmin = -0.2, tmax = 0.8)
+#'   learn_on <- subtract_evoked(epochs)                # per condition
+#'   model    <- fit_eog_regression(learn_on)
+#'   epochs   <- apply_eog_regression(model, epochs)    # the ORIGINAL epochs
+#' }
+#'
+#' @seealso \code{\link{fit_eog_regression}}, \code{\link{apply_eog_regression}},
+#'   \code{\link{epoch_eeg}}
+#'
+#' @export
+subtract_evoked <- function(epochs, by = c("event_type", "all")) {
+
+  by <- match.arg(by)
+
+  # ========== VALIDATE inputs ==========
+
+  if (!inherits(epochs, "eeg_epochs")) {
+    stop("ERROR: 'epochs' must be an object of class 'eeg_epochs' (see ",
+         "epoch_eeg()).", call. = FALSE)
+  }
+  if (is.null(epochs$data)) {
+    stop("ERROR: epochs$data is not loaded - re-run epoch_eeg() with ",
+         "preload = TRUE.", call. = FALSE)
+  }
+
+  n_trials <- dim(epochs$data)[3]
+  if (is.null(n_trials) || n_trials < 2) {
+    stop("ERROR: at least 2 trials are required to subtract an average, ",
+         "got ", if (is.null(n_trials)) 0 else n_trials, ".", call. = FALSE)
+  }
+
+  # ========== GROUP TRIALS ==========
+
+  groups <- if (by == "all") {
+    list(all = seq_len(n_trials))
+  } else {
+    split(seq_len(n_trials), epochs$events$type)
+  }
+
+  singleton <- names(groups)[lengths(groups) == 1]
+  if (length(singleton) > 0) {
+    warning("Condition(s) with only 1 trial (", paste(singleton, collapse = ", "),
+            ") have their own trial subtracted as the 'average', leaving ",
+            "them exactly zero.", call. = FALSE)
+  }
+
+  # ========== SUBTRACT EACH GROUP'S OWN AVERAGE ==========
+
+  out_data <- epochs$data
+  for (idx in groups) {
+    grp_mean <- rowMeans(epochs$data[, , idx, drop = FALSE], dims = 2, na.rm = TRUE)
+    for (i in idx) {
+      out_data[, , i] <- out_data[, , i] - grp_mean
+    }
+  }
+
+  # ========== BUILD THE RESULT ==========
+
+  out <- epochs
+  out$data <- out_data
+  out$preprocessing_history <- c(
+    out$preprocessing_history,
+    list(paste0("Evoked response subtracted (by = \"", by, "\"): ",
+                length(groups), " group(s), ", n_trials, " trial(s) total"))
+  )
+
+  out
+}
+
+# ----------------------------------------------------------------------------
 # fit_eog_regression() - learn the weights
 # ----------------------------------------------------------------------------
 #' Fit an EOG Regression Model (Ocular Artifact Removal)
@@ -326,10 +548,14 @@ print.eeg_eog_regression <- function(x, ...) {
 #' several (say vertical and horizontal). The result is a small model that
 #' \code{\link{apply_eog_regression}} uses to subtract that share of the EOG
 #' from the EEG. This is a fast, deterministic alternative to ICA for blinks
-#' and eye movements, and a port of MNE-Python's \code{EOGRegression.fit()}.
+#' and eye movements, and a port of MNE-Python's \code{EOGRegression.fit()},
+#' extended here to also fit on epoched data.
 #'
-#' @param eeg A continuous \code{eeg} object (see \code{new_eeg()}) that has
-#'   already been re-referenced (see \code{\link{eeg_rereference}}).
+#' @param eeg A continuous \code{eeg} object (see \code{new_eeg()}) or an
+#'   \code{eeg_epochs} object (see \code{\link{epoch_eeg}}), either way
+#'   already re-referenced (see \code{\link{eeg_rereference}}). For epochs,
+#'   fitting on \code{\link{subtract_evoked}}'s output rather than the raw
+#'   epochs is usually the better choice - see its docs.
 #' @param picks \code{NULL} (default), a character vector of channel names, or
 #'   a numeric vector of channel indices: the channels to compute weights for
 #'   (the targets). If \code{NULL}, every channel with
@@ -349,14 +575,19 @@ print.eeg_eog_regression <- function(x, ...) {
 #' @return An object of class \code{eeg_eog_regression} (see
 #'   \code{\link{new_eog_regression}}). Its \code{coef_} matrix has one row
 #'   per target channel and one column per EOG channel. It is a plain list, so
-#'   it can be inspected, saved with \code{saveRDS()} and reused.
+#'   it can be inspected, saved with \code{saveRDS()} and reused - on either
+#'   data shape, since \code{\link{apply_eog_regression}} matches channels by
+#'   name.
 #'
 #' @details
 #' \strong{How the weights are found.} For each target channel, ordinary
 #' least squares of the channel on all EOG channels together, after taking
 #' each signal's average level out, so only the eye-related fluctuations
 #' count. No intercept is stored; a channel's overall level is untouched when
-#' the weights are applied.
+#' the weights are applied. For continuous data the average level is taken
+#' over the whole recording; for epoched data it is taken \strong{per trial}
+#' (Gratton/Croft-Barry convention: a trial's own resting level says nothing
+#' about the blink, only the fluctuation within that trial does).
 #'
 #' \strong{Reference.} The weights depend on the reference, so the EEG must
 #' already be re-referenced; an object whose \code{eeg$reference} is still
@@ -364,9 +595,11 @@ print.eeg_eog_regression <- function(x, ...) {
 #' \code{eeg_rereference()}, pass the EOG and status channels to
 #' \code{exclude} so they stay out of the average.
 #'
-#' \strong{Every sample counts.} As in MNE, all samples are used and
-#' \code{eeg$annotations} is not consulted. Data must be complete: an NA, NaN
-#' or Inf in a used channel is an error.
+#' \strong{Every sample counts.} As in MNE, all samples are used; for
+#' continuous data \code{eeg$annotations} is not consulted (for epoched data,
+#' \code{\link{epoch_eeg}}'s own \code{reject_by_annotation} already handled
+#' that earlier). Data must be complete: an NA, NaN or Inf in a used channel
+#' is an error.
 #'
 #' \strong{Caveats.} This needs real EOG electrodes. EOG electrodes also pick
 #' up some frontal brain activity, so regression can over-correct frontal
@@ -378,7 +611,7 @@ print.eeg_eog_regression <- function(x, ...) {
 #'
 #' @examples
 #' \dontrun{
-#'   # after filtering, bad-channel handling and re-referencing
+#'   # continuous data, after filtering, bad-channel handling and re-referencing
 #'   eeg <- eeg_rereference(eeg, ref = "average",
 #'                          exclude = c("EOG_L (EXG1)", "EOG_R (EXG2)", "Status"))
 #'
@@ -391,39 +624,59 @@ print.eeg_eog_regression <- function(x, ...) {
 #'   saveRDS(model, "eog_model.rds")
 #'
 #'   eeg_clean <- apply_eog_regression(model, eeg)
+#'
+#'   # epoched data: fit on the evoked-subtracted residual, apply to the epochs
+#'   epochs   <- epoch_eeg(eeg, events = "all", tmin = -0.2, tmax = 0.8)
+#'   model    <- fit_eog_regression(subtract_evoked(epochs))
+#'   epochs   <- apply_eog_regression(model, epochs)
 #' }
 #'
 #' @seealso \code{\link{apply_eog_regression}}, \code{\link{new_eog_regression}},
-#'   \code{\link{eeg_rereference}}, \code{\link{find_bads_eog}},
-#'   \code{\link{apply_ica}}
+#'   \code{\link{subtract_evoked}}, \code{\link{eeg_rereference}},
+#'   \code{\link{find_bads_eog}}, \code{\link{apply_ica}}
 #'
 #' @export
 fit_eog_regression <- function(eeg, picks = NULL, picks_artifact = NULL) {
 
   # ========== VALIDATE inputs ==========
 
-  if (inherits(eeg, "eeg_epochs")) {
-    stop("ERROR: epoched data ('eeg_epochs') is not supported yet - ",
-         "fit_eog_regression() currently works on continuous 'eeg' objects ",
-         "only.", call. = FALSE)
-  }
-  if (!inherits(eeg, "eeg")) {
-    stop("ERROR: 'eeg' must be an object of class 'eeg' (see new_eeg()).",
-         call. = FALSE)
+  is_epochs <- inherits(eeg, "eeg_epochs")
+  if (!is_epochs && !inherits(eeg, "eeg")) {
+    stop("ERROR: 'eeg' must be an object of class 'eeg' or 'eeg_epochs' ",
+         "(see new_eeg()/epoch_eeg()).", call. = FALSE)
   }
   .eog_check_reference(eeg)
 
-  X <- eeg$data
-  if (!is.matrix(X) || !is.numeric(X)) {
-    stop("ERROR: eeg$data must be a numeric matrix (channels x time).",
-         call. = FALSE)
+  if (is_epochs && is.null(eeg$data)) {
+    stop("ERROR: epochs$data is not loaded - re-run epoch_eeg() with ",
+         "preload = TRUE.", call. = FALSE)
   }
-  if (ncol(X) < 2) {
-    stop("ERROR: at least 2 samples are required to fit, got ", ncol(X), ".",
-         call. = FALSE)
+
+  X <- eeg$data
+  if (is_epochs) {
+    if (!is.array(X) || length(dim(X)) != 3) {
+      stop("ERROR: epochs$data must be a 3D array (channels x times x ",
+           "trials).", call. = FALSE)
+    }
+    n_times  <- dim(X)[2]
+    n_trials <- dim(X)[3]
+    if (n_times * n_trials < 2) {
+      stop("ERROR: at least 2 samples are required to fit, got ",
+           n_times * n_trials, ".", call. = FALSE)
+    }
+  } else {
+    if (!is.matrix(X) || !is.numeric(X)) {
+      stop("ERROR: eeg$data must be a numeric matrix (channels x time).",
+           call. = FALSE)
+    }
+    if (ncol(X) < 2) {
+      stop("ERROR: at least 2 samples are required to fit, got ", ncol(X),
+           ".", call. = FALSE)
+    }
   }
 
   # ========== RESOLVE THE EOG (PREDICTOR) CHANNELS ==========
+  # (shape-independent: only reads eeg$channels/channel_types/bads)
 
   if (is.null(picks_artifact)) {
     # same lookup find_bads_eog() uses (R/ica_detect.R)
@@ -446,6 +699,7 @@ fit_eog_regression <- function(eeg, picks = NULL, picks_artifact = NULL) {
   }
 
   # ========== RESOLVE THE TARGET CHANNELS ==========
+  # (shape-independent: only reads eeg$channels/channel_types/bads)
 
   if (is.null(picks)) {
     if (is.null(eeg$channel_types)) {
@@ -473,71 +727,106 @@ fit_eog_regression <- function(eeg, picks = NULL, picks_artifact = NULL) {
 
   art_idx <- match(art, eeg$channels)
   tgt_idx <- match(tgt, eeg$channels)
+  k <- length(art_idx)
+  p <- length(tgt_idx)
 
-  # ========== EOG: CHECK, THEN REMOVE EACH CHANNEL'S MEAN ==========
+  if (is_epochs) {
 
-  R <- X[art_idx, , drop = FALSE]
-  if (!all(is.finite(R))) {
-    stop("ERROR: non-finite values (NA/NaN/Inf) found in EOG channel(s): ",
-         paste(art[!apply(is.finite(R), 1, all)], collapse = ", "),
-         ". Regression needs complete data.", call. = FALSE)
-  }
-  R <- R - rowMeans(R)                      # k x n, every row now sums to ~0
+    # ---- EOG: check finiteness over the whole block up front ----
 
-  # ========== TARGETS: CROSS-PRODUCT WITH THE EOG, ONE CHANNEL AT A TIME ==========
-  #
-  # B[, j] = R %*% (y_j - mean(y_j)), the right-hand side of the normal
-  # equations for target j. Done channel by channel (as MNE does) so the full
-  # data matrix is never copied.
-
-  B <- matrix(0, nrow = length(art_idx), ncol = length(tgt_idx))
-  not_finite <- character(0)
-  for (j in seq_along(tgt_idx)) {
-    y <- X[tgt_idx[j], ]
-    if (!all(is.finite(y))) {
-      not_finite <- c(not_finite, tgt[j])
-      next
+    R_full <- X[art_idx, , , drop = FALSE]
+    if (!all(is.finite(R_full))) {
+      bad <- art[!apply(is.finite(R_full), 1, all)]
+      stop("ERROR: non-finite values (NA/NaN/Inf) found in EOG channel(s): ",
+           paste(bad, collapse = ", "), ". Regression needs complete data.",
+           call. = FALSE)
     }
-    B[, j] <- R %*% (y - mean(y))
-  }
-  if (length(not_finite) > 0) {
-    stop("ERROR: non-finite values (NA/NaN/Inf) found in target channel(s): ",
-         paste(not_finite, collapse = ", "), ". Regression needs complete ",
-         "data; interpolate or crop the affected stretch first ",
-         "(see annotate_nan()).", call. = FALSE)
-  }
 
-  # ========== SOLVE THE NORMAL EQUATIONS: (R R') coef' = R Y' ==========
+    # ---- ACCUMULATE G AND B ONE TRIAL AT A TIME ----
+    #
+    # Each trial's EOG and target channels are demeaned using THAT TRIAL's
+    # own mean, then that trial's contribution is added to the running
+    # totals - so the full data is never flattened into one big matrix, and
+    # each trial's demeaned EOG is computed once and reused across every
+    # target channel rather than recomputed per channel.
 
-  G <- tcrossprod(R)                        # k x k
-  coef_t <- tryCatch(
-    solve(G, B),                            # k x p
-    error = function(e) {
-      stop("ERROR: the EOG channels are collinear (one is an exact or ",
-           "near-exact linear combination of the others), so the weights ",
-           "cannot be estimated. Use fewer EOG channels in ",
-           "'picks_artifact', or replace redundant ones with a bipolar ",
-           "derivation such as upper minus lower. (", conditionMessage(e),
-           ")", call. = FALSE)
+    G <- matrix(0, k, k)
+    B <- matrix(0, k, p)
+    not_finite <- character(0)
+
+    for (n in seq_len(n_trials)) {
+      eog_trial <- matrix(X[art_idx, , n], nrow = k)          # k x n_times
+      eog_trial <- eog_trial - rowMeans(eog_trial)
+      G <- G + tcrossprod(eog_trial)
+
+      for (j in seq_len(p)) {
+        y <- X[tgt_idx[j], , n]
+        if (!all(is.finite(y))) {
+          not_finite <- union(not_finite, tgt[j])
+          next
+        }
+        B[, j] <- B[, j] + eog_trial %*% (y - mean(y))
+      }
     }
-  )
+    if (length(not_finite) > 0) {
+      stop("ERROR: non-finite values (NA/NaN/Inf) found in target ",
+           "channel(s): ", paste(not_finite, collapse = ", "), ". ",
+           "Regression needs complete data; interpolate or crop the ",
+           "affected stretch first (see annotate_nan()).", call. = FALSE)
+    }
 
-  rc <- rcond(G)
-  if (rc < 1e-10) {
-    warning("The EOG channels are nearly collinear (reciprocal condition ",
-            "number ", signif(rc, 2), "), so the weights may be unstable. ",
-            "Consider using fewer EOG channels.", call. = FALSE)
+    n_samples_used <- n_times * n_trials
+    fit_on <- "epochs"
+
+  } else {
+
+    # ---- EOG: check, then remove each channel's mean over the recording ----
+
+    R <- X[art_idx, , drop = FALSE]
+    if (!all(is.finite(R))) {
+      stop("ERROR: non-finite values (NA/NaN/Inf) found in EOG channel(s): ",
+           paste(art[!apply(is.finite(R), 1, all)], collapse = ", "),
+           ". Regression needs complete data.", call. = FALSE)
+    }
+    R <- R - rowMeans(R)                    # k x n, every row now sums to ~0
+
+    # ---- targets: cross-product with the EOG, one channel at a time ----
+    #
+    # B[, j] = R %*% (y_j - mean(y_j)), the right-hand side of the normal
+    # equations for target j. Done channel by channel (as MNE does) so the
+    # full data matrix is never copied.
+
+    B <- matrix(0, nrow = k, ncol = p)
+    not_finite <- character(0)
+    for (j in seq_len(p)) {
+      y <- X[tgt_idx[j], ]
+      if (!all(is.finite(y))) {
+        not_finite <- c(not_finite, tgt[j])
+        next
+      }
+      B[, j] <- R %*% (y - mean(y))
+    }
+    if (length(not_finite) > 0) {
+      stop("ERROR: non-finite values (NA/NaN/Inf) found in target ",
+           "channel(s): ", paste(not_finite, collapse = ", "), ". ",
+           "Regression needs complete data; interpolate or crop the ",
+           "affected stretch first (see annotate_nan()).", call. = FALSE)
+    }
+
+    G <- tcrossprod(R)                      # k x k
+    n_samples_used <- ncol(X)
+    fit_on <- "continuous"
   }
 
-  # ========== BUILD THE MODEL ==========
+  # ========== SOLVE THE NORMAL EQUATIONS (shared) AND BUILD THE MODEL ==========
 
   new_eog_regression(
-    coef = t(coef_t),                       # p x k: targets x EOG
+    coef = .eog_solve_weights(G, B),        # p x k: targets x EOG
     ch_names = tgt,
     ch_names_artifact = art,
     reference = eeg$reference,
-    fit_on = "continuous",
-    n_samples = ncol(X)
+    fit_on = fit_on,
+    n_samples = n_samples_used
   )
 }
 
@@ -547,23 +836,35 @@ fit_eog_regression <- function(eeg, picks = NULL, picks_artifact = NULL) {
 #' Remove EOG Artifacts With a Fitted Regression Model
 #'
 #' Subtracts, from each target channel, its weight times the EOG signal (with
-#' the EOG's average level taken out first), and returns the cleaned
-#' \code{eeg} object. A channel's overall level is left alone, only the
-#' eye-related fluctuation is removed. The EOG channels themselves and any
-#' channel not in the model (status, bad channels left out of the fit, ...)
-#' pass through unchanged. A port of MNE-Python's \code{EOGRegression.apply()}.
+#' the EOG's average level taken out first), and returns the cleaned object.
+#' A channel's overall level is left alone, only the eye-related fluctuation
+#' is removed. The EOG channels themselves and any channel not in the model
+#' (status, bad channels left out of the fit, ...) pass through unchanged. A
+#' port of MNE-Python's \code{EOGRegression.apply()}, extended here to also
+#' apply to epoched data.
 #'
 #' @param model A fitted \code{eeg_eog_regression} object, from
 #'   \code{\link{fit_eog_regression}} or \code{\link{new_eog_regression}}.
-#' @param eeg A continuous \code{eeg} object to clean. It does not have to be
-#'   the recording the model was fit on, but it must contain every channel
-#'   named in the model, and it must already be re-referenced.
+#' @param eeg A continuous \code{eeg} object or an \code{eeg_epochs} object to
+#'   clean. It does not have to be the recording the model was fit on, or
+#'   even the same data shape (a model fit on epochs can clean continuous
+#'   data and vice versa), but it must contain every channel named in the
+#'   model, and it must already be re-referenced.
+#' @param reapply_baseline Logical, default \code{TRUE}. \code{eeg_epochs}
+#'   input only (ignored for continuous data): subtracting the eye artifact
+#'   can shift a trial's baseline-window average away from zero, since the
+#'   correction is not itself baseline-anchored. When \code{TRUE}, the
+#'   target channels are re-baselined afterward using the SAME window and
+#'   method \code{\link{epoch_eeg}} already recorded on \code{eeg}
+#'   (\code{eeg$baseline}, \code{eeg$baseline_method}); a no-op if
+#'   \code{eeg$baseline} is \code{NULL} (no baseline was set).
 #'
-#' @return A new \code{eeg} object (see \code{\link{new_eeg}}) with the
-#'   model's target channels cleaned and a note appended to
-#'   \code{preprocessing_history}. Since R does not change arguments in
-#'   place, reassign the result (\code{eeg <- apply_eog_regression(model,
-#'   eeg)}); the input object itself is left untouched.
+#' @return A new object (see \code{\link{new_eeg}}/\code{\link{epoch_eeg}}),
+#'   the same class as \code{eeg}, with the model's target channels cleaned
+#'   and a note appended to \code{preprocessing_history}. Since R does not
+#'   change arguments in place, reassign the result (\code{eeg <-
+#'   apply_eog_regression(model, eeg)}); the input object itself is left
+#'   untouched.
 #'
 #' @details
 #' Channels are matched to the model by name, so the channel order in
@@ -571,6 +872,10 @@ fit_eog_regression <- function(eeg, picks = NULL, picks_artifact = NULL) {
 #' the model needs is missing, an error lists it. A warning is issued when
 #' \code{eeg$reference} differs from the reference the model was fit in,
 #' since the weights only strictly apply in that frame.
+#'
+#' For continuous data, each channel's average level is taken over the whole
+#' recording. For epoched data, it is taken \strong{per trial}, matching how
+#' \code{\link{fit_eog_regression}} treats epochs.
 #'
 #' Where the EOG is NaN, the cleaned value is NaN too (the value is unknown);
 #' every other sample is cleaned normally.
@@ -587,13 +892,17 @@ fit_eog_regression <- function(eeg, picks = NULL, picks_artifact = NULL) {
 #'   # reuse a saved model on another recording (same channel names)
 #'   model <- readRDS("eog_model.rds")
 #'   eeg2_clean <- apply_eog_regression(model, eeg2)
+#'
+#'   # epoched data: fit on the residual, apply to the original epochs
+#'   model  <- fit_eog_regression(subtract_evoked(epochs))
+#'   epochs <- apply_eog_regression(model, epochs)     # reapply_baseline = TRUE
 #' }
 #'
 #' @seealso \code{\link{fit_eog_regression}}, \code{\link{new_eog_regression}},
-#'   \code{\link{apply_ica}}
+#'   \code{\link{subtract_evoked}}, \code{\link{apply_ica}}
 #'
 #' @export
-apply_eog_regression <- function(model, eeg) {
+apply_eog_regression <- function(model, eeg, reapply_baseline = TRUE) {
 
   # ========== VALIDATE inputs ==========
 
@@ -601,18 +910,19 @@ apply_eog_regression <- function(model, eeg) {
     stop("ERROR: 'model' must be an object of class 'eeg_eog_regression' ",
          "(see fit_eog_regression()).", call. = FALSE)
   }
-  if (inherits(eeg, "eeg_epochs")) {
-    stop("ERROR: epoched data ('eeg_epochs') is not supported yet - ",
-         "apply_eog_regression() currently works on continuous 'eeg' ",
-         "objects only.", call. = FALSE)
-  }
-  if (!inherits(eeg, "eeg")) {
-    stop("ERROR: 'eeg' must be an object of class 'eeg' (see new_eeg()).",
-         call. = FALSE)
+  is_epochs <- inherits(eeg, "eeg_epochs")
+  if (!is_epochs && !inherits(eeg, "eeg")) {
+    stop("ERROR: 'eeg' must be an object of class 'eeg' or 'eeg_epochs' ",
+         "(see new_eeg()/epoch_eeg()).", call. = FALSE)
   }
   .eog_check_reference(eeg)
 
-  # ========== MATCH CHANNELS BY NAME ==========
+  if (is_epochs && is.null(eeg$data)) {
+    stop("ERROR: epochs$data is not loaded - re-run epoch_eeg() with ",
+         "preload = TRUE.", call. = FALSE)
+  }
+
+  # ========== MATCH CHANNELS BY NAME (shape-independent) ==========
 
   tgt_idx <- match(model$ch_names, eeg$channels)
   art_idx <- match(model$ch_names_artifact, eeg$channels)
@@ -634,23 +944,50 @@ apply_eog_regression <- function(model, eeg) {
             call. = FALSE)
   }
 
-  # ========== SUBTRACT weight x (mean-removed EOG) ==========
-  #
-  # Done in blocks of samples so the temporary matrices stay small on long
-  # recordings. na.rm = TRUE keeps a NaN in the EOG local to its own samples
-  # instead of poisoning the mean (and with it the whole channel).
+  cf <- unname(model$coef_)                 # p x k
 
-  data <- eeg$data
-  R <- data[art_idx, , drop = FALSE]
-  R <- R - rowMeans(R, na.rm = TRUE)
-  cf <- unname(model$coef_)
+  if (is_epochs) {
 
-  n <- ncol(data)
-  block <- 32768L
-  for (start in seq.int(1L, n, by = block)) {
-    cols <- start:min(n, start + block - 1L)
-    data[tgt_idx, cols] <- data[tgt_idx, cols, drop = FALSE] -
-      cf %*% R[, cols, drop = FALSE]
+    # ========== SUBTRACT weight x (per-trial demeaned EOG), TRIAL BY TRIAL ==========
+
+    data <- eeg$data                        # channels x times x trials
+    n_trials <- dim(data)[3]
+    k <- length(art_idx)
+    p <- length(tgt_idx)
+
+    for (n in seq_len(n_trials)) {
+      eog_trial <- matrix(data[art_idx, , n], nrow = k)
+      eog_trial <- eog_trial - rowMeans(eog_trial, na.rm = TRUE)
+      tgt_trial <- matrix(data[tgt_idx, , n], nrow = p)
+      data[tgt_idx, , n] <- tgt_trial - cf %*% eog_trial
+    }
+
+    # ========== OPTIONALLY PUT THE BASELINE WINDOW BACK AT ZERO ==========
+
+    if (isTRUE(reapply_baseline) && !is.null(eeg$baseline)) {
+      data <- .reapply_baseline(data, tgt_idx, eeg$times, eeg$baseline,
+                                eeg$baseline_method)
+    }
+
+  } else {
+
+    # ========== SUBTRACT weight x (mean-removed EOG), IN BLOCKS ==========
+    #
+    # Done in blocks of samples so the temporary matrices stay small on long
+    # recordings. na.rm = TRUE keeps a NaN in the EOG local to its own
+    # samples instead of poisoning the mean (and with it the whole channel).
+
+    data <- eeg$data
+    R <- data[art_idx, , drop = FALSE]
+    R <- R - rowMeans(R, na.rm = TRUE)
+
+    n <- ncol(data)
+    block <- 32768L
+    for (start in seq.int(1L, n, by = block)) {
+      cols <- start:min(n, start + block - 1L)
+      data[tgt_idx, cols] <- data[tgt_idx, cols, drop = FALSE] -
+        cf %*% R[, cols, drop = FALSE]
+    }
   }
 
   # ========== BUILD THE RESULT ==========
@@ -659,8 +996,8 @@ apply_eog_regression <- function(model, eeg) {
   out$data <- data
   out$preprocessing_history <- c(
     out$preprocessing_history,
-    list(paste0("EOG regression applied: ", length(tgt_idx),
-                " channel(s) regressed on ",
+    list(paste0("EOG regression applied", if (is_epochs) " (epochs)" else "",
+                ": ", length(tgt_idx), " channel(s) regressed on ",
                 paste(model$ch_names_artifact, collapse = ", "),
                 if (!is.na(model$reference)) {
                   paste0(" (reference: ", model$reference, ")")

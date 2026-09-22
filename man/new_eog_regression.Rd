@@ -32,7 +32,9 @@ differs from it.}
 \item{fit_on}{\code{"continuous"} (default) or \code{"epochs"}: what kind
 of data the weights were fit on. Informational only.}
 
-\item{n_samples}{Number of samples the fit used, or \code{NA} if unknown.}
+\item{n_samples}{Number of samples the fit used, or \code{NA} if unknown.
+For an epoch fit this is the flattened total (time points per trial x
+number of trials).}
 }
 \value{
 An object of class \code{eeg_eog_regression}: a list with

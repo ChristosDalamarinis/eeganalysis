@@ -7,8 +7,11 @@
 fit_eog_regression(eeg, picks = NULL, picks_artifact = NULL)
 }
 \arguments{
-\item{eeg}{A continuous \code{eeg} object (see \code{new_eeg()}) that has
-already been re-referenced (see \code{\link{eeg_rereference}}).}
+\item{eeg}{A continuous \code{eeg} object (see \code{new_eeg()}) or an
+\code{eeg_epochs} object (see \code{\link{epoch_eeg}}), either way
+already re-referenced (see \code{\link{eeg_rereference}}). For epochs,
+fitting on \code{\link{subtract_evoked}}'s output rather than the raw
+epochs is usually the better choice - see its docs.}
 
 \item{picks}{\code{NULL} (default), a character vector of channel names, or
 a numeric vector of channel indices: the channels to compute weights for
@@ -31,7 +34,9 @@ those marked bad in \code{eeg$bads} are skipped. An explicit
 An object of class \code{eeg_eog_regression} (see
 \code{\link{new_eog_regression}}). Its \code{coef_} matrix has one row
 per target channel and one column per EOG channel. It is a plain list, so
-it can be inspected, saved with \code{saveRDS()} and reused.
+it can be inspected, saved with \code{saveRDS()} and reused - on either
+data shape, since \code{\link{apply_eog_regression}} matches channels by
+name.
 }
 \description{
 Works out how strongly each EEG channel follows the EOG channel(s): one
@@ -39,14 +44,18 @@ weight per EEG channel per EOG channel, fitted together when there are
 several (say vertical and horizontal). The result is a small model that
 \code{\link{apply_eog_regression}} uses to subtract that share of the EOG
 from the EEG. This is a fast, deterministic alternative to ICA for blinks
-and eye movements, and a port of MNE-Python's \code{EOGRegression.fit()}.
+and eye movements, and a port of MNE-Python's \code{EOGRegression.fit()},
+extended here to also fit on epoched data.
 }
 \details{
 \strong{How the weights are found.} For each target channel, ordinary
 least squares of the channel on all EOG channels together, after taking
 each signal's average level out, so only the eye-related fluctuations
 count. No intercept is stored; a channel's overall level is untouched when
-the weights are applied.
+the weights are applied. For continuous data the average level is taken
+over the whole recording; for epoched data it is taken \strong{per trial}
+(Gratton/Croft-Barry convention: a trial's own resting level says nothing
+about the blink, only the fluctuation within that trial does).
 
 \strong{Reference.} The weights depend on the reference, so the EEG must
 already be re-referenced; an object whose \code{eeg$reference} is still
@@ -54,9 +63,11 @@ already be re-referenced; an object whose \code{eeg$reference} is still
 \code{eeg_rereference()}, pass the EOG and status channels to
 \code{exclude} so they stay out of the average.
 
-\strong{Every sample counts.} As in MNE, all samples are used and
-\code{eeg$annotations} is not consulted. Data must be complete: an NA, NaN
-or Inf in a used channel is an error.
+\strong{Every sample counts.} As in MNE, all samples are used; for
+continuous data \code{eeg$annotations} is not consulted (for epoched data,
+\code{\link{epoch_eeg}}'s own \code{reject_by_annotation} already handled
+that earlier). Data must be complete: an NA, NaN or Inf in a used channel
+is an error.
 
 \strong{Caveats.} This needs real EOG electrodes. EOG electrodes also pick
 up some frontal brain activity, so regression can over-correct frontal
@@ -68,7 +79,7 @@ touches an \code{eeg_ica} object or \code{ica$exclude}.
 }
 \examples{
 \dontrun{
-  # after filtering, bad-channel handling and re-referencing
+  # continuous data, after filtering, bad-channel handling and re-referencing
   eeg <- eeg_rereference(eeg, ref = "average",
                          exclude = c("EOG_L (EXG1)", "EOG_R (EXG2)", "Status"))
 
@@ -81,11 +92,16 @@ touches an \code{eeg_ica} object or \code{ica$exclude}.
   saveRDS(model, "eog_model.rds")
 
   eeg_clean <- apply_eog_regression(model, eeg)
+
+  # epoched data: fit on the evoked-subtracted residual, apply to the epochs
+  epochs   <- epoch_eeg(eeg, events = "all", tmin = -0.2, tmax = 0.8)
+  model    <- fit_eog_regression(subtract_evoked(epochs))
+  epochs   <- apply_eog_regression(model, epochs)
 }
 
 }
 \seealso{
 \code{\link{apply_eog_regression}}, \code{\link{new_eog_regression}},
-\code{\link{eeg_rereference}}, \code{\link{find_bads_eog}},
-\code{\link{apply_ica}}
+\code{\link{subtract_evoked}}, \code{\link{eeg_rereference}},
+\code{\link{find_bads_eog}}, \code{\link{apply_ica}}
 }

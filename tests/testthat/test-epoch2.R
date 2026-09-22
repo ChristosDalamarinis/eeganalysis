@@ -1759,6 +1759,284 @@ test_that("epoch_eeg with empty annotations data frame keeps all epochs", {
 
 
 # ============================================================================
+# TEST SUITE 2D: Type-aware rejection — reject_threshold/flat_threshold skip
+#                non-"eeg" channels and eeg_obj$bads
+# ============================================================================
+#
+# reject_threshold/flat_threshold are restricted to channels classified "eeg"
+# in eeg_obj$channel_types, minus anything listed in eeg_obj$bads (see
+# R/epoch2.R, "CHANNELS ELIGIBLE FOR REJECT/FLAT THRESHOLD CHECKS"): an
+# EOG/ECG/EMG/status channel is expected to swing on its own normal signal
+# (e.g. a blink), and a bad channel was already told not to be trusted, so
+# neither should be able to throw a trial away by itself. make_mock_eeg()
+# builds objects with no channel_types/bads at all, so Tests 2.28/2.29 above
+# already cover the fallback (every channel checked, unchanged from before
+# this restriction existed); the tests below add channel_types/bads on top
+# of that same helper to exercise the restriction itself.
+# ----------------------------------------------------------------------------
+
+# ----------------------------------------------------------------------------
+# Test 2.50: a big swing confined to a non-"eeg" (EOG) channel does not
+#            reject the trial
+# ----------------------------------------------------------------------------
+test_that("reject_threshold ignores a big swing in a non-eeg (EOG) channel", {
+  sr   <- 256
+  tmin <- -0.1
+  tmax <-  0.4
+  smin <- round(tmin * sr)
+  smax <- round(tmax * sr)
+
+  data_clean <- matrix(rnorm(3 * 2000, mean = 0, sd = 1), nrow = 3)
+  epoch_start <- 300 + smin
+  epoch_end   <- 300 + smax
+  data_clean[3, epoch_start] <-  500   # Ch3 = EOG, blink-sized spike
+  data_clean[3, epoch_end]   <- -500   # p2p = 1000, far above threshold
+
+  eeg <- make_mock_eeg(
+    n_channels   = 3,
+    n_timepoints = 2000,
+    sr           = sr,
+    event_onsets = c(300L, 700L),
+    event_types  = c("1", "1"),
+    data_values  = data_clean
+  )
+  eeg$channel_types <- c("eeg", "eeg", "external")
+
+  epochs <- epoch_eeg(eeg, events = "all",
+                      tmin = tmin, tmax = tmax,
+                      baseline = NULL,
+                      reject_threshold = 200,
+                      verbose = FALSE)
+
+  expect_equal(epochs$n_epochs, 2)
+  expect_equal(nrow(epochs$rejection_log), 0)
+})
+
+# ----------------------------------------------------------------------------
+# Test 2.51: the same size spike on an "eeg"-type channel still rejects
+#            (the restriction narrows which channels vote, it does not
+#            weaken detection on real EEG channels)
+# ----------------------------------------------------------------------------
+test_that("reject_threshold still rejects on a real eeg-type channel", {
+  sr   <- 256
+  tmin <- -0.1
+  tmax <-  0.4
+  smin <- round(tmin * sr)
+  smax <- round(tmax * sr)
+
+  data_clean <- matrix(rnorm(3 * 2000, mean = 0, sd = 1), nrow = 3)
+  epoch_start <- 300 + smin
+  epoch_end   <- 300 + smax
+  data_clean[1, epoch_start] <-  500   # Ch1 = eeg
+  data_clean[1, epoch_end]   <- -500
+
+  eeg <- make_mock_eeg(
+    n_channels   = 3,
+    n_timepoints = 2000,
+    sr           = sr,
+    event_onsets = c(300L, 700L),
+    event_types  = c("1", "1"),
+    data_values  = data_clean
+  )
+  eeg$channel_types <- c("eeg", "eeg", "external")
+
+  epochs <- epoch_eeg(eeg, events = "all",
+                      tmin = tmin, tmax = tmax,
+                      baseline = NULL,
+                      reject_threshold = 200,
+                      verbose = FALSE)
+
+  expect_equal(epochs$n_epochs, 1)
+  expect_equal(epochs$rejection_log$channel[1], "Ch1")
+})
+
+# ----------------------------------------------------------------------------
+# Test 2.52: a big swing in a channel marked bad does not reject the trial,
+#            even though it is typed "eeg"
+# ----------------------------------------------------------------------------
+test_that("reject_threshold ignores a big swing in a channel marked bad", {
+  sr   <- 256
+  tmin <- -0.1
+  tmax <-  0.4
+  smin <- round(tmin * sr)
+  smax <- round(tmax * sr)
+
+  data_clean <- matrix(rnorm(2 * 2000, mean = 0, sd = 1), nrow = 2)
+  epoch_start <- 300 + smin
+  epoch_end   <- 300 + smax
+  data_clean[2, epoch_start] <-  500   # Ch2 marked bad
+  data_clean[2, epoch_end]   <- -500
+
+  eeg <- make_mock_eeg(
+    n_channels   = 2,
+    n_timepoints = 2000,
+    sr           = sr,
+    event_onsets = c(300L, 700L),
+    event_types  = c("1", "1"),
+    data_values  = data_clean
+  )
+  eeg$channel_types <- c("eeg", "eeg")
+  eeg$bads          <- "Ch2"
+
+  epochs <- epoch_eeg(eeg, events = "all",
+                      tmin = tmin, tmax = tmax,
+                      baseline = NULL,
+                      reject_threshold = 200,
+                      verbose = FALSE)
+
+  expect_equal(epochs$n_epochs, 2)
+  expect_equal(nrow(epochs$rejection_log), 0)
+})
+
+# ----------------------------------------------------------------------------
+# Test 2.53: flat_threshold follows the same restriction as reject_threshold
+# ----------------------------------------------------------------------------
+test_that("flat_threshold ignores a flat non-eeg (EOG) channel", {
+  sr   <- 256
+  tmin <- -0.1
+  tmax <-  0.4
+  smin <- round(tmin * sr)
+  smax <- round(tmax * sr)
+
+  data_clean <- matrix(rnorm(3 * 2000, mean = 0, sd = 10), nrow = 3)
+  epoch_start <- 300 + smin
+  epoch_end   <- 300 + smax
+  data_clean[3, epoch_start:epoch_end] <- 0.001   # Ch3 = EOG, essentially flat
+
+  eeg <- make_mock_eeg(
+    n_channels   = 3,
+    n_timepoints = 2000,
+    sr           = sr,
+    event_onsets = c(300L, 700L),
+    event_types  = c("1", "1"),
+    data_values  = data_clean
+  )
+  eeg$channel_types <- c("eeg", "eeg", "external")
+
+  epochs <- epoch_eeg(eeg, events = "all",
+                      tmin = tmin, tmax = tmax,
+                      baseline = NULL,
+                      flat_threshold = 1,
+                      verbose = FALSE)
+
+  expect_equal(epochs$n_epochs, 2)
+})
+
+# ----------------------------------------------------------------------------
+# Test 2.54: without channel_types, every channel is still checked - the
+#            restriction never changes behaviour for objects that predate it
+# ----------------------------------------------------------------------------
+test_that("reject_threshold checks every channel when channel_types is absent", {
+  sr   <- 256
+  tmin <- -0.1
+  tmax <-  0.4
+  smin <- round(tmin * sr)
+  smax <- round(tmax * sr)
+
+  data_clean <- matrix(rnorm(2 * 2000, mean = 0, sd = 1), nrow = 2)
+  epoch_start <- 300 + smin
+  epoch_end   <- 300 + smax
+  data_clean[2, epoch_start] <-  500
+  data_clean[2, epoch_end]   <- -500
+
+  eeg <- make_mock_eeg(
+    n_channels   = 2,
+    n_timepoints = 2000,
+    sr           = sr,
+    event_onsets = c(300L, 700L),
+    event_types  = c("1", "1"),
+    data_values  = data_clean
+  )
+  # eeg$channel_types left NULL, as make_mock_eeg() always builds it
+
+  epochs <- epoch_eeg(eeg, events = "all",
+                      tmin = tmin, tmax = tmax,
+                      baseline = NULL,
+                      reject_threshold = 200,
+                      verbose = FALSE)
+
+  expect_equal(epochs$n_epochs, 1)
+})
+
+# ----------------------------------------------------------------------------
+# Test 2.55: falls back to every channel (with a warning) when channel_types
+#            has no "eeg" channel at all
+# ----------------------------------------------------------------------------
+test_that("falls back to every channel, with a warning, when none is typed eeg", {
+  sr   <- 256
+  tmin <- -0.1
+  tmax <-  0.4
+  smin <- round(tmin * sr)
+  smax <- round(tmax * sr)
+
+  data_clean <- matrix(rnorm(2 * 2000, mean = 0, sd = 1), nrow = 2)
+  epoch_start <- 300 + smin
+  epoch_end   <- 300 + smax
+  data_clean[1, epoch_start] <-  500
+  data_clean[1, epoch_end]   <- -500
+
+  eeg <- make_mock_eeg(
+    n_channels   = 2,
+    n_timepoints = 2000,
+    sr           = sr,
+    event_onsets = c(300L, 700L),
+    event_types  = c("1", "1"),
+    data_values  = data_clean
+  )
+  eeg$channel_types <- c("external", "external")   # no "eeg" channel at all
+
+  expect_warning(
+    epochs <- epoch_eeg(eeg, events = "all",
+                        tmin = tmin, tmax = tmax,
+                        baseline = NULL,
+                        reject_threshold = 200,
+                        verbose = FALSE),
+    "no channel is eligible"
+  )
+  expect_equal(epochs$n_epochs, 1)
+})
+
+# ----------------------------------------------------------------------------
+# Test 2.56: falls back to every channel, with a warning, when every
+#            "eeg"-type channel is marked bad
+# ----------------------------------------------------------------------------
+test_that("falls back to every channel, with a warning, when every eeg channel is bad", {
+  sr   <- 256
+  tmin <- -0.1
+  tmax <-  0.4
+  smin <- round(tmin * sr)
+  smax <- round(tmax * sr)
+
+  data_clean <- matrix(rnorm(2 * 2000, mean = 0, sd = 1), nrow = 2)
+  epoch_start <- 300 + smin
+  epoch_end   <- 300 + smax
+  data_clean[1, epoch_start] <-  500
+  data_clean[1, epoch_end]   <- -500
+
+  eeg <- make_mock_eeg(
+    n_channels   = 2,
+    n_timepoints = 2000,
+    sr           = sr,
+    event_onsets = c(300L, 700L),
+    event_types  = c("1", "1"),
+    data_values  = data_clean
+  )
+  eeg$channel_types <- c("eeg", "eeg")
+  eeg$bads          <- c("Ch1", "Ch2")
+
+  expect_warning(
+    epochs <- epoch_eeg(eeg, events = "all",
+                        tmin = tmin, tmax = tmax,
+                        baseline = NULL,
+                        reject_threshold = 200,
+                        verbose = FALSE),
+    "no channel is eligible"
+  )
+  expect_equal(epochs$n_epochs, 1)
+})
+
+
+# ============================================================================
 # TEST SUITE 3: plot_epochs() — Epoch Visualisation
 # ============================================================================
 

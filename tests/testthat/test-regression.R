@@ -127,6 +127,103 @@ add_external_channel <- function(eeg, name, values) {
   out
 }
 
+# ---- epoched-data fixture (Phase 2 / Suites 9-11) -------------------------
+
+EOG_EPOCH_NAME <- "VEOG (EXG1)"
+
+# Epoched recording: two conditions with DIFFERENT true evoked responses (so
+# a mismatched "one overall average" leaves real brain signal behind), each
+# trial also carries a blink at an independent, NOT time-locked moment on a
+# single EOG channel. beta_true is the exact target of the fit. Hand-built
+# (like every other 'eeg_epochs' fixture in this repo, see test-epoch2.R's
+# make_mock_epochs()) rather than produced via epoch_eeg(), so these tests
+# stay isolated from that function's own behaviour.
+make_eog_epoch_fixture <- function(n_trials = 160, n_times = 126,
+                                   sampling_rate = 250, seed = 1,
+                                   tmin = -0.2, tmax = 0.3,
+                                   blink_amp = 60, blink_prob = 0.5,
+                                   erp_amp = c(`1` = 10, `2` = 4),
+                                   reference = "Common Average") {
+  set.seed(seed)
+  times <- seq(tmin, tmax, length.out = n_times)
+  cond  <- rep(c("1", "2"), length.out = n_trials)
+
+  shape1 <- exp(-((times - 0.15) / 0.05)^2)
+  shape2 <- exp(-((times - 0.10) / 0.04)^2) + 0.5 * exp(-((times - 0.20) / 0.03)^2)
+
+  erp_gain  <- c(1.0, 1.0, 1.5, 2.0, 1.5, 0.8)            # per EEG_NAMES channel
+  beta_true <- matrix(c(0.55, 0.55, 0.30, 0.12, 0.06, 0.02), ncol = 1,
+                      dimnames = list(EEG_NAMES, EOG_EPOCH_NAME))
+
+  n_ch <- length(EEG_NAMES)
+  data <- array(0, dim = c(n_ch + 1, n_times, n_trials))
+
+  for (n in seq_len(n_trials)) {
+    shape <- if (cond[n] == "1") shape1 else shape2
+    erp   <- erp_amp[[cond[n]]] * shape
+
+    blink <- rep(0, n_times)
+    if (runif(1) < blink_prob) {
+      c0 <- sample(10:(n_times - 10), 1)
+      blink <- blink_amp * exp(-((seq_len(n_times) - c0)^2) / (2 * 6^2))
+    }
+
+    brain_noise <- matrix(rnorm(n_ch * n_times, sd = 1), nrow = n_ch)
+    data[seq_len(n_ch), , n] <- brain_noise + outer(erp_gain, erp) +
+      outer(beta_true[, 1], blink)
+    data[n_ch + 1, , n] <- blink + rnorm(n_times, sd = 0.5)
+  }
+
+  onsets <- as.integer(seq(1000, by = 1000, length.out = n_trials))
+  events <- data.frame(
+    onset = onsets,
+    onset_time = onsets / sampling_rate,
+    type = cond,
+    description = paste0("Trigger: ", cond),
+    epoch_id = seq_len(n_trials),
+    stringsAsFactors = FALSE
+  )
+
+  epochs <- structure(
+    list(
+      data = data,
+      channels = c(EEG_NAMES, EOG_EPOCH_NAME),
+      channel_types = c(rep("eeg", n_ch), "external"),
+      bads = character(0),
+      times = times,
+      events = events,
+      sampling_rate = sampling_rate,
+      tmin = tmin,
+      tmax = tmax,
+      baseline = c(tmin, 0),
+      baseline_method = "mean",
+      n_epochs = n_trials,
+      rejected = rep(FALSE, n_trials),
+      rejection_log = data.frame(epoch_id = integer(0), event_type = character(0),
+                                 event_time = numeric(0), channel = character(0),
+                                 reason = character(0), stringsAsFactors = FALSE),
+      metadata = list(),
+      reference = reference,
+      preprocessing_history = list()
+    ),
+    class = "eeg_epochs"
+  )
+  list(epochs = epochs, beta_true = beta_true)
+}
+
+# Per-trial demean: arr is channels x times x trials; subtracts each
+# channel's own mean WITHIN each trial (not across the whole recording) -
+# the same convention fit/apply use internally for epoched data.
+demean_per_trial <- function(arr) {
+  d <- dim(arr)
+  out <- arr
+  for (n in seq_len(d[3])) {
+    out[, , n] <- matrix(arr[, , n], nrow = d[1]) -
+      rowMeans(matrix(arr[, , n], nrow = d[1]))
+  }
+  out
+}
+
 # ============================================================================
 # SUITE 1 - FIXTURE SANITY (guards every assumption the rest relies on)
 # ============================================================================
@@ -342,9 +439,9 @@ test_that("other reference schemes are accepted", {
 })
 
 test_that("wrong input types give clear errors", {
-  expect_error(fit_eog_regression(1:10), "class 'eeg'")
-  epochs <- structure(list(), class = "eeg_epochs")
-  expect_error(fit_eog_regression(epochs), "not supported yet")
+  expect_error(fit_eog_regression(1:10), "class 'eeg' or 'eeg_epochs'")
+  expect_error(fit_eog_regression(structure(list(), class = "weird")),
+               "class 'eeg' or 'eeg_epochs'")
 })
 
 test_that("non-finite values in a target or an EOG channel are refused", {
@@ -514,9 +611,9 @@ test_that("wrong input types give clear errors", {
   fx <- make_eog_fixture()
   m <- fit_eog_regression(fx$eeg)
   expect_error(apply_eog_regression(list(), fx$eeg), "eeg_eog_regression")
-  expect_error(apply_eog_regression(m, 1:10), "class 'eeg'")
-  epochs <- structure(list(), class = "eeg_epochs")
-  expect_error(apply_eog_regression(m, epochs), "not supported yet")
+  expect_error(apply_eog_regression(m, 1:10), "class 'eeg' or 'eeg_epochs'")
+  expect_error(apply_eog_regression(m, structure(list(), class = "weird")),
+               "class 'eeg' or 'eeg_epochs'")
 })
 
 test_that("weights brought in via new_eog_regression() work like fitted ones", {
@@ -561,4 +658,291 @@ test_that("a model survives saveRDS() / readRDS() unchanged", {
   reloaded <- readRDS(f)
   unlink(f)
   expect_identical(reloaded, m)
+})
+
+# ============================================================================
+#                        PHASE 2 - EPOCHED DATA
+# ============================================================================
+#
+# Suite 9 tests subtract_evoked() on its own (exact hand-computed maths, plus
+# the accuracy comparison that motivates it: raw epochs < one overall average
+# < per-condition average, matching the numbers verified by simulation before
+# this was built - see [[eog-regression-notes]]). Suites 10-11 test
+# fit_eog_regression()/apply_eog_regression()'s epoch code paths the same way
+# Suites 3-7 tested the continuous ones: exact recovery, channel selection,
+# guards/errors, orthogonality, and - new for epochs - reapply_baseline.
+# ============================================================================
+
+# ============================================================================
+# SUITE 9 - subtract_evoked()
+# ============================================================================
+
+test_that("subtract_evoked() rejects bad input", {
+  expect_error(subtract_evoked(list()), "class 'eeg_epochs'")
+
+  fx <- make_eog_epoch_fixture(n_trials = 4)
+  no_data <- fx$epochs
+  no_data$data <- NULL
+  expect_error(subtract_evoked(no_data), "not loaded")
+
+  one_trial <- fx$epochs
+  one_trial$data <- one_trial$data[, , 1, drop = FALSE]
+  expect_error(subtract_evoked(one_trial), "at least 2 trials")
+})
+
+test_that("subtract_evoked() matches a direct hand computation (by = 'all')", {
+  fx <- make_eog_epoch_fixture(n_trials = 6, seed = 9)
+  out <- subtract_evoked(fx$epochs, "all")
+  grand_mean <- apply(fx$epochs$data, c(1, 2), mean)
+  expect_equal(out$data, fx$epochs$data - as.vector(grand_mean), tolerance = 1e-10)
+})
+
+test_that("subtract_evoked() matches a direct hand computation (by = 'event_type')", {
+  fx <- make_eog_epoch_fixture(n_trials = 8, seed = 9)
+  out <- subtract_evoked(fx$epochs, "event_type")
+  for (cnd in c("1", "2")) {
+    idx <- which(fx$epochs$events$type == cnd)
+    grp_mean <- apply(fx$epochs$data[, , idx, drop = FALSE], c(1, 2), mean)
+    expect_equal(out$data[, , idx], fx$epochs$data[, , idx] - as.vector(grp_mean),
+                tolerance = 1e-10)
+  }
+})
+
+test_that("subtract_evoked() returns eeg_epochs, same shape, other fields untouched", {
+  fx <- make_eog_epoch_fixture(n_trials = 6, seed = 2)
+  out <- subtract_evoked(fx$epochs)
+  expect_s3_class(out, "eeg_epochs")
+  expect_equal(dim(out$data), dim(fx$epochs$data))
+  keep <- setdiff(names(out), c("data", "preprocessing_history"))
+  expect_identical(out[keep], fx$epochs[keep])
+  expect_length(out$preprocessing_history,
+                length(fx$epochs$preprocessing_history) + 1)
+  expect_match(out$preprocessing_history[[1]], "Evoked response subtracted")
+})
+
+test_that("subtract_evoked() leaves the input unchanged", {
+  fx <- make_eog_epoch_fixture(n_trials = 6, seed = 2)
+  before <- fx$epochs
+  subtract_evoked(fx$epochs)
+  expect_identical(fx$epochs, before)
+})
+
+test_that("subtract_evoked() warns on a condition with a single trial", {
+  fx <- make_eog_epoch_fixture(n_trials = 5, seed = 4)     # "1","2","1","2","1"
+  fx$epochs$events$type[5] <- "3"                          # condition "3": 1 trial
+  expect_warning(subtract_evoked(fx$epochs), "only 1 trial")
+})
+
+test_that("the evoked-subtracted trial for a singleton condition is exactly zero", {
+  fx <- make_eog_epoch_fixture(n_trials = 5, seed = 4)
+  fx$epochs$events$type[5] <- "3"
+  out <- suppressWarnings(subtract_evoked(fx$epochs))
+  expect_equal(out$data[, , 5], array(0, dim(out$data)[1:2]))
+})
+
+test_that("fitting on raw epochs recovers weights worse than after subtract_evoked()", {
+  # small, infrequent blinks + a much bigger gap between the two conditions'
+  # evoked responses - the scenario where leftover brain signal matters most
+  fx <- make_eog_epoch_fixture(n_trials = 200, seed = 6, blink_amp = 25,
+                               blink_prob = 0.2, erp_amp = c(`1` = 25, `2` = 2))
+  err_raw   <- max(abs(fit_eog_regression(fx$epochs)$coef_ - fx$beta_true))
+  err_all   <- max(abs(fit_eog_regression(subtract_evoked(fx$epochs, "all"))$coef_ -
+                          fx$beta_true))
+  err_event <- max(abs(fit_eog_regression(subtract_evoked(fx$epochs, "event_type"))$coef_ -
+                          fx$beta_true))
+
+  expect_lt(err_all, err_raw)
+  expect_lt(err_event, err_all)
+})
+
+# ============================================================================
+# SUITE 10 - fit_eog_regression(): epoched data
+# ============================================================================
+
+test_that("fit on evoked-subtracted epochs recovers planted weights", {
+  fx <- make_eog_epoch_fixture(n_trials = 200, seed = 7)
+  m <- fit_eog_regression(subtract_evoked(fx$epochs))
+  expect_lt(max(abs(m$coef_ - fx$beta_true)), 0.05)
+})
+
+test_that("epoch fit records fit_on = 'epochs' and n_samples_ = times x trials", {
+  fx <- make_eog_epoch_fixture(n_trials = 10, n_times = 50, seed = 8)
+  m <- fit_eog_regression(fx$epochs)
+  expect_equal(m$fit_on, "epochs")
+  expect_equal(m$n_samples_, 50 * 10)
+  expect_equal(m$reference, "Common Average")
+})
+
+test_that("default target/EOG selection on epochs matches the continuous rules", {
+  fx <- make_eog_epoch_fixture(n_trials = 6, seed = 9)
+  m <- fit_eog_regression(fx$epochs)
+  expect_equal(m$ch_names, EEG_NAMES)
+  expect_equal(m$ch_names_artifact, EOG_EPOCH_NAME)
+})
+
+test_that("bads are left out of the default epoch targets, same as continuous", {
+  fx <- make_eog_epoch_fixture(n_trials = 6, seed = 9)
+  fx$epochs$bads <- "Pz"
+  m <- fit_eog_regression(fx$epochs)
+  expect_equal(m$ch_names, setdiff(EEG_NAMES, "Pz"))
+})
+
+test_that("picks/picks_artifact accept names or indices on epochs", {
+  fx <- make_eog_epoch_fixture(n_trials = 6, seed = 9)
+  m <- fit_eog_regression(fx$epochs, picks = c("Cz", "Fp1"),
+                          picks_artifact = EOG_EPOCH_NAME)
+  expect_equal(m$ch_names, c("Cz", "Fp1"))
+  m2 <- fit_eog_regression(fx$epochs, picks = 1:2, picks_artifact = 7)
+  expect_equal(m2$ch_names, EEG_NAMES[1:2])
+})
+
+test_that("a non-finite value in one trial of a target channel is refused", {
+  fx <- make_eog_epoch_fixture(n_trials = 6, seed = 10)
+  fx$epochs$data[4, 5, 2] <- NaN                       # Cz, trial 2
+  expect_error(fit_eog_regression(fx$epochs), "target channel.*Cz")
+})
+
+test_that("a non-finite value in the EOG channel is refused", {
+  fx <- make_eog_epoch_fixture(n_trials = 6, seed = 10)
+  fx$epochs$data[7, 5, 2] <- Inf                       # VEOG, trial 2
+  expect_error(fit_eog_regression(fx$epochs), "EOG channel.*VEOG")
+})
+
+test_that("data with no reference applied is refused, same as continuous", {
+  fx <- make_eog_epoch_fixture(n_trials = 6, seed = 9, reference = "original")
+  expect_error(fit_eog_regression(fx$epochs), "no EEG reference")
+})
+
+test_that("epochs$data not loaded (preload = FALSE) gives a clear error on fit", {
+  fx <- make_eog_epoch_fixture(n_trials = 6, seed = 9)
+  fx$epochs$data <- NULL
+  expect_error(fit_eog_regression(fx$epochs), "not loaded")
+})
+
+test_that("a model fit on epochs cleans continuous data (matched by name)", {
+  fx <- make_eog_epoch_fixture(n_trials = 200, seed = 11)
+  m <- fit_eog_regression(subtract_evoked(fx$epochs))
+
+  cont <- make_eog_fixture(seed = 12)$eeg
+  out  <- apply_eog_regression(m, cont)
+
+  r_before <- cor(cont$data[1, ], cont$data[7, ])      # Fp1 vs VEOG
+  r_after  <- cor(out$data[1, ], out$data[7, ])
+  expect_lt(abs(r_after), abs(r_before))
+  expect_identical(out$data[8:9, ], cont$data[8:9, ])  # HEOG + Status untouched
+})
+
+test_that("a model fit on continuous data cleans epochs (matched by name)", {
+  cont_fx <- make_eog_fixture(seed = 13)
+  m <- fit_eog_regression(cont_fx$eeg, picks_artifact = "VEOG (EXG1)")
+
+  ep_fx <- make_eog_epoch_fixture(n_trials = 40, seed = 14)
+  out <- apply_eog_regression(m, ep_fx$epochs)
+  expect_s3_class(out, "eeg_epochs")
+  expect_equal(dim(out$data), dim(ep_fx$epochs$data))
+})
+
+# ============================================================================
+# SUITE 11 - apply_eog_regression(): epoched data, incl. reapply_baseline
+# ============================================================================
+
+test_that("after an in-sample fit+apply, cleaned epochs are orthogonal to the EOG", {
+  fx <- make_eog_epoch_fixture(n_trials = 200, seed = 15)
+  m <- fit_eog_regression(fx$epochs)
+  out <- apply_eog_regression(m, fx$epochs, reapply_baseline = FALSE)
+
+  R_dm  <- demean_per_trial(fx$epochs$data[7, , , drop = FALSE])[1, , ]
+  before_dm <- demean_per_trial(fx$epochs$data[1:6, , ])
+  after_dm  <- demean_per_trial(out$data[1:6, , ])
+
+  cross <- function(tgt_dm) sapply(1:6, function(ch) sum(R_dm * tgt_dm[ch, , ]))
+  before <- cross(before_dm)
+  after  <- cross(after_dm)
+
+  expect_gt(max(abs(before)), 1e3)                 # the artifact was really there
+  expect_lt(max(abs(after)), 1e-6 * max(abs(before)))
+})
+
+test_that("reapply_baseline puts the target channels' baseline average back near zero", {
+  fx <- make_eog_epoch_fixture(n_trials = 200, seed = 16)
+  m <- fit_eog_regression(fx$epochs)
+
+  no_rebl   <- apply_eog_regression(m, fx$epochs, reapply_baseline = FALSE)
+  with_rebl <- apply_eog_regression(m, fx$epochs, reapply_baseline = TRUE)
+
+  bl_idx <- which(fx$epochs$times >= fx$epochs$baseline[1] &
+                    fx$epochs$times <= fx$epochs$baseline[2])
+  bl_avg <- function(d) mean(abs(apply(d[1:6, bl_idx, , drop = FALSE], c(1, 3), mean)))
+
+  expect_gt(bl_avg(no_rebl$data), 0.05)            # the drift really happens without it
+  expect_lt(bl_avg(with_rebl$data), 1e-8)          # and is corrected exactly with it
+})
+
+test_that("reapply_baseline is a no-op when the epochs have no baseline set", {
+  fx <- make_eog_epoch_fixture(n_trials = 6, seed = 17)
+  # x$name <- NULL DELETES the list key, and $ then silently partial-matches
+  # "baseline_method" instead of returning NULL - x["name"] <- list(NULL)
+  # keeps the key present with a real NULL value, as epoch_eeg() itself does
+  # when baseline_method = "none" (epoch2.R: baseline <- NULL, then still
+  # placed into the returned list via baseline = baseline).
+  fx$epochs["baseline"] <- list(NULL)
+  expect_null(fx$epochs$baseline)
+  m <- fit_eog_regression(fx$epochs)
+  expect_no_error(apply_eog_regression(m, fx$epochs, reapply_baseline = TRUE))
+})
+
+test_that("EOG and any channel outside the model come back untouched (epochs)", {
+  fx <- make_eog_epoch_fixture(n_trials = 6, seed = 18)
+  fx$epochs$bads <- "Pz"
+  m <- fit_eog_regression(fx$epochs)
+  out <- apply_eog_regression(m, fx$epochs, reapply_baseline = FALSE)
+  expect_identical(out$data[7, , ], fx$epochs$data[7, , ])       # VEOG
+  expect_identical(out$data[5, , ], fx$epochs$data[5, , ])       # Pz (bad)
+  expect_false(isTRUE(all.equal(out$data[1, , ], fx$epochs$data[1, , ])))
+})
+
+test_that("apply logs an epoch-specific note in preprocessing_history", {
+  fx <- make_eog_epoch_fixture(n_trials = 6, seed = 19)
+  m <- fit_eog_regression(fx$epochs)
+  out <- apply_eog_regression(m, fx$epochs)
+  entry <- out$preprocessing_history[[length(out$preprocessing_history)]]
+  expect_match(entry, "EOG regression applied \\(epochs\\): 6 channel\\(s\\)")
+})
+
+test_that("channels are matched by name for epochs too, order does not matter", {
+  fx <- make_eog_epoch_fixture(n_trials = 6, seed = 20)
+  m <- fit_eog_regression(fx$epochs)
+  perm <- c(7, 5, 3, 1, 6, 2, 4)
+  permuted <- fx$epochs
+  permuted$data <- fx$epochs$data[perm, , ]
+  permuted$channels <- fx$epochs$channels[perm]
+  permuted$channel_types <- fx$epochs$channel_types[perm]
+
+  out_orig <- apply_eog_regression(m, fx$epochs, reapply_baseline = FALSE)
+  out_perm <- apply_eog_regression(m, permuted, reapply_baseline = FALSE)
+  expect_equal(out_perm$channels, fx$epochs$channels[perm])
+  expect_equal(out_perm$data, out_orig$data[perm, , ])
+})
+
+test_that("a missing target or EOG channel in the epochs object is named in the error", {
+  fx <- make_eog_epoch_fixture(n_trials = 6, seed = 21)
+  m <- fit_eog_regression(fx$epochs)
+  drop_ch <- function(epochs, name) {
+    keep <- epochs$channels != name
+    epochs$data <- epochs$data[keep, , ]
+    epochs$channels <- epochs$channels[keep]
+    epochs$channel_types <- epochs$channel_types[keep]
+    epochs
+  }
+  expect_error(apply_eog_regression(m, drop_ch(fx$epochs, "Cz")),
+               "missing target channel.*Cz")
+  expect_error(apply_eog_regression(m, drop_ch(fx$epochs, EOG_EPOCH_NAME)),
+               "missing EOG channel.*VEOG")
+})
+
+test_that("epochs$data not loaded (preload = FALSE) gives a clear error on apply", {
+  fx <- make_eog_epoch_fixture(n_trials = 6, seed = 22)
+  m <- fit_eog_regression(fx$epochs)
+  fx$epochs$data <- NULL
+  expect_error(apply_eog_regression(m, fx$epochs), "not loaded")
 })

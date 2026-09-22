@@ -7,7 +7,8 @@
 .eog_reference_missing(reference)
 }
 \arguments{
-\item{reference}{\code{eeg$reference}.}
+\item{reference}{\code{eeg$reference} (works the same for an \code{eeg} or
+an \code{eeg_epochs} object - both carry this field the same way).}
 }
 \value{
 \code{TRUE} if no real reference has been applied, else \code{FALSE}.

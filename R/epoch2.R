@@ -355,9 +355,16 @@ inspect_triggers <- function(eeg_obj,                             # EEG object w
 #'   window in seconds. Set to NULL to skip baseline correction (default: c(-0.2, 0))
 #' @param baseline_method Character: "mean", "median", or "none" (default: "mean")
 #' @param reject_threshold Numeric. Amplitude threshold in microV for epoch rejection.
-#'   Set to NULL to disable (default: NULL)
+#'   Only checked on channels classified \code{"eeg"} in \code{eeg_obj$channel_types},
+#'   excluding any listed in \code{eeg_obj$bads}, so an EOG/ECG/EMG/status channel's
+#'   own normal signal (e.g. a blink) never rejects a trial by itself, and a channel
+#'   already marked bad cannot either. Falls back to every channel when
+#'   \code{channel_types} is unavailable (e.g. a hand-built \code{eeg} object), or when
+#'   the restriction would leave no channel eligible. Set to NULL to disable (default: NULL)
 #' @param flat_threshold Numeric. Minimum peak-to-peak amplitude in microV. Epochs where
-#'   any channel falls below this value are rejected as flat/dead. Set to NULL to disable (default: NULL)
+#'   any eligible channel (same \code{channel_types}/\code{bads} restriction as
+#'   \code{reject_threshold}, see above) falls below this value are rejected
+#'   as flat/dead. Set to NULL to disable (default: NULL)
 #' @param reject_tmin Numeric. Start of the rejection window in seconds. Only this portion
 #'   of the epoch is used when checking rejection and flat thresholds. Set to NULL to use tmin (default: NULL)
 #' @param reject_tmax Numeric. End of the rejection window in seconds. Only this portion
@@ -555,6 +562,31 @@ epoch_eeg <- function(eeg_obj,                                           # Loade
     }
   }
 
+  # ========== CHANNELS ELIGIBLE FOR REJECT/FLAT THRESHOLD CHECKS ==========
+  # Only real EEG channels get a vote on whether to reject a trial: an
+  # EOG/ECG/EMG/status channel's own normal signal (e.g. a blink) is expected
+  # to swing, and a channel already listed in eeg_obj$bads was already told
+  # not to be trusted - letting either drive rejection would throw a trial
+  # away for a reason that no longer reflects the channels actually kept.
+  # Falls back to every channel when channel_types is unavailable (e.g. a
+  # hand-built eeg object, as in this package's own test fixtures), so that
+  # case behaves exactly as before this restriction existed.
+  reject_ch_idx <- seq_len(n_channels)
+  if (!is.null(eeg_obj$channel_types) &&
+      length(eeg_obj$channel_types) == n_channels) {
+    reject_ch_idx <- which(eeg_obj$channel_types == "eeg")
+  }
+  if (!is.null(eeg_obj$bads) && length(eeg_obj$bads) > 0) {
+    reject_ch_idx <- setdiff(reject_ch_idx, which(eeg_obj$channels %in% eeg_obj$bads))
+  }
+  if (length(reject_ch_idx) == 0 &&
+      (!is.null(reject_threshold) || !is.null(flat_threshold))) {
+    warning("reject_threshold/flat_threshold: no channel is eligible after ",
+            "restricting to channel_types == \"eeg\" and excluding ",
+            "eeg_obj$bads - checking every channel instead.", call. = FALSE)
+    reject_ch_idx <- seq_len(n_channels)
+  }
+
   # ========== EXTRACT EPOCHS ==========
   if (verbose) cat("Extracting epochs...\n")
   
@@ -646,10 +678,11 @@ epoch_eeg <- function(eeg_obj,                                           # Loade
         }
       }
 
-      # Check rejection and flat thresholds (peak-to-peak per channel)
+      # Check rejection and flat thresholds (peak-to-peak per channel),
+      # restricted to reject_ch_idx (good EEG channels - see above)
       if (!is.null(reject_threshold) || !is.null(flat_threshold)) {
         rejected_epoch <- FALSE
-        for (ch in seq_len(n_channels)) {
+        for (ch in reject_ch_idx) {
           ch_p2p <- max(epoch_data[ch, rejection_indices], na.rm = TRUE) - min(epoch_data[ch, rejection_indices], na.rm = TRUE)
 
           if (!is.null(reject_threshold) && ch_p2p > reject_threshold) {

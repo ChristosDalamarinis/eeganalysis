@@ -42,10 +42,17 @@ window in seconds. Set to NULL to skip baseline correction (default: c(-0.2, 0))
 \item{baseline_method}{Character: "mean", "median", or "none" (default: "mean")}
 
 \item{reject_threshold}{Numeric. Amplitude threshold in microV for epoch rejection.
-Set to NULL to disable (default: NULL)}
+Only checked on channels classified \code{"eeg"} in \code{eeg_obj$channel_types},
+excluding any listed in \code{eeg_obj$bads}, so an EOG/ECG/EMG/status channel's
+own normal signal (e.g. a blink) never rejects a trial by itself, and a channel
+already marked bad cannot either. Falls back to every channel when
+\code{channel_types} is unavailable (e.g. a hand-built \code{eeg} object), or when
+the restriction would leave no channel eligible. Set to NULL to disable (default: NULL)}
 
 \item{flat_threshold}{Numeric. Minimum peak-to-peak amplitude in microV. Epochs where
-any channel falls below this value are rejected as flat/dead. Set to NULL to disable (default: NULL)}
+any eligible channel (same \code{channel_types}/\code{bads} restriction as
+\code{reject_threshold}, see above) falls below this value are rejected
+as flat/dead. Set to NULL to disable (default: NULL)}
 
 \item{reject_tmin}{Numeric. Start of the rejection window in seconds. Only this portion
 of the epoch is used when checking rejection and flat thresholds. Set to NULL to use tmin (default: NULL)}

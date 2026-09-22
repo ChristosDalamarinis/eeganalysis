@@ -37,6 +37,7 @@ Version 0.0.0.9000 — under active development. Currently reads BioSemi `.bdf` 
 | Bad-channel detection & repair | `find_bad_channels()`, `interpolate_bads()` | ✅ |
 | Time-range annotations (bad stretches) | `annotate_amplitude()`, `annotate_muscle()`, `annotate_nan()`, `annotate_break()` | ✅ |
 | Re-referencing | `eeg_rereference()` | ✅ |
+| Bipolar referencing (e.g. VEOG/HEOG from a raw electrode pair) | `set_bipolar_reference()` | ✅ |
 | ICA artifact removal (fit, auto-detect, exclude, apply) | `fit_ica()`, `find_bads_eog()`, `find_bads_ecg()`, `find_bads_muscle()`, `apply_ica()` | ✅ |
 | EOG regression (fast alternative to ICA for eye artifacts; continuous and epoched data) | `fit_eog_regression()`, `apply_eog_regression()`, `subtract_evoked()` | ✅ |
 | Epoching & visualization | `epoch_eeg()`, `plot_epochs()` | ✅ |
@@ -168,6 +169,9 @@ eeganalysis
 │   │
 │   ├── rereference.R                        ← Re-referencing utilities
 │   │   └── eeg_rereference()                ← Change reference scheme (average/custom)
+│   │
+│   ├── bipolar.R                            ← Bipolar channel derivation
+│   │   └── set_bipolar_reference()          ← Derive a channel as anode minus cathode (e.g. VEOG)
 │   │
 │   ├── ica1.R                               ← ICA artifact removal
 │   │   ├── new_ica()                        ← Create an ICA container

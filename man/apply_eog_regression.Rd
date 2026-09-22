@@ -4,30 +4,43 @@
 \alias{apply_eog_regression}
 \title{Remove EOG Artifacts With a Fitted Regression Model}
 \usage{
-apply_eog_regression(model, eeg)
+apply_eog_regression(model, eeg, reapply_baseline = TRUE)
 }
 \arguments{
 \item{model}{A fitted \code{eeg_eog_regression} object, from
 \code{\link{fit_eog_regression}} or \code{\link{new_eog_regression}}.}
 
-\item{eeg}{A continuous \code{eeg} object to clean. It does not have to be
-the recording the model was fit on, but it must contain every channel
-named in the model, and it must already be re-referenced.}
+\item{eeg}{A continuous \code{eeg} object or an \code{eeg_epochs} object to
+clean. It does not have to be the recording the model was fit on, or
+even the same data shape (a model fit on epochs can clean continuous
+data and vice versa), but it must contain every channel named in the
+model, and it must already be re-referenced.}
+
+\item{reapply_baseline}{Logical, default \code{TRUE}. \code{eeg_epochs}
+input only (ignored for continuous data): subtracting the eye artifact
+can shift a trial's baseline-window average away from zero, since the
+correction is not itself baseline-anchored. When \code{TRUE}, the
+target channels are re-baselined afterward using the SAME window and
+method \code{\link{epoch_eeg}} already recorded on \code{eeg}
+(\code{eeg$baseline}, \code{eeg$baseline_method}); a no-op if
+\code{eeg$baseline} is \code{NULL} (no baseline was set).}
 }
 \value{
-A new \code{eeg} object (see \code{\link{new_eeg}}) with the
-model's target channels cleaned and a note appended to
-\code{preprocessing_history}. Since R does not change arguments in
-place, reassign the result (\code{eeg <- apply_eog_regression(model,
-  eeg)}); the input object itself is left untouched.
+A new object (see \code{\link{new_eeg}}/\code{\link{epoch_eeg}}),
+the same class as \code{eeg}, with the model's target channels cleaned
+and a note appended to \code{preprocessing_history}. Since R does not
+change arguments in place, reassign the result (\code{eeg <-
+  apply_eog_regression(model, eeg)}); the input object itself is left
+untouched.
 }
 \description{
 Subtracts, from each target channel, its weight times the EOG signal (with
-the EOG's average level taken out first), and returns the cleaned
-\code{eeg} object. A channel's overall level is left alone, only the
-eye-related fluctuation is removed. The EOG channels themselves and any
-channel not in the model (status, bad channels left out of the fit, ...)
-pass through unchanged. A port of MNE-Python's \code{EOGRegression.apply()}.
+the EOG's average level taken out first), and returns the cleaned object.
+A channel's overall level is left alone, only the eye-related fluctuation
+is removed. The EOG channels themselves and any channel not in the model
+(status, bad channels left out of the fit, ...) pass through unchanged. A
+port of MNE-Python's \code{EOGRegression.apply()}, extended here to also
+apply to epoched data.
 }
 \details{
 Channels are matched to the model by name, so the channel order in
@@ -35,6 +48,10 @@ Channels are matched to the model by name, so the channel order in
 the model needs is missing, an error lists it. A warning is issued when
 \code{eeg$reference} differs from the reference the model was fit in,
 since the weights only strictly apply in that frame.
+
+For continuous data, each channel's average level is taken over the whole
+recording. For epoched data, it is taken \strong{per trial}, matching how
+\code{\link{fit_eog_regression}} treats epochs.
 
 Where the EOG is NaN, the cleaned value is NaN too (the value is unknown);
 every other sample is cleaned normally.
@@ -51,10 +68,14 @@ recording. This function never touches ICA; see
   # reuse a saved model on another recording (same channel names)
   model <- readRDS("eog_model.rds")
   eeg2_clean <- apply_eog_regression(model, eeg2)
+
+  # epoched data: fit on the residual, apply to the original epochs
+  model  <- fit_eog_regression(subtract_evoked(epochs))
+  epochs <- apply_eog_regression(model, epochs)     # reapply_baseline = TRUE
 }
 
 }
 \seealso{
 \code{\link{fit_eog_regression}}, \code{\link{new_eog_regression}},
-\code{\link{apply_ica}}
+\code{\link{subtract_evoked}}, \code{\link{apply_ica}}
 }

@@ -7,7 +7,7 @@
 .eog_check_reference(eeg)
 }
 \arguments{
-\item{eeg}{An object of class 'eeg'.}
+\item{eeg}{An object of class 'eeg' or 'eeg_epochs'.}
 }
 \value{
 Invisibly \code{TRUE}; otherwise stops with a message that says how

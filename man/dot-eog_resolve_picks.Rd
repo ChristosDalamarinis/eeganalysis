@@ -10,7 +10,7 @@
 \item{picks}{Character vector of channel names, or numeric vector of
 channel indices.}
 
-\item{eeg}{An object of class 'eeg'.}
+\item{eeg}{An object of class 'eeg' or 'eeg_epochs'.}
 
 \item{arg}{Name of the calling argument, used in error messages.}
 }

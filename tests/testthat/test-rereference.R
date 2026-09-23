@@ -931,3 +931,167 @@ test_that("missing $bads field (legacy eeg-like object) does not error", {
   ref_signal <- c(5/3, 35/3, 65/3, 95/3)
   expect_equal(result$data[1, ], c(10, 20, 30, 40) - ref_signal, tolerance = 1e-10)
 })
+
+# ============================================================================
+# TEST SUITE 12 – add_reference_channels()
+# ============================================================================
+# WHAT THESE TESTS DO:
+#   add_reference_channels(eeg, ref_channels) appends one zero-filled channel
+#   per name (typed "eeg"), but only while eeg$reference is exactly that
+#   electrode - a zero channel is wrong once the data has been re-referenced.
+#   Everything else in the object passes through unchanged.
+
+make_recorded_against <- function(reference = "A1",
+                                  channel_names = c("Fz", "Cz", "A2"),
+                                  seed = 60) {
+  eeg <- make_eeg(channel_names = channel_names, n_timepoints = 30, seed = seed)
+  eeg$reference <- reference
+  eeg
+}
+
+test_that("add_reference_channels appends a zero row and its name at the end", {
+  eeg <- make_recorded_against("A1")
+  out <- add_reference_channels(eeg, "A1")
+
+  expect_equal(out$channels, c("Fz", "Cz", "A2", "A1"))
+  expect_equal(dim(out$data), c(4, 30))
+  expect_equal(out$data[4, ], rep(0, 30))
+  expect_equal(out$data[1:3, ], eeg$data)
+})
+
+test_that("add_reference_channels types the new channel 'eeg' and keeps lengths aligned", {
+  eeg <- make_recorded_against("A1")
+  out <- add_reference_channels(eeg, "A1")
+
+  expect_equal(out$channel_types, c(eeg$channel_types, "eeg"))
+  expect_equal(length(out$channel_types), length(out$channels))
+})
+
+test_that("add_reference_channels leaves channel_types NULL on legacy objects", {
+  eeg <- make_recorded_against("A1")
+  eeg$channel_types <- NULL
+
+  out <- add_reference_channels(eeg, "A1")
+
+  expect_equal(out$channels, c("Fz", "Cz", "A2", "A1"))
+  expect_null(out$channel_types)
+})
+
+test_that("add_reference_channels accepts several names when eeg$reference is their '+' label", {
+  eeg <- make_recorded_against("A1+A2", channel_names = c("Fz", "Cz"))
+  out <- add_reference_channels(eeg, c("A1", "A2"))
+
+  expect_equal(out$channels, c("Fz", "Cz", "A1", "A2"))
+  expect_equal(out$data[3:4, ], matrix(0, nrow = 2, ncol = 30))
+  expect_equal(out$channel_types, c(eeg$channel_types, "eeg", "eeg"))
+})
+
+test_that("add_reference_channels does not touch eeg$reference, bads, or the input object", {
+  eeg      <- make_recorded_against("A1")
+  eeg$bads <- "Fz"
+  before   <- eeg
+  out      <- add_reference_channels(eeg, "A1")
+
+  expect_equal(out$reference, "A1")
+  expect_equal(out$bads, "Fz")
+  expect_equal(out$times, eeg$times)
+  expect_equal(out$sampling_rate, eeg$sampling_rate)
+  expect_identical(eeg, before)
+})
+
+test_that("add_reference_channels appends a history entry naming the channel(s)", {
+  eeg <- make_recorded_against("A1")
+  eeg$preprocessing_history <- list("Step 1")
+  out <- add_reference_channels(eeg, "A1")
+
+  expect_equal(length(out$preprocessing_history), 2)
+  expect_match(out$preprocessing_history[[2]],
+               "Added zero-filled reference channel\\(s\\): A1")
+})
+
+test_that("add_reference_channels stops when a name already exists", {
+  eeg <- make_recorded_against("A2", channel_names = c("Fz", "Cz", "A2"))
+
+  expect_error(add_reference_channels(eeg, "A2"),
+               "already in eeg\\$channels: A2")
+})
+
+test_that("add_reference_channels stops when a name is repeated in ref_channels", {
+  eeg <- make_recorded_against("A1+A1", channel_names = c("Fz", "Cz"))
+
+  expect_error(add_reference_channels(eeg, c("A1", "A1")),
+               "'ref_channels' repeats: A1")
+})
+
+test_that("add_reference_channels validates its arguments", {
+  eeg <- make_recorded_against("A1")
+
+  expect_error(add_reference_channels(list(), "A1"),
+               "must be an object of class 'eeg'")
+  expect_error(add_reference_channels(eeg), "missing required argument")
+  expect_error(add_reference_channels(eeg, character(0)),
+               "non-empty character vector")
+  expect_error(add_reference_channels(eeg, NA_character_),
+               "non-empty character vector")
+  expect_error(add_reference_channels(eeg, ""),
+               "non-empty character vector")
+  expect_error(add_reference_channels(eeg, 1),
+               "non-empty character vector")
+})
+
+test_that("add_reference_channels stops if the data was already re-referenced", {
+  eeg <- make_recorded_against("A1")
+  eeg <- eeg_rereference(eeg, ref = "average")
+
+  expect_error(add_reference_channels(eeg, "A1"),
+               "eeg\\$reference is 'Common Average', but ref_channels is 'A1'")
+})
+
+test_that("add_reference_channels stops when the recording reference was never declared", {
+  eeg <- make_recorded_against("original")
+  expect_error(add_reference_channels(eeg, "A1"),
+               "eeg\\$reference is 'original'")
+
+  eeg$reference <- "Biosemi CMS/DRL"
+  expect_error(add_reference_channels(eeg, "A1"),
+               "eeg\\$reference is 'Biosemi CMS/DRL'")
+})
+
+test_that("add_reference_channels stops when eeg$reference names a different electrode", {
+  eeg <- make_recorded_against("Cz", channel_names = c("Fz", "Pz", "A2"))
+
+  expect_error(add_reference_channels(eeg, "A1"),
+               "eeg\\$reference is 'Cz', but ref_channels is 'A1'")
+})
+
+test_that("add_reference_channels treats a missing eeg$reference as unknown", {
+  eeg <- make_recorded_against("A1")
+  eeg$reference <- NULL
+
+  expect_error(add_reference_channels(eeg, "A1"),
+               "eeg\\$reference is 'unknown'")
+})
+
+test_that("add_reference_channels lets eeg_rereference build linked mastoids", {
+  # Recorded against A1, so A1 is exactly 0 and the linked reference
+  # (A1 + A2) / 2 reduces to A2 / 2. Without the added channel,
+  # eeg_rereference(ref = c("A1", "A2")) cannot find "A1" at all.
+  eeg <- make_recorded_against("A1", channel_names = c("Fz", "Cz", "A2"))
+
+  expect_error(eeg_rereference(eeg, ref = c("A1", "A2")),
+               "Some reference channels specified in 'ref' were not found")
+
+  out    <- add_reference_channels(eeg, "A1")
+  linked <- eeg_rereference(out, ref = c("A1", "A2"))
+
+  expect_equal(linked$data[2, ], eeg$data[2, ] - eeg$data[3, ] / 2,
+               tolerance = 1e-10)
+  expect_equal(linked$reference, "A1+A2")
+})
+
+test_that("an eeg object still prints after add_reference_channels", {
+  eeg <- make_recorded_against("A1")
+  out <- add_reference_channels(eeg, "A1")
+
+  expect_no_error(capture.output(print(out)))
+})

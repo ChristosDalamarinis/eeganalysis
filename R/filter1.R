@@ -756,7 +756,8 @@ eeg_bandpass <- function(eeg_obj,
     preprocessing_history = c(eeg_obj$preprocessing_history,
                               list(history_entry)),
     montage              = eeg_obj$montage,
-    bads                 = eeg_obj$bads
+    bads                 = eeg_obj$bads,
+    annotations          = eeg_obj$annotations
   )
 }
 
@@ -1005,7 +1006,8 @@ eeg_notch <- function(eeg_obj,
     preprocessing_history = c(eeg_obj$preprocessing_history,
                               list(history_entry)),
     montage               = eeg_obj$montage,
-    bads                  = eeg_obj$bads
+    bads                  = eeg_obj$bads,
+    annotations           = eeg_obj$annotations
   )
 }
 

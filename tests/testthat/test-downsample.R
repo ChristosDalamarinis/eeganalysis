@@ -869,6 +869,54 @@ test_that("downsample() preserves the reference field", {
   expect_equal(result$reference, "average")
 })
 
+test_that("downsample() preserves bads from the original eeg object", {
+  # WHAT THIS TESTS:
+  # The bad-channel list is a shared exclude list that later steps (re-
+  # referencing, ICA, interpolation) read from eeg$bads.  Downsampling
+  # rebuilds the eeg object, so it must hand the list back unchanged rather
+  # than resetting it to "no bad channels".
+
+  eeg <- make_eeg(sampling_rate = 512, n_timepoints = 1024)
+  eeg$bads <- "Ch2"
+
+  result <- downsample(eeg, target_rate = 256, verbose = FALSE)
+
+  expect_equal(result$bads, "Ch2")
+})
+
+test_that("downsample() preserves the montage from the original eeg object", {
+  # WHAT THIS TESTS:
+  # Electrode positions do not depend on the sampling rate, so an attached
+  # montage must come back exactly as it went in.
+
+  eeg <- make_eeg(sampling_rate = 512, n_timepoints = 1024)
+  eeg$montage <- create_montage()
+
+  result <- downsample(eeg, target_rate = 256, verbose = FALSE)
+
+  expect_equal(result$montage, eeg$montage)
+})
+
+test_that("downsample() preserves annotations from the original eeg object", {
+  # WHAT THIS TESTS:
+  # Annotation onsets and durations are in seconds, not sample indices, so
+  # (unlike events) they need no rescaling for the new sampling rate and must
+  # come back exactly as they went in.
+
+  eeg <- make_eeg(sampling_rate = 512, n_timepoints = 1024)
+  eeg$annotations <- data.frame(
+    onset       = c(0.5, 1.25),
+    duration    = c(0.25, 0.5),
+    description = c("BAD_muscle", "BAD_peak"),
+    channel     = c(NA_character_, "Ch1"),
+    stringsAsFactors = FALSE
+  )
+
+  result <- downsample(eeg, target_rate = 256, verbose = FALSE)
+
+  expect_equal(result$annotations, eeg$annotations)
+})
+
 test_that("downsample() data matrix has correct storage type (numeric)", {
   # WHAT THIS TESTS:
   # The output data matrix must be a numeric (double) matrix, consistent with

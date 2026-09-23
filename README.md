@@ -36,7 +36,7 @@ Version 0.0.0.9000 — under active development. Currently reads BioSemi `.bdf` 
 | Downsampling / Filtering | `downsample()`, `eeg_bandpass()`, `eeg_notch()` | ✅ |
 | Bad-channel detection & repair | `find_bad_channels()`, `interpolate_bads()` | ✅ |
 | Time-range annotations (bad stretches) | `annotate_amplitude()`, `annotate_muscle()`, `annotate_nan()`, `annotate_break()` | ✅ |
-| Re-referencing | `eeg_rereference()` | ✅ |
+| Re-referencing (incl. adding back a reference electrode the file never stored) | `eeg_rereference()`, `add_reference_channels()` | ✅ |
 | Bipolar referencing (e.g. VEOG/HEOG from a raw electrode pair) | `set_bipolar_reference()` | ✅ |
 | ICA artifact removal (fit, auto-detect, exclude, apply) | `fit_ica()`, `find_bads_eog()`, `find_bads_ecg()`, `find_bads_muscle()`, `apply_ica()` | ✅ |
 | EOG regression (fast alternative to ICA for eye artifacts; continuous and epoched data) | `fit_eog_regression()`, `apply_eog_regression()`, `subtract_evoked()` | ✅ |
@@ -168,7 +168,8 @@ eeganalysis
 │   │   └── annotate_break()                 ← Flag dead time between experimental blocks
 │   │
 │   ├── rereference.R                        ← Re-referencing utilities
-│   │   └── eeg_rereference()                ← Change reference scheme (average/custom)
+│   │   ├── eeg_rereference()                ← Change reference scheme (average/custom)
+│   │   └── add_reference_channels()         ← Add an unstored reference electrode back as a zero channel
 │   │
 │   ├── bipolar.R                            ← Bipolar channel derivation
 │   │   └── set_bipolar_reference()          ← Derive a channel as anode minus cathode (e.g. VEOG)
@@ -231,7 +232,7 @@ eeganalysis
 │   │
 │   └── imports.R                            ← Centralized @importFrom declarations
 │
-├── man/                                     ← Auto-generated help files (130, one per exported/internal function)
+├── man/                                     ← Auto-generated help files (135, one per exported/internal function)
 │   ├── new_eeg.Rd
 │   ├── read_bdf_native.Rd
 │   ├── find_bad_channels.Rd
@@ -240,7 +241,7 @@ eeganalysis
 │   ├── apply_ica.Rd
 │   └── ...Rd                                ← Remaining help files
 │
-├── tests/testthat/                          ← Unit tests (testthat, one file per module, 20 total)
+├── tests/testthat/                          ← Unit tests (testthat, one file per module, 21 total)
 │   ├── test-read_bdf_native.R
 │   ├── test-ica1.R
 │   ├── test-bad_channels.R

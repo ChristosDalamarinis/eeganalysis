@@ -8,6 +8,7 @@
 #'
 #' Author: Christos Dalamarinis
 #' Date: Jan - 2026
+#' Status: Tested
 #' ============================================================
 #'
 #' Re-reference EEG data

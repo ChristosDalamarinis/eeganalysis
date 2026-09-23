@@ -67,6 +67,12 @@
 #' steps such as ICA or PCA/whitening. Set \code{drop_ref = TRUE} to remove
 #' them from the returned object instead.
 #'
+#' \code{ref} can only name channels that exist in the data. If the recording
+#' was made against an electrode that was never stored as a channel, add it
+#' back first with \code{\link{add_reference_channels}}.
+#'
+#' @seealso \code{\link{add_reference_channels}}
+#'
 #' @examples
 #' \dontrun{
 #' # Common average reference
@@ -214,4 +220,150 @@ eeg_rereference <- function(eeg,
   }
 
   eeg_out
+}
+
+
+
+#' Add the Recording Reference Electrode Back as a Zero Channel
+#'
+#' Some recordings are made against one physical electrode (say a mastoid or
+#' Cz) that the file never stores as a channel. \code{add_reference_channels()}
+#' appends each name in \code{ref_channels} to the recording as a new channel
+#' of zeros - an electrode measured against itself reads exactly 0 - so that
+#' \code{\link{eeg_rereference}} can use it, for example to build linked
+#' mastoids (\code{ref = c("A1", "A2")}) from a recording made against a
+#' single mastoid.
+#'
+#' @param eeg An object of class \code{eeg} (see \code{\link{new_eeg}}) -
+#'   continuous data only.
+#' @param ref_channels Character vector: the name(s) of the electrode(s) the
+#'   data was recorded against. Must be non-empty, must not repeat a name, and
+#'   must not already exist in \code{eeg$channels}.
+#'
+#' @return A new object of class \code{eeg} with one zero-filled channel per
+#'   name appended after the existing channels, typed \code{"eeg"} in
+#'   \code{eeg$channel_types}, and a note appended to
+#'   \code{preprocessing_history}. \code{eeg$reference} is left unchanged.
+#'   Since R does not change arguments in place, reassign the result
+#'   (\code{eeg <- add_reference_channels(eeg, "A1")}); the input object
+#'   itself is left untouched.
+#'
+#' @details
+#' \strong{Reference check.} A zero channel is only correct while the data is
+#' still measured against that electrode, so \code{eeg$reference} must be
+#' exactly the name(s) given (several names are joined with \code{"+"}, the
+#' same label \code{eeg_rereference()} writes, e.g. \code{"A1+A2"}). Otherwise
+#' the function stops - this covers data that was already re-referenced
+#' (e.g. \code{"Common Average"}) and data whose recording reference was
+#' never declared (e.g. \code{"original"} or BioSemi's
+#' \code{"Biosemi CMS/DRL"}, where no reference is chosen at recording and
+#' there is nothing to add back). If the recording really was made against
+#' that electrode, declare it first, e.g. \code{eeg$reference <- "A1"}.
+#'
+#' \strong{Single electrode only is exact.} Zeros are exact for a reference
+#' that was one physical electrode. For a reference built from several
+#' electrodes the zeros are only an approximation. This is not an undo for
+#' \code{drop_ref = TRUE}: after a multi-channel reference such as linked
+#' mastoids, the dropped channels were mirror images of each other, not
+#' zeros.
+#'
+#' \strong{Pipeline order.} Run it after bad-channel detection and
+#' interpolation, immediately before \code{\link{eeg_rereference}}. The new
+#' channel is typed \code{"eeg"} and is all zeros, so it looks flat to
+#' \code{\link{find_bad_channels}} (std below 0.5 microV) and to
+#' \code{\link{annotate_amplitude}} when its flat check is on. Once the data
+#' is re-referenced it carries a real waveform like any other channel.
+#'
+#' \strong{Montage.} If a montage is attached, give the new channel a
+#' position by setting the montage after adding it. Channels without a
+#' position are skipped by topography and interpolation, so a missing one
+#' leaves a hole rather than causing an error.
+#'
+#' @examples
+#' \dontrun{
+#'   # Recorded against the left mastoid, which the file never stored
+#'   eeg$reference <- "A1"
+#'   eeg <- add_reference_channels(eeg, "A1")
+#'
+#'   # Now linked mastoids can be built
+#'   eeg <- eeg_rereference(eeg, ref = c("A1", "A2"))
+#' }
+#'
+#' @seealso \code{\link{eeg_rereference}}, \code{\link{set_bipolar_reference}}
+#'
+#' @export
+add_reference_channels <- function(eeg, ref_channels) {
+
+  # ========== VALIDATE eeg ==========
+
+  if (!inherits(eeg, "eeg")) {
+    stop("ERROR: 'eeg' must be an object of class 'eeg' (see new_eeg()).",
+         call. = FALSE)
+  }
+
+  # ========== VALIDATE ref_channels ==========
+
+  if (missing(ref_channels)) {
+    stop("ERROR: missing required argument: ref_channels - there is no ",
+         "default.", call. = FALSE)
+  }
+  if (!is.character(ref_channels) || length(ref_channels) < 1 ||
+      anyNA(ref_channels) || any(!nzchar(ref_channels))) {
+    stop("ERROR: 'ref_channels' must be a non-empty character vector of ",
+         "non-missing, non-empty channel names.", call. = FALSE)
+  }
+
+  repeated <- unique(ref_channels[duplicated(ref_channels)])
+  if (length(repeated) > 0) {
+    stop("ERROR: 'ref_channels' repeats: ", paste(repeated, collapse = ", "),
+         ".", call. = FALSE)
+  }
+
+  existing <- intersect(ref_channels, eeg$channels)
+  if (length(existing) > 0) {
+    stop("ERROR: channel(s) already in eeg$channels: ",
+         paste(existing, collapse = ", "), ".", call. = FALSE)
+  }
+
+  # ========== CHECK THE DATA IS STILL MEASURED AGAINST THIS ELECTRODE ==========
+
+  ref_label   <- paste(ref_channels, collapse = "+")
+  current_ref <- eeg$reference
+  current_txt <- if (is.null(current_ref) || length(current_ref) != 1 ||
+                     is.na(current_ref)) {
+    "unknown"
+  } else {
+    as.character(current_ref)
+  }
+
+  if (!identical(current_txt, ref_label)) {
+    stop("ERROR: eeg$reference is '", current_txt, "', but ref_channels is '",
+         ref_label, "'. A zero channel is only correct while the data is ",
+         "still measured against that electrode. If the recording really ",
+         "was made against '", ref_label, "', declare it first (e.g. ",
+         "eeg$reference <- \"", ref_label, "\"); if the data has been ",
+         "re-referenced since, there is nothing to add back.", call. = FALSE)
+  }
+
+  # ========== APPEND THE ZERO CHANNEL(S) ==========
+
+  out <- eeg
+  n_new <- length(ref_channels)
+
+  out$data     <- rbind(eeg$data, matrix(0, nrow = n_new, ncol = ncol(eeg$data)))
+  out$channels <- c(eeg$channels, ref_channels)
+
+  if (!is.null(eeg$channel_types)) {
+    out$channel_types <- c(eeg$channel_types, rep("eeg", n_new))
+  }
+
+  # ========== PREPROCESSING HISTORY ==========
+
+  out$preprocessing_history <- c(
+    out$preprocessing_history,
+    list(paste0("Added zero-filled reference channel(s): ",
+                paste(ref_channels, collapse = ", ")))
+  )
+
+  out
 }

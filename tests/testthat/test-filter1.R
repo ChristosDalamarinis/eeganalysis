@@ -53,6 +53,17 @@ eeg1ch <- new_eeg(
   sampling_rate = 256L
 )
 
+# Two annotation rows (one for the whole recording, one channel-specific) in
+# the shape annotate_*() writes to eeg$annotations - used by the "preserves
+# annotations" tests below.
+annots_2rows <- data.frame(
+  onset       = c(0.5, 2),
+  duration    = c(0.25, 1),
+  description = c("BAD_muscle", "BAD_peak"),
+  channel     = c(NA_character_, "CH1"),
+  stringsAsFactors = FALSE
+)
+
 # ─── .next_fast_len() ────────────────────────────────────────────────────────
 
 test_that(".next_fast_len returns target unchanged when <= 6", {
@@ -412,6 +423,16 @@ test_that("eeg_bandpass preserves bads and montage", {
   expect_equal(out$montage, eeg_state$montage)
 })
 
+test_that("eeg_bandpass preserves annotations", {
+  # Same reconstruction path as above: new_eeg() resets annotations to a
+  # zero-row frame unless the call site passes them through.
+  eeg_state <- eeg1ch
+  eeg_state$annotations <- annots_2rows
+
+  out <- eeg_bandpass(eeg_state, l_freq = 1, h_freq = 40, verbose = FALSE)
+  expect_equal(out$annotations, annots_2rows)
+})
+
 test_that("eeg_bandpass channel selection by name leaves others unchanged", {
   eeg3 <- new_eeg(
     data          = matrix(rnorm(512 * 3, sd = 10), nrow = 3),
@@ -553,6 +574,16 @@ test_that("eeg_notch preserves bads and montage", {
   expect_equal(out$montage, eeg_state$montage)
 })
 
+test_that("eeg_notch preserves annotations", {
+  # Same reconstruction path as above: new_eeg() resets annotations to a
+  # zero-row frame unless the call site passes them through.
+  eeg_state <- eeg1ch
+  eeg_state$annotations <- annots_2rows
+
+  out <- eeg_notch(eeg_state, freqs = 50, verbose = FALSE)
+  expect_equal(out$annotations, annots_2rows)
+})
+
 test_that("eeg_notch works with multiple harmonic frequencies", {
   out <- eeg_notch(eeg1ch, freqs = c(20, 50, 80), verbose = FALSE)
   expect_s3_class(out, "eeg")
@@ -613,4 +644,13 @@ test_that("bandpass then notch preserves bads and montage through the chain", {
   out <- eeg_notch(bp, freqs = 20, verbose = FALSE)
   expect_equal(out$bads,    eeg_state$bads)
   expect_equal(out$montage, eeg_state$montage)
+})
+
+test_that("bandpass then notch preserves annotations through the chain", {
+  eeg_state <- eeg1ch
+  eeg_state$annotations <- annots_2rows
+
+  bp  <- eeg_bandpass(eeg_state, l_freq = 1, h_freq = 40, verbose = FALSE)
+  out <- eeg_notch(bp, freqs = 20, verbose = FALSE)
+  expect_equal(out$annotations, annots_2rows)
 })

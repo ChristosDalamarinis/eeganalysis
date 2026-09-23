@@ -423,7 +423,10 @@ downsample <- function(eeg_obj,
     events = new_events,
     metadata = eeg_obj$metadata,
     reference = eeg_obj$reference,
-    preprocessing_history = new_history
+    preprocessing_history = new_history,
+    montage = eeg_obj$montage,
+    bads = eeg_obj$bads,
+    annotations = eeg_obj$annotations
   )
   
   # ========== SUMMARY MESSAGE ==========

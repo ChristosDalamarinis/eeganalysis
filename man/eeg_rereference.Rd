@@ -46,7 +46,8 @@ different reference schemes (e.g., common average or selected channels)
 within the eeganalysis framework for downstream preprocessing and analysis.
 }
 \section{Author: Christos Dalamarinis
-Date: Jan - 2026}{
+Date: Jan - 2026
+Status: Tested}{
 Re-reference EEG data
 
 Change the reference of EEG signals to a new set of reference channels
@@ -80,6 +81,10 @@ signals of each other (e.g., for \code{ref = c("M1", "M2")}, the new
 the effective rank of the data by one — relevant before rank-sensitive
 steps such as ICA or PCA/whitening. Set \code{drop_ref = TRUE} to remove
 them from the returned object instead.
+
+\code{ref} can only name channels that exist in the data. If the recording
+was made against an electrode that was never stored as a channel, add it
+back first with \code{\link{add_reference_channels}}.
 }
 
 \examples{
@@ -94,4 +99,7 @@ eeg_mastoids <- eeg_rereference(eeg, ref = c("M1", "M2"))
 eeg_mastoids <- eeg_rereference(eeg, ref = c("M1", "M2"), drop_ref = TRUE)
 }
 
+}
+\seealso{
+\code{\link{add_reference_channels}}
 }

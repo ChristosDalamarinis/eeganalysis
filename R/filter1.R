@@ -745,7 +745,7 @@ eeg_bandpass <- function(eeg_obj,
   
   # ========== RETURN UPDATED EEG OBJECT ==========
   
-  new_eeg(
+  out <- new_eeg(
     data                 = filtered_data,
     channels             = eeg_obj$channels,
     sampling_rate        = eeg_obj$sampling_rate,
@@ -759,6 +759,16 @@ eeg_bandpass <- function(eeg_obj,
     bads                 = eeg_obj$bads,
     annotations          = eeg_obj$annotations
   )
+
+  # new_eeg() re-derives channel_types from the channel names, which turns a
+  # channel typed directly - e.g. "VEOG" from set_bipolar_reference() - back
+  # into "eeg". Put the original types back (skipped for hand-built objects
+  # that have none, which keep the derived ones).
+  if (!is.null(eeg_obj$channel_types)) {
+    out$channel_types <- eeg_obj$channel_types
+  }
+
+  out
 }
 
 
@@ -995,7 +1005,7 @@ eeg_notch <- function(eeg_obj,
   
   # ========== RETURN UPDATED EEG OBJECT ==========
   
-  new_eeg(
+  out <- new_eeg(
     data                  = filtered_data,
     channels              = eeg_obj$channels,
     sampling_rate         = eeg_obj$sampling_rate,
@@ -1009,6 +1019,16 @@ eeg_notch <- function(eeg_obj,
     bads                  = eeg_obj$bads,
     annotations           = eeg_obj$annotations
   )
+
+  # new_eeg() re-derives channel_types from the channel names, which turns a
+  # channel typed directly - e.g. "VEOG" from set_bipolar_reference() - back
+  # into "eeg". Put the original types back (skipped for hand-built objects
+  # that have none, which keep the derived ones).
+  if (!is.null(eeg_obj$channel_types)) {
+    out$channel_types <- eeg_obj$channel_types
+  }
+
+  out
 }
 
 # End of filter1.R

@@ -917,6 +917,37 @@ test_that("downsample() preserves annotations from the original eeg object", {
   expect_equal(result$annotations, eeg$annotations)
 })
 
+test_that("downsample() preserves the type of a derived channel", {
+  # WHAT THIS TESTS:
+  # channel_types is derived from the channel names when an eeg object is built,
+  # but a channel made by set_bipolar_reference() is typed "external" directly
+  # (the name "VEOG" would not be classified that way).  Downsampling rebuilds
+  # the eeg object, so it must put the original types back rather than turn
+  # "VEOG" into an "eeg" channel.
+
+  eeg <- make_eeg(n_channels = 4, sampling_rate = 512, n_timepoints = 1024)
+  eeg <- set_bipolar_reference(eeg, anode = "Ch3", cathode = "Ch4", ch_name = "VEOG")
+
+  result <- downsample(eeg, target_rate = 256, verbose = FALSE)
+
+  expect_equal(result$channel_types, eeg$channel_types)
+  expect_equal(result$channel_types[result$channels == "VEOG"], "external")
+})
+
+test_that("downsample() still derives channel types when the input has none", {
+  # WHAT THIS TESTS:
+  # An object without a channel_types field (hand-built, or saved before the
+  # field existed) must still come back with the types new_eeg() derives from
+  # the channel names, not with the field deleted.
+
+  eeg <- make_eeg(sampling_rate = 512, n_timepoints = 1024)
+  eeg$channel_types <- NULL
+
+  result <- downsample(eeg, target_rate = 256, verbose = FALSE)
+
+  expect_equal(result$channel_types, rep("eeg", 3))
+})
+
 test_that("downsample() data matrix has correct storage type (numeric)", {
   # WHAT THIS TESTS:
   # The output data matrix must be a numeric (double) matrix, consistent with

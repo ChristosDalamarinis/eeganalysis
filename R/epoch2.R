@@ -420,7 +420,7 @@ epoch_eeg <- function(eeg_obj,                                           # Loade
                       reject_tmax = NULL,                                # End of the rejection window in seconds. NULL = use tmax
                       detrend = NULL,                                    # Detrending mode: NULL = off, 0 = mean removal, 1 = linear detrend
                       event_repeated = c("warn", "error", "drop"),       # How to handle duplicate events at the same sample
-                      on_missing = c("warn", "error", "ignore"),          # What to do when requested event codes are not found
+                      on_missing = c("warn", "error", "ignore"),         # What to do when requested event codes are not found
                       reject_by_annotation = TRUE,                       # TRUE/FALSE or character vector of description prefixes to reject on annotation overlap
                       preload = TRUE,                                    # Whether to load all epoch data into memory immediately
                       verbose = TRUE) {                                  # Shows you what's happening during epoching

@@ -4,7 +4,13 @@
 \alias{read_bdf_native}
 \title{Read BDF File with Native R Implementation (Memory-Efficient Chunked Version)}
 \usage{
-read_bdf_native(file_path, verbose = TRUE, chunk_records = 100)
+read_bdf_native(
+  file_path,
+  verbose = TRUE,
+  chunk_records = 100,
+  eog = NULL,
+  misc = NULL
+)
 }
 \arguments{
 \item{file_path}{Character string with path to .bdf file}
@@ -12,6 +18,19 @@ read_bdf_native(file_path, verbose = TRUE, chunk_records = 100)
 \item{verbose}{Logical, print progress messages}
 
 \item{chunk_records}{Number of data records to read per chunk (default: 100)}
+
+\item{eog}{Character vector of channel names to type \code{"eog"} (eye
+movement) in the returned object's \code{channel_types}, or
+\code{NULL} (default, no channel marked). Every name must be a
+channel actually read from the file - the Status channel is
+never one of these, since it is parsed into \code{events}
+instead of kept as a data channel. Mirrors MNE-Python's
+\code{eog} argument to \code{read_raw_bdf()}.}
+
+\item{misc}{Character vector of channel names to type \code{"misc"} (not
+meant to be analysed as an EEG signal), or \code{NULL}
+(default). Same rules as \code{eog}; a channel name cannot be
+listed in both. Mirrors MNE-Python's \code{misc} argument.}
 }
 \value{
 An object of class 'eeg' created with new_eeg()

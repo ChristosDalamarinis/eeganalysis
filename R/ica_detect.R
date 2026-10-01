@@ -101,22 +101,19 @@
 # ----------------------------------------------------------------------------
 #' Resolve Reference Channel Name(s) for Artifact Detection (internal)
 #'
-#' Some EEG toolchains auto-detect EOG/ECG channels via a dedicated channel
-#' \emph{type} stored in the recording's own metadata. This
-#' package has no such sub-type - \code{eeg_obj$channel_types} only
-#' distinguishes \code{"eeg"}/\code{"external"}/\code{"status"} (see
-#' \code{classify_channels()}, R/eeg_class.R) - the specific physiological
-#' role instead lives in the channel \emph{name} itself, via
-#' \code{\link{apply_external_labels}} (e.g. \code{"EOG_L (EXG1)"}). So
-#' auto-detection here is a case-insensitive substring match of
-#' \code{pattern} among \code{channel_types == "external"} channel names.
+#' Auto-detection reads \code{eeg_obj$channel_types} directly: every channel
+#' typed \code{pattern} (lower-cased, e.g. \code{"eog"} or \code{"ecg"}) is a
+#' match. A channel's physiological role has to be stated explicitly - via a
+#' reader's own \code{eog =}/\code{misc =} arguments at load time, or
+#' \code{\link{set_channel_types}} afterward - nothing is ever guessed from
+#' the channel's name (see \code{classify_channels()}, R/eeg_class.R).
 #'
 #' @param eeg An object of class 'eeg'.
 #' @param ch_name \code{NULL}, or a character vector of explicit channel
 #'   name(s) to use instead of auto-detection. Every name must exist in
 #'   \code{eeg$channels}.
-#' @param pattern Character scalar. Case-insensitive substring to search for
-#'   among external channel names when \code{ch_name} is \code{NULL} (e.g.
+#' @param pattern Character scalar naming the \code{channel_types} value to
+#'   match (case-insensitive) when \code{ch_name} is \code{NULL} (e.g.
 #'   \code{"EOG"}, \code{"ECG"}).
 #' @return Character vector of resolved channel name(s), length >= 1.
 #' @keywords internal
@@ -132,14 +129,12 @@
     return(eeg$channels[idx])
   }
 
-  ext_idx <- which(eeg$channel_types == "external")
-  matches <- ext_idx[grepl(pattern, eeg$channels[ext_idx], ignore.case = TRUE)]
+  matches <- which(eeg$channel_types == tolower(pattern))
 
   if (length(matches) == 0) {
-    stop("ERROR: no channel name matching '", pattern, "' found among ",
-         "eeg$channels' external channels (",
-         paste(eeg$channels[ext_idx], collapse = ", "),
-         "). Pass 'ch_name' explicitly.", call. = FALSE)
+    stop("ERROR: no channel typed '", tolower(pattern), "' found in ",
+         "eeg$channel_types. Pass 'ch_name' explicitly, or set it first ",
+         "with set_channel_types().", call. = FALSE)
   }
 
   eeg$channels[matches]

@@ -1,252 +1,31 @@
 #' ============================================================================
-#'                    External Channel Management Functions
+#'                    External Channel Detection (Database-Driven)
 #' ============================================================================
 #'
-#' This module provides interactive and automated functions for identifying,
-#' labeling, and managing external (non-EEG) channels in BioSemi recordings.
-#' External channels include physiological signals like EOG (eye movements),
-#' EMG (muscle activity), ECG (heart rate), GSR (skin conductance), and other
-#' auxiliary measurements recorded alongside brain activity.
+#' A single question: "does this channel name match a known BioSemi
+#' auxiliary port?" - looked up directly in the electrode database, never
+#' guessed or inferred. This is a suggestion tool only: it does not read or
+#' write channel_types, and does not rename anything.
 #'
-#' The module integrates with the electrode database system to accurately
-#' distinguish between standard EEG electrodes and external recording channels,
-#' enabling proper documentation and analysis of multi-modal physiological data.
+#' This used to be step one of a three-step workflow (detect, then
+#' interactively label, then rename the channel to bake the label into its
+#' name) built before channel_types existed on the eeg object. The other two
+#' steps - identify_external_channels() and apply_external_labels() - are
+#' retired: the fact they used to encode by renaming a channel (e.g. "EXG1"
+#' -> "EOG_L (EXG1)") now lives directly in eeg$channel_types instead, set
+#' with \code{\link{set_channel_types}} (or a reader's own eog=/misc=
+#' arguments, see \code{\link{read_bdf_native}}). Nothing needs to be renamed
+#' for the package to know a channel's role any more.
+#'
+#' detect_external_channels() still has a job: suggesting candidates before
+#' you decide what to tell set_channel_types(), e.g.
+#' \code{detect_external_channels(eeg$channels)} to see which of your
+#' channels look like known auxiliary ports.
 #'
 #' Author: Christos Dalamarinis
 #' Date: Jan - 2026
 #' ============================================================================
 #'
-#' Interactively Identify and Label External Channels (Database-Driven)
-#'
-#' @description
-#' This function detects external channels in imported EEG data using the 
-#' official electrode database and allows the user to interactively label 
-#' each one (e.g., "EMG", "ECG", "EOG").
-#'
-#' @param data A data frame or matrix containing EEG data with channel names,
-#'   or a character vector of channel names
-#' @param channel_col Character string specifying the column name containing 
-#'   channel labels. If NULL, uses column names. Default is NULL.
-#'
-#' @return A named list with two elements:
-#'   \item{labels}{Named vector mapping external channel names to their labels}
-#'   \item{summary}{Data frame summarizing the labeling}
-#'
-#' @details
-#' External-channel identification is read from \code{channel_types}, not
-#' recomputed here: if \code{data} is an \code{eeg} object, its
-#' \code{channel_types} field (set once by \code{classify_channels()} in
-#' \code{new_eeg()}) is used directly; otherwise \code{classify_channels()}
-#' is called on the extracted channel names. \code{get_electrode_database()}
-#' is still used, but only for descriptive context (the position-type hint
-#' shown at each prompt and the Type/Description columns in the summary),
-#' not to decide which channels are external.
-#'
-#' @examples
-#' \dontrun{
-#' # After importing BioSemi data
-#' eeg_data <- import_biosemi("myfile.bdf")
-#' external_labels <- identify_external_channels(eeg_data)
-#' }
-#'
-#' @export
-identify_external_channels <- function(data, channel_col = NULL) {
-  
-  # ========================================================================
-  # EXTRACT CHANNEL NAMES
-  # ========================================================================
-  
-  channel_types <- NULL
-
-  if (is.character(data)) {
-    # Character vector of channel names
-    channel_names <- trimws(data)
-  } else if (is.data.frame(data) || is.matrix(data)) {
-    # Data frame or matrix - use column names
-    if (is.null(channel_col)) {
-      channel_names <- colnames(data)
-    } else {
-      if (!channel_col %in% colnames(data)) {
-        stop("Specified channel_col '", channel_col, "' not found in data.")
-      }
-      channel_names <- unique(data[[channel_col]])
-    }
-  } else if (is.list(data)) {
-    # List - try common locations (includes eeg objects)
-    if (!is.null(data$channels)) {
-      channel_names <- trimws(data$channels)
-      if (!is.null(data$channel_types)) {
-        channel_types <- data$channel_types
-      }
-    } else if (!is.null(data$channel_names)) {
-      channel_names <- trimws(data$channel_names)
-    } else {
-      stop("Cannot find channel names in list. Please provide channel names directly.")
-    }
-  } else {
-    stop("Invalid input type. Expected data frame, matrix, list, or character vector.")
-  }
-
-  if (is.null(channel_names) || length(channel_names) == 0) {
-    stop("No channel names found or extracted.")
-  }
-
-  # If the input didn't already carry a classification (e.g. an eeg object's
-  # channel_types), compute it the same way new_eeg() does rather than
-  # re-deriving externality from the electrode database here.
-  if (is.null(channel_types)) {
-    channel_types <- classify_channels(channel_names)
-  }
-
-  # ========================================================================
-  # GET ELECTRODE DATABASE
-  # ========================================================================
-
-  # Used below only for descriptive context (position-type hint, summary
-  # Type/Description columns) - not to decide which channels are external.
-  electrode_db <- get_electrode_database()
-
-  # ========================================================================
-  # IDENTIFY EXTERNAL CHANNELS (FROM channel_types)
-  # ========================================================================
-
-  external_channels <- channel_names[!(channel_types %in% c("eeg", "status"))]
-  
-  # ========================================================================
-  # REPORT FINDINGS
-  # ========================================================================
-  
-  if (length(external_channels) == 0) {
-    cat("\n[OK] No external channels detected in the dataset.\n\n")
-    return(list(labels = character(0), summary = data.frame()))
-  }
-  
-  # Report number of external channels found
-  cat("\n========================================\n")
-  cat("  EXTERNAL CHANNELS DETECTED\n")
-  cat("========================================\n\n")
-  cat("Found", length(external_channels), "external channel(s):\n")
-  
-  # Show channel names with their database descriptions
-  for (ch_name in external_channels) {
-    ch_lower <- tolower(ch_name)
-    if (ch_lower %in% names(electrode_db)) {
-      electrode_info <- electrode_db[[ch_lower]]
-      cat("  - ", ch_name, " (", electrode_info$position_name, ")\n", sep = "")
-    } else {
-      cat("  - ", ch_name, "\n", sep = "")
-    }
-  }
-  cat("\n")
-  
-  # ========================================================================
-  # INTERACTIVE LABELING
-  # ========================================================================
-  
-  cat("Please label each external channel.\n")
-  cat("Common labels: EMG (muscle), EOG (eye), ECG (heart), GSR (skin conductance)\n")
-  cat("Press ENTER to skip a channel.\n\n")
-  
-  labels <- character(length(external_channels))
-  names(labels) <- external_channels
-  
-  for (i in seq_along(external_channels)) {
-    channel <- external_channels[i]
-    
-    # Get database info for context
-    ch_lower <- tolower(channel)
-    context_info <- ""
-    if (ch_lower %in% names(electrode_db)) {
-      electrode_info <- electrode_db[[ch_lower]]
-      context_info <- paste0(" [", electrode_info$position_type, "]")
-    }
-    
-    repeat {
-      user_input <- readline(prompt = sprintf("[%d/%d] %s%s = ", 
-                                              i, 
-                                              length(external_channels), 
-                                              channel,
-                                              context_info))
-      
-      # Trim whitespace
-      user_input <- trimws(user_input)
-      
-      # If empty, mark as unlabeled
-      if (user_input == "") {
-        labels[channel] <- "Unlabeled"
-        cat("  -> Skipped (marked as Unlabeled)\n\n")
-        break
-      }
-      
-      # Validate input (only letters, numbers, underscores, hyphens, spaces)
-      if (grepl("^[A-Za-z0-9_ -]+$", user_input)) {
-        labels[channel] <- user_input
-        cat("  -> Labeled as:", user_input, "\n\n")
-        break
-      } else {
-        cat("  [WARN] Invalid input. Please use only letters, numbers, hyphens, underscores, or spaces.\n")
-      }
-    }
-  }
-  
-  # ========================================================================
-  # CREATE SUMMARY
-  # ========================================================================
-  
-  summary_df <- data.frame(
-    Channel = names(labels),
-    Label = unname(labels),
-    Type = character(length(labels)),
-    Description = character(length(labels)),
-    stringsAsFactors = FALSE
-  )
-  
-  # Add database info to summary
-  for (i in 1:nrow(summary_df)) {
-    ch_name <- summary_df$Channel[i]
-    ch_lower <- tolower(ch_name)
-    
-    if (ch_lower %in% names(electrode_db)) {
-      electrode_info <- electrode_db[[ch_lower]]
-      summary_df$Type[i] <- electrode_info$position_type
-      summary_df$Description[i] <- electrode_info$position_name
-    } else {
-      summary_df$Type[i] <- "Unknown"
-      summary_df$Description[i] <- "Not in database"
-    }
-  }
-  
-  # ========================================================================
-  # DISPLAY SUMMARY
-  # ========================================================================
-  
-  cat("========================================\n")
-  cat("  LABELING SUMMARY\n")
-  cat("========================================\n\n")
-  print(summary_df, row.names = FALSE)
-  cat("\n")
-  
-  # Count labeled vs unlabeled
-  n_labeled <- sum(labels != "Unlabeled")
-  n_unlabeled <- sum(labels == "Unlabeled")
-  
-  cat("Total labeled: ", n_labeled, " / ", length(external_channels), "\n", sep = "")
-  if (n_unlabeled > 0) {
-    cat("[WARN] ", n_unlabeled, " channel(s) remain unlabeled.\n", sep = "")
-  }
-  cat("\n")
-  
-  # ========================================================================
-  # RETURN RESULTS
-  # ========================================================================
-  
-  invisible(list(
-    labels = labels,
-    summary = summary_df
-  ))
-}
-
-
 #' Detect External Channels (Non-Interactive, Database-Driven)
 #'
 #' @description
@@ -260,7 +39,7 @@ identify_external_channels <- function(data, channel_col = NULL) {
 #'
 #' @export
 detect_external_channels <- function(data, channel_col = NULL) {
-  
+
   # Extract channel names
   if (is.character(data)) {
     channel_names <- trimws(data)
@@ -284,139 +63,26 @@ detect_external_channels <- function(data, channel_col = NULL) {
   } else {
     stop("Invalid input type.")
   }
-  
+
   # Get electrode database
   electrode_db <- get_electrode_database()
-  
+
   # Identify external channels
   external_channels <- character()
-  
+
   for (ch_name in channel_names) {
     ch_lower <- tolower(ch_name)
-    
+
     if (ch_lower %in% names(electrode_db)) {
       electrode_info <- electrode_db[[ch_lower]]
-      
-      if (electrode_info$position_type %in% c("External", "GSR", "Ergo/AUX", 
-                                              "Respiration", "Plethysmograph", 
+
+      if (electrode_info$position_type %in% c("External", "GSR", "Ergo/AUX",
+                                              "Respiration", "Plethysmograph",
                                               "Temperature")) {
         external_channels <- c(external_channels, ch_name)
       }
     }
   }
-  
+
   return(external_channels)
 }
-
-
-#' Apply External Channel Labels to Data
-#'
-#' @description
-#' Renames external channels in the dataset based on user-provided labels.
-#' Handles eeg class objects, data frames/matrices, and list structures.
-#'
-#' @param data An eeg object, data frame, matrix, or list containing EEG data
-#' @param labels Named vector of labels (output from identify_external_channels)
-#' @param keep_original Logical; if TRUE, keeps original names in parentheses
-#'
-#' @return Modified data with renamed channels
-#'
-#' @examples
-#' \dontrun{
-#' external_info <- identify_external_channels(eeg_data)
-#' eeg_data_labeled <- apply_external_labels(eeg_data, external_info$labels)
-#' }
-#'
-#' @export
-apply_external_labels <- function(data, labels, keep_original = TRUE) {
-  
-  if (length(labels) == 0) {
-    message("No labels to apply.")
-    return(data)
-  }
-  
-  # Handle different data structures
-  if (is.list(data) && !is.data.frame(data)) {
-    # List structure (eeg object or other list)
-    
-    # Find where channel names are stored
-    if ("channels" %in% names(data)) {
-      current_names <- data$channels
-      channel_location <- "channels"
-    } else if ("channel_names" %in% names(data)) {
-      current_names <- data$channel_names
-      channel_location <- "channel_names"
-    } else {
-      stop("Cannot find channel names in data structure.\n",
-           "Expected data$channels or data$channel_names\n",
-           "Available names: ", paste(names(data), collapse = ", "))
-    }
-    
-    # Create new names
-    new_names <- current_names
-    n_changed <- 0
-    
-    for (i in seq_along(current_names)) {
-      if (current_names[i] %in% names(labels)) {
-        label <- labels[current_names[i]]
-        
-        if (label != "Unlabeled") {
-          if (keep_original) {
-            new_names[i] <- paste0(label, " (", current_names[i], ")")
-          } else {
-            new_names[i] <- label
-          }
-          n_changed <- n_changed + 1
-        }
-      }
-    }
-    
-    # Apply new names back to the data structure
-    data[[channel_location]] <- new_names
-    
-    cat("[OK] Applied", n_changed, "external channel label(s).\n")
-    
-    return(data)
-    
-  } else if (is.data.frame(data) || is.matrix(data)) {
-    # Data frame or matrix
-    
-    # Get current column names
-    current_names <- colnames(data)
-    
-    if (is.null(current_names)) {
-      stop("Data frame/matrix has no column names.")
-    }
-    
-    # Create new names
-    new_names <- current_names
-    n_changed <- 0
-    
-    for (i in seq_along(current_names)) {
-      if (current_names[i] %in% names(labels)) {
-        label <- labels[current_names[i]]
-        
-        if (label != "Unlabeled") {
-          if (keep_original) {
-            new_names[i] <- paste0(label, " (", current_names[i], ")")
-          } else {
-            new_names[i] <- label
-          }
-          n_changed <- n_changed + 1
-        }
-      }
-    }
-    
-    # Apply new names
-    colnames(data) <- new_names
-    
-    cat("[OK] Applied", n_changed, "external channel label(s).\n")
-    
-    return(data)
-    
-  } else {
-    stop("Invalid data type. Expected eeg object, data frame, matrix, or list.\n",
-         "Got: ", class(data)[1])
-  }
-}
-

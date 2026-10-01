@@ -298,7 +298,7 @@ new_eeg <- function(data,
 #' emg, resp, gsr, temp, bio, or misc - is a fact about how the recording
 #' was set up, not something derivable from its name, so it must be stated
 #' explicitly: via a reader's own arguments at load time, or via
-#' \code{\link{set_channel_types}} afterward.
+#' \code{set_channel_types} afterward.
 #'
 #' @param channels Character vector of channel names.
 #' @return Character vector the same length as \code{channels}, with values

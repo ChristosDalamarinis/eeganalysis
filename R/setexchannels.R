@@ -110,7 +110,7 @@ identify_external_channels <- function(data, channel_col = NULL) {
   # IDENTIFY EXTERNAL CHANNELS (FROM channel_types)
   # ========================================================================
 
-  external_channels <- channel_names[channel_types == "external"]
+  external_channels <- channel_names[!(channel_types %in% c("eeg", "status"))]
   
   # ========================================================================
   # REPORT FINDINGS

@@ -12,12 +12,11 @@
 #
 # Sits one step earlier in the pipeline than regression.R, the same way
 # eeg_rereference() does: hand it a recording with raw EXG channels, get
-# back an ordinary eeg object with one derived channel in their place. Name
-# that channel with "EOG" in it (e.g. "VEOG") and fit_eog_regression() finds
-# it automatically, the same lookup find_bads_eog() uses
-# (.resolve_reference_channels(), R/ica_detect.R) - nothing in regression.R
-# needs to know this channel was built by subtraction rather than recorded
-# directly.
+# back an ordinary eeg object with one derived channel in their place,
+# typed "eog" directly - so fit_eog_regression() and find_bads_eog() find
+# it automatically (.resolve_reference_channels(), R/ica_detect.R) under
+# whatever name you give it. Nothing in regression.R needs to know this
+# channel was built by subtraction rather than recorded directly.
 #
 # Reference-invariant by construction: anode and cathode are both expressed
 # relative to whatever reference is currently active, so subtracting them
@@ -54,10 +53,11 @@
 #'   from \code{anode}.
 #' @param ch_name Character scalar: the name for the new derived channel
 #'   (e.g. \code{"VEOG"}). Required - there is no default, so every call
-#'   picks a deliberate, meaningful name. Include \code{"EOG"} in it if you
-#'   want \code{\link{find_bads_eog}}/\code{\link{fit_eog_regression}} to
-#'   find it automatically later (see Details). Must not collide with a
-#'   channel name that will still exist once this call finishes.
+#'   picks a deliberate, meaningful name. Typed \code{"eog"} regardless of
+#'   what you call it (see Details), so \code{\link{find_bads_eog}}/
+#'   \code{\link{fit_eog_regression}} find it automatically either way.
+#'   Must not collide with a channel name that will still exist once this
+#'   call finishes.
 #' @param drop Logical, default \code{TRUE}. Removes \code{anode} and
 #'   \code{cathode} from the returned object once the new channel is built,
 #'   since keeping the two raw electrodes around alongside their own
@@ -72,10 +72,10 @@
 #'   ...)}); the input object itself is left untouched.
 #'
 #' @details
-#' \strong{Channel type.} The new channel is recorded as \code{"external"} in
-#' \code{eeg$channel_types}, the same category every other EXG/EOG/ECG
-#' channel already has (set directly, not by re-running the name-based
-#' classifier - see \code{\link{new_eeg}}).
+#' \strong{Channel type.} The new channel is recorded as \code{"eog"} in
+#' \code{eeg$channel_types} directly, regardless of \code{ch_name} - not
+#' re-derived from its name via \code{classify_channels()} (see
+#' \code{\link{new_eeg}}).
 #'
 #' \strong{Reference.} \code{anode} and \code{cathode} are both expressed
 #' relative to whatever reference is currently active, so the subtraction
@@ -110,7 +110,11 @@
 #'   \code{\link{eeg_rereference}}
 #'
 #' @export
-set_bipolar_reference <- function(eeg, anode, cathode, ch_name, drop = TRUE) {
+set_bipolar_reference <- function(eeg, 
+                                  anode, 
+                                  cathode, 
+                                  ch_name, 
+                                  drop = TRUE) {
 
   # ========== VALIDATE eeg ==========
 
@@ -181,7 +185,7 @@ set_bipolar_reference <- function(eeg, anode, cathode, ch_name, drop = TRUE) {
 
   out$data            <- rbind(out$data, new_row)
   out$channels        <- c(out$channels, ch_name)
-  out$channel_types   <- c(out$channel_types, "external")
+  out$channel_types   <- c(out$channel_types, "eog")
   rownames(out$data)  <- NULL     # rbind() would otherwise label the new row
                                    # "new_row" (deparse.level = 1) while every
                                    # other row stays "" - channels are looked

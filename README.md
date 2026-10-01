@@ -32,7 +32,7 @@ Version 0.0.0.9000 — under active development. Currently reads BioSemi `.bdf` 
 | Stage | Function(s) | Status |
 |------------------------|------------------------|------------------------|
 | Import BioSemi `.bdf` | `read_bdf_native()` | ✅ |
-| Channel inspection & labeling | `inspect_biosemi_file()`, `identify_external_channels()`, `detect_external_channels()` | ✅ |
+| Channel inspection & type assignment | `inspect_biosemi_file()`, `detect_external_channels()`, `set_channel_types()` | ✅ |
 | Downsampling / Filtering | `downsample()`, `eeg_bandpass()`, `eeg_notch()` | ✅ |
 | Bad-channel detection & repair | `find_bad_channels()`, `interpolate_bads()` | ✅ |
 | Time-range annotations (bad stretches) | `annotate_amplitude()`, `annotate_muscle()`, `annotate_nan()`, `annotate_break()` | ✅ |
@@ -143,10 +143,11 @@ eeganalysis
 │   │   ├── plot_electrode_3d()              ← 3D electrode visualization (Cartesian)
 │   │   └── plot_electrode_3d_spherical()    ← 3D electrode visualization (spherical)
 │   │
-│   ├── setexchannels.R                      ← External channel management
-│   │   ├── identify_external_channels()     ← Interactive labeling (EOG, EMG, ECG, GSR)
-│   │   ├── detect_external_channels()       ← Automated external channel detection
-│   │   └── apply_external_labels()          ← Apply user-defined labels to data
+│   ├── setexchannels.R                      ← External-channel name lookup (suggestion only)
+│   │   └── detect_external_channels()       ← Suggest candidates by matching known BioSemi ports
+│   │
+│   ├── channel_types.R                      ← Channel role assignment
+│   │   └── set_channel_types()              ← Set eeg/eog/ecg/emg/.../status type per channel
 │   │
 │   ├── downsample.R                         ← Smart downsampling
 │   │   └── downsample()                     ← Downsample with anti-aliasing filter
@@ -241,7 +242,7 @@ eeganalysis
 │   ├── apply_ica.Rd
 │   └── ...Rd                                ← Remaining help files
 │
-├── tests/testthat/                          ← Unit tests (testthat, one file per module, 21 total)
+├── tests/testthat/                          ← Unit tests (testthat, one file per module, 22 total)
 │   ├── test-read_bdf_native.R
 │   ├── test-ica1.R
 │   ├── test-bad_channels.R

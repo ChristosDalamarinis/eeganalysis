@@ -65,7 +65,7 @@ annots_2rows <- data.frame(
 )
 
 # A recording with a derived "VEOG" channel: set_bipolar_reference() types it
-# "external" directly, which classifying the name "VEOG" would not - used by the
+# "eog" directly, which classifying the name "VEOG" would not - used by the
 # "keeps the type of a derived channel" tests below. Built with
 # eeganalysis::new_eeg() because the new_eeg() at the top of this file is a
 # stand-in that has no channel_types.
@@ -453,7 +453,7 @@ test_that("eeg_bandpass keeps the type of a derived channel", {
   # call site puts it back.
   out <- eeg_bandpass(eeg_veog, l_freq = 1, h_freq = 40, verbose = FALSE)
   expect_equal(out$channel_types, eeg_veog$channel_types)
-  expect_equal(out$channel_types[out$channels == "VEOG"], "external")
+  expect_equal(out$channel_types[out$channels == "VEOG"], "eog")
 })
 
 test_that("eeg_bandpass still derives channel types when the input has none", {
@@ -617,7 +617,7 @@ test_that("eeg_notch preserves annotations", {
 test_that("eeg_notch keeps the type of a derived channel", {
   out <- eeg_notch(eeg_veog, freqs = 50, verbose = FALSE)
   expect_equal(out$channel_types, eeg_veog$channel_types)
-  expect_equal(out$channel_types[out$channels == "VEOG"], "external")
+  expect_equal(out$channel_types[out$channels == "VEOG"], "eog")
 })
 
 test_that("eeg_notch still derives channel types when the input has none", {
@@ -700,5 +700,5 @@ test_that("bandpass then notch keeps the type of a derived channel through the c
   bp  <- eeg_bandpass(eeg_veog, l_freq = 1, h_freq = 40, verbose = FALSE)
   out <- eeg_notch(bp, freqs = 20, verbose = FALSE)
   expect_equal(out$channel_types, eeg_veog$channel_types)
-  expect_equal(out$channel_types[out$channels == "VEOG"], "external")
+  expect_equal(out$channel_types[out$channels == "VEOG"], "eog")
 })

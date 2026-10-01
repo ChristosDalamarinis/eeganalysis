@@ -724,10 +724,11 @@ test_that("identify_external_channels returns list with $labels and $summary", {
     .package = "base"
   )
   
-  channels <- c("Cz", "Pz", "EXG1")
-  
+  channels <- list(channels = c("Cz", "Pz", "EXG1"),
+                   channel_types = c("eeg", "eeg", "eog"))
+
   result <- identify_external_channels(channels)
-  
+
   expect_true(is.list(result))
   expect_true("labels" %in% names(result))
   expect_true("summary" %in% names(result))
@@ -747,9 +748,10 @@ test_that("identify_external_channels $labels has correct names and values", {
     .package = "base"
   )
   
-  channels <- c("Cz", "EXG1", "Pz")
+  channels <- list(channels = c("Cz", "EXG1", "Pz"),
+                   channel_types = c("eeg", "eog", "eeg"))
   result <- identify_external_channels(channels)
-  
+
   expect_true(is.character(result$labels))
   expect_equal(names(result$labels), "EXG1")
   expect_equal(result$labels[["EXG1"]], "EOG_L")
@@ -786,9 +788,10 @@ test_that("identify_external_channels marks channel as Unlabeled when user press
     .package = "base"
   )
   
-  channels <- c("EXG1", "Cz")
+  channels <- list(channels = c("EXG1", "Cz"),
+                   channel_types = c("eog", "eeg"))
   result <- identify_external_channels(channels)
-  
+
   expect_equal(result$labels[["EXG1"]], "Unlabeled")
 })
 
@@ -811,9 +814,10 @@ test_that("identify_external_channels returns summary data frame with correct st
     .package = "base"
   )
   
-  channels <- c("EXG1", "EXG2", "Cz")
+  channels <- list(channels = c("EXG1", "EXG2", "Cz"),
+                   channel_types = c("eog", "eog", "eeg"))
   result <- identify_external_channels(channels)
-  
+
   expect_true(is.data.frame(result$summary))
   expect_equal(ncol(result$summary), 4)
   expect_true(all(c("Channel", "Label", "Type", "Description") %in% names(result$summary)))
@@ -834,9 +838,10 @@ test_that("identify_external_channels populates summary Type and Description fro
     .package = "base"
   )
   
-  channels <- c("EXG1", "Cz")
+  channels <- list(channels = c("EXG1", "Cz"),
+                   channel_types = c("eog", "eeg"))
   result <- identify_external_channels(channels)
-  
+
   expect_equal(result$summary$Channel[1], "EXG1")
   expect_equal(result$summary$Label[1], "EOG_L")
   expect_equal(result$summary$Type[1], "External")  # From database
@@ -844,22 +849,23 @@ test_that("identify_external_channels populates summary Type and Description fro
 })
 
 # ----------------------------------------------------------------------------
-# Test 3.7: Data frame input (colnames) works with identify_external_channels
+# Test 3.7: Data frame input has no channel_types slot, so nothing is found
 # ----------------------------------------------------------------------------
 # WHAT THIS TESTS: identify_external_channels() shares the same input-parsing
-# logic as detect_external_channels(). A data frame with EXG columns should
-# yield those columns for labeling. The mock provides one label for one channel.
-test_that("identify_external_channels accepts data frame input", {
-  local_mocked_bindings(
-    readline = function(prompt = "") "EMG",
-    .package = "base"
-  )
-  
+# logic as detect_external_channels(), but a data frame only ever offers
+# column names - unlike a list, it has nowhere to also carry $channel_types.
+# So it falls back to classify_channels() on those names, and
+# classify_channels() no longer guesses a channel's role from its name (see
+# R/eeg_class.R). A data frame with a column named "EXG4" can therefore
+# never be found this way, even though the same name in a list with explicit
+# channel_types would be (see the list-input tests above). readline() must
+# never even be called, since nothing is found to prompt for.
+test_that("identify_external_channels finds nothing from a bare data frame", {
   df <- data.frame(Cz = rnorm(5), EXG4 = rnorm(5), Pz = rnorm(5))
   result <- identify_external_channels(df)
-  
-  expect_equal(names(result$labels), "EXG4")
-  expect_equal(result$labels[["EXG4"]], "EMG")
+
+  expect_equal(result$labels, character(0))
+  expect_equal(nrow(result$summary), 0)
 })
 
 # ----------------------------------------------------------------------------
@@ -981,7 +987,8 @@ test_that("identify_external_channels $labels output feeds into apply_external_l
     .package = "base"
   )
   
-  channels_vec <- c("EXG1", "Cz", "Pz")
+  channels_vec <- list(channels = c("EXG1", "Cz", "Pz"),
+                       channel_types = c("eog", "eeg", "eeg"))
   identification_result <- identify_external_channels(channels_vec)
   
   # Now apply to a data frame that has EXG1 as a column

@@ -69,7 +69,8 @@ make_detect_fixture <- function(n_samples = 4000, sampling_rate = 256, seed = 42
   data <- rbind(eeg_data, eog_ch, ecg_ch)
   channels <- c(paste0("Ch", seq_len(n_ch)), "EOG_L (EXG1)", "ECG (EXG2)")
 
-  eeg <- new_eeg(data = data, channels = channels, sampling_rate = sampling_rate)
+  eeg <- new_eeg(data = data, channels = channels, sampling_rate = sampling_rate,
+                channel_types = c(rep("eeg", n_ch), "eog", "ecg"))
   list(eeg = eeg, n_components = nrow(S))
 }
 
@@ -139,7 +140,7 @@ test_that(".find_outliers returns nothing when there are no real outliers", {
 #          TEST SUITE 2: .resolve_reference_channels() - private helper
 # ============================================================================
 
-test_that(".resolve_reference_channels auto-detects by name pattern among external channels", {
+test_that(".resolve_reference_channels auto-detects by channel_types", {
   fx <- make_detect_fixture()
   expect_equal(.resolve_reference_channels(fx$eeg, NULL, "EOG"), "EOG_L (EXG1)")
   expect_equal(.resolve_reference_channels(fx$eeg, NULL, "ECG"), "ECG (EXG2)")
@@ -147,7 +148,7 @@ test_that(".resolve_reference_channels auto-detects by name pattern among extern
 
 test_that(".resolve_reference_channels errors clearly when nothing matches and no ch_name given", {
   fx <- make_detect_fixture()
-  expect_error(.resolve_reference_channels(fx$eeg, NULL, "GSR"), "no channel name matching")
+  expect_error(.resolve_reference_channels(fx$eeg, NULL, "GSR"), "no channel typed")
 })
 
 test_that(".resolve_reference_channels accepts and validates an explicit ch_name", {
@@ -189,7 +190,8 @@ test_that("find_bads_eog merges results across multiple EOG-like channels, sorte
 
   eeg2 <- new_eeg(data = rbind(fx$eeg$data, eog_r),
                    channels = c(fx$eeg$channels, "EOG_R (EXG3)"),
-                   sampling_rate = fx$eeg$sampling_rate)
+                   sampling_rate = fx$eeg$sampling_rate,
+                   channel_types = c(fx$eeg$channel_types, "eog"))
 
   ica <- suppressWarnings(fit_ica(new_ica(n_components = fx$n_components, random_state = 1), eeg2))
   ica2 <- find_bads_eog(ica, eeg2)
@@ -310,7 +312,8 @@ test_that("find_bads_ecg(method = 'ctps') warns and uses only the first channel 
   ecg_l <- fx$eeg$data[match("ECG (EXG2)", fx$eeg$channels), ]
   eeg2 <- new_eeg(data = rbind(fx$eeg$data, ecg_l),
                    channels = c(fx$eeg$channels, "ECG2 (EXG3)"),
-                   sampling_rate = fx$eeg$sampling_rate)
+                   sampling_rate = fx$eeg$sampling_rate,
+                   channel_types = c(fx$eeg$channel_types, "ecg"))
   ica <- suppressWarnings(fit_ica(new_ica(n_components = fx$n_components, random_state = 1), eeg2))
 
   expect_warning(find_bads_ecg(ica, eeg2, method = "ctps"), "More than one ECG-like channel")

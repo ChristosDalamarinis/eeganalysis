@@ -81,7 +81,9 @@ make_eog_fixture <- function(n_samples = 4000, sampling_rate = 250, seed = 1,
   eeg <- new_eeg(data = data,
                  channels = c(EEG_NAMES, EOG_NAMES, "Status"),
                  sampling_rate = sampling_rate,
-                 reference = reference)
+                 reference = reference,
+                 channel_types = c(rep("eeg", length(EEG_NAMES)),
+                                   rep("eog", length(EOG_NAMES)), "status"))
   list(eeg = eeg, beta_true = beta_true, dc = dc)
 }
 
@@ -123,7 +125,7 @@ add_external_channel <- function(eeg, name, values) {
   out <- eeg
   out$data <- rbind(eeg$data, values)
   out$channels <- c(eeg$channels, name)
-  out$channel_types <- c(eeg$channel_types, "external")
+  out$channel_types <- c(eeg$channel_types, "eog")
   out
 }
 
@@ -188,7 +190,7 @@ make_eog_epoch_fixture <- function(n_trials = 160, n_times = 126,
     list(
       data = data,
       channels = c(EEG_NAMES, EOG_EPOCH_NAME),
-      channel_types = c(rep("eeg", n_ch), "external"),
+      channel_types = c(rep("eeg", n_ch), "eog"),
       bads = character(0),
       times = times,
       events = events,
@@ -231,7 +233,7 @@ demean_per_trial <- function(arr) {
 test_that("fixture channels are typed as intended", {
   fx <- make_eog_fixture()
   expect_equal(unname(fx$eeg$channel_types),
-               c(rep("eeg", 6), "external", "external", "status"))
+               c(rep("eeg", 6), "eog", "eog", "status"))
   expect_equal(fx$eeg$reference, "Common Average")
 })
 

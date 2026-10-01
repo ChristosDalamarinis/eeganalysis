@@ -683,8 +683,8 @@ fit_eog_regression <- function(eeg, picks = NULL, picks_artifact = NULL) {
     art <- tryCatch(.resolve_reference_channels(eeg, NULL, "EOG"),
                     error = function(e) NULL)
     if (is.null(art)) {
-      ext <- eeg$channels[eeg$channel_types == "external"]
-      stop("ERROR: no EOG channel found among the external channels (",
+      ext <- eeg$channels[eeg$channel_types == "eog"]
+      stop("ERROR: no EOG channel found - no channel is typed \"eog\" (",
            if (length(ext) > 0) paste(ext, collapse = ", ") else "none",
            "). Pass 'picks_artifact' explicitly, e.g. ",
            "picks_artifact = c(\"VEOG\", \"HEOG\").", call. = FALSE)

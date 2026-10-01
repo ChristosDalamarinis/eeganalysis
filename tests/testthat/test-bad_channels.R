@@ -498,7 +498,8 @@ test_that("find_bad_channels errors when eeg_obj$data is not a matrix", {
 test_that("find_bad_channels errors when no EEG channels remain", {
   set.seed(2)
   data <- matrix(rnorm(2 * 100), nrow = 2, ncol = 100)
-  eeg_all_exg <- new_eeg(data = data, channels = c("EXG1", "EXG2"), sampling_rate = 256)
+  eeg_all_exg <- new_eeg(data = data, channels = c("EXG1", "EXG2"), sampling_rate = 256,
+                         channel_types = c("eog", "eog"))
   expect_error(find_bad_channels(eeg_all_exg), "No EEG channels")
 
   eeg_all_bad <- new_eeg(data = data, channels = c("Cz", "Pz"), sampling_rate = 256,

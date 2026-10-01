@@ -21,9 +21,10 @@ data.}
 \code{channels}, with values \code{"eeg"} / \code{"external"} /
 \code{"status"} - i.e. \code{eeg_obj$channel_types} as computed once by
 \code{classify_channels()} in \code{new_eeg()} (see R/eeg_class.R).
-Channels typed \code{"eeg"} form one pooled-std group and channels typed
-\code{"external"} form another; \code{"status"} entries are not
-assigned to either group and must already be excluded from \code{data}.}
+Channels typed \code{"eeg"} form one pooled-std group and every other
+type (\code{"eog"}, \code{"ecg"}, ...) forms another; \code{"status"}
+entries are not assigned to either group and must already be excluded
+from \code{data}.}
 
 \item{noise_cov}{\code{NULL} (default). A non-NULL value is not yet
 supported and raises an error.}

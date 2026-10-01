@@ -25,7 +25,7 @@ Auto-detection reads \code{eeg_obj$channel_types} directly: every channel
 typed \code{pattern} (lower-cased, e.g. \code{"eog"} or \code{"ecg"}) is a
 match. A channel's physiological role has to be stated explicitly - via a
 reader's own \code{eog =}/\code{misc =} arguments at load time, or
-\code{\link{set_channel_types}} afterward - nothing is ever guessed from
+\code{set_channel_types} afterward - nothing is ever guessed from
 the channel's name (see \code{classify_channels()}, R/eeg_class.R).
 }
 \keyword{internal}

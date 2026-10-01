@@ -367,9 +367,10 @@ print.eeg_ica <- function(x, ...) {
 #'   \code{channels}, with values \code{"eeg"} / \code{"external"} /
 #'   \code{"status"} - i.e. \code{eeg_obj$channel_types} as computed once by
 #'   \code{classify_channels()} in \code{new_eeg()} (see R/eeg_class.R).
-#'   Channels typed \code{"eeg"} form one pooled-std group and channels typed
-#'   \code{"external"} form another; \code{"status"} entries are not
-#'   assigned to either group and must already be excluded from \code{data}.
+#'   Channels typed \code{"eeg"} form one pooled-std group and every other
+#'   type (\code{"eog"}, \code{"ecg"}, ...) forms another; \code{"status"}
+#'   entries are not assigned to either group and must already be excluded
+#'   from \code{data}.
 #' @param noise_cov \code{NULL} (default). A non-NULL value is not yet
 #'   supported and raises an error.
 #' @return Named numeric vector of length \code{nrow(data)}: one population
@@ -391,7 +392,7 @@ print.eeg_ica <- function(x, ...) {
   }
 
   eeg_idx <- which(channel_types == "eeg")
-  exg_idx <- which(channel_types == "external")
+  exg_idx <- which(!(channel_types %in% c("eeg", "status")))
 
   pre_whitener <- numeric(length(channels))
   if (length(eeg_idx) > 0) {
@@ -1789,7 +1790,7 @@ ica_component_summary <- function(ica, eeg) {
 
   # ========== EXTERNAL CHANNEL CORRELATIONS ==========
 
-  ext_idx <- which(channel_types == "external")
+  ext_idx <- which(!(channel_types %in% c("eeg", "status")))
   if (length(ext_idx) > 0) {
     ext_names <- ica$ch_names[ext_idx]
     for (j in seq_along(ext_idx)) {

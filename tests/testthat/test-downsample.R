@@ -920,7 +920,7 @@ test_that("downsample() preserves annotations from the original eeg object", {
 test_that("downsample() preserves the type of a derived channel", {
   # WHAT THIS TESTS:
   # channel_types is derived from the channel names when an eeg object is built,
-  # but a channel made by set_bipolar_reference() is typed "external" directly
+  # but a channel made by set_bipolar_reference() is typed "eog" directly
   # (the name "VEOG" would not be classified that way).  Downsampling rebuilds
   # the eeg object, so it must put the original types back rather than turn
   # "VEOG" into an "eeg" channel.
@@ -931,7 +931,7 @@ test_that("downsample() preserves the type of a derived channel", {
   result <- downsample(eeg, target_rate = 256, verbose = FALSE)
 
   expect_equal(result$channel_types, eeg$channel_types)
-  expect_equal(result$channel_types[result$channels == "VEOG"], "external")
+  expect_equal(result$channel_types[result$channels == "VEOG"], "eog")
 })
 
 test_that("downsample() still derives channel types when the input has none", {

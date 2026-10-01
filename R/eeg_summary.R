@@ -102,7 +102,7 @@ eeg_summary <- function(eeg_obj,
   all_channels <- eeg_obj$channels
 
   status_idx <- which(eeg_obj$channel_types == "status")
-  exg_idx    <- which(eeg_obj$channel_types == "external")
+  exg_idx    <- which(!(eeg_obj$channel_types %in% c("eeg", "status")))
   eeg_idx    <- which(eeg_obj$channel_types == "eeg" &
                          !(eeg_obj$channels %in% eeg_obj$bads))
 

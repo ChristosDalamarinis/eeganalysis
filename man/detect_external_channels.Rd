@@ -2,7 +2,7 @@
 % Please edit documentation in R/setexchannels.R
 \name{detect_external_channels}
 \alias{detect_external_channels}
-\title{Detect External Channels (Non-Interactive, Database-Driven)}
+\title{============================================================================External Channel Detection (Database-Driven)}
 \usage{
 detect_external_channels(data, channel_col = NULL)
 }
@@ -18,3 +18,29 @@ Character vector of detected external channel names
 Detects external channels using the electrode database without user interaction.
 Useful for scripting and automation.
 }
+\details{
+A single question: "does this channel name match a known BioSemi
+auxiliary port?" - looked up directly in the electrode database, never
+guessed or inferred. This is a suggestion tool only: it does not read or
+write channel_types, and does not rename anything.
+
+This used to be step one of a three-step workflow (detect, then
+interactively label, then rename the channel to bake the label into its
+name) built before channel_types existed on the eeg object. The other two
+steps - identify_external_channels() and apply_external_labels() - are
+retired: the fact they used to encode by renaming a channel (e.g. "EXG1"
+-> "EOG_L (EXG1)") now lives directly in eeg$channel_types instead, set
+with \code{\link{set_channel_types}} (or a reader's own eog=/misc=
+arguments, see \code{\link{read_bdf_native}}). Nothing needs to be renamed
+for the package to know a channel's role any more.
+
+detect_external_channels() still has a job: suggesting candidates before
+you decide what to tell set_channel_types(), e.g.
+\code{detect_external_channels(eeg$channels)} to see which of your
+channels look like known auxiliary ports.
+}
+\section{Author: Christos Dalamarinis
+Date: Jan - 2026}{
+Detect External Channels (Non-Interactive, Database-Driven)
+}
+

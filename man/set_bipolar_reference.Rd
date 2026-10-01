@@ -19,10 +19,11 @@ from \code{anode}.}
 
 \item{ch_name}{Character scalar: the name for the new derived channel
 (e.g. \code{"VEOG"}). Required - there is no default, so every call
-picks a deliberate, meaningful name. Include \code{"EOG"} in it if you
-want \code{\link{find_bads_eog}}/\code{\link{fit_eog_regression}} to
-find it automatically later (see Details). Must not collide with a
-channel name that will still exist once this call finishes.}
+picks a deliberate, meaningful name. Typed \code{"eog"} regardless of
+what you call it (see Details), so \code{\link{find_bads_eog}}/
+\code{\link{fit_eog_regression}} find it automatically either way.
+Must not collide with a channel name that will still exist once this
+call finishes.}
 
 \item{drop}{Logical, default \code{TRUE}. Removes \code{anode} and
 \code{cathode} from the returned object once the new channel is built,
@@ -49,10 +50,10 @@ the eye's own movement. A port of the idea behind MNE-Python's
 \code{set_bipolar_reference()}.
 }
 \details{
-\strong{Channel type.} The new channel is recorded as \code{"external"} in
-\code{eeg$channel_types}, the same category every other EXG/EOG/ECG
-channel already has (set directly, not by re-running the name-based
-classifier - see \code{\link{new_eeg}}).
+\strong{Channel type.} The new channel is recorded as \code{"eog"} in
+\code{eeg$channel_types} directly, regardless of \code{ch_name} - not
+re-derived from its name via \code{classify_channels()} (see
+\code{\link{new_eeg}}).
 
 \strong{Reference.} \code{anode} and \code{cathode} are both expressed
 relative to whatever reference is currently active, so the subtraction

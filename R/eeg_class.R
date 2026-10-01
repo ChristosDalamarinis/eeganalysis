@@ -69,15 +69,29 @@
 #'                (optional). \code{NULL} until attached via
 #'                \code{\link{set_montage}}. See \code{\link{create_montage}}.
 #'
+#' @param channel_types Character vector with the type of each channel
+#'            (optional), same length and order as \code{channels}. One of
+#'            \code{"eeg"}, \code{"eog"}, \code{"ecg"}, \code{"emg"},
+#'            \code{"resp"}, \code{"gsr"}, \code{"temp"}, \code{"bio"},
+#'            \code{"misc"}, or \code{"status"} per channel (see
+#'            \code{\link{classify_channels}} for what each one means).
+#'            Default: \code{NULL}, which assumes every channel is
+#'            \code{"eeg"} except one literally named \code{"status"} or
+#'            \code{"trigger"} - nothing else is guessed. Pass it when a
+#'            channel's real role is known: at load time (e.g. a reader's own
+#'            \code{eog =}/\code{misc =} arguments), or when a function
+#'            rebuilds an eeg object and must carry a type forward that the
+#'            channel's name alone would not reveal (e.g. a channel built by
+#'            \code{\link{set_bipolar_reference}}, typed \code{"eog"} but
+#'            named just \code{"VEOG"}).
+#'
 #' @return An object of class 'eeg' containing:
 #'  \describe{
 #'    \item{data}{Numeric matrix of EEG values (channels x time points)}
 #'    \item{channels}{Character vector of channel names}
 #'    \item{channel_types}{Character vector, same length and order as
-#'      \code{channels}, classifying each channel as \code{"eeg"},
-#'      \code{"external"} (EOG/ECG/EMG/GSR/etc.), or \code{"status"}.
-#'      Computed once at construction via \code{classify_channels()} - see
-#'      that function for the classification rules - so downstream code
+#'      \code{channels} - see the \code{channel_types} argument above for
+#'      the allowed values and how this field is filled in. Downstream code
 #'      should read this field rather than re-deriving it from
 #'      \code{channels}.}
 #'    \item{bads}{Character vector of channel names marked as bad (empty
@@ -120,7 +134,8 @@ new_eeg <- function(data,
                     preprocessing_history = NULL,
                     montage = NULL,
                     bads = NULL,
-                    annotations = NULL) {
+                    annotations = NULL,
+                    channel_types = NULL) {
   
   # ========== INPUT VALIDATION ==========
   
@@ -155,9 +170,27 @@ new_eeg <- function(data,
   
   # ========== CLASSIFY CHANNELS ==========
 
-  # Computed once here so downstream functions (print.eeg(), etc.) read
-  # channel_types instead of re-deriving the eeg/external/status split.
-  channel_types <- classify_channels(as.character(channels))
+  # NULL (the default) works the type out for every channel from its name -
+  # see classify_channels(): only a channel literally named "status" or
+  # "trigger" is special-cased, everything else defaults to "eeg". A caller
+  # that already knows a channel's real role (a reader's own eog=/misc=
+  # arguments, or a function rebuilding an eeg object that must carry a type
+  # forward) hands it in here instead, and it is kept exactly as given.
+  if (is.null(channel_types)) {
+    channel_types <- classify_channels(as.character(channels))
+  } else {
+    channel_types <- as.character(channel_types)
+    if (length(channel_types) != length(channels)) {
+      stop("ERROR: Length of channel_types (", length(channel_types),
+           ") does not match number of channels (", length(channels), ")")
+    }
+    unknown_types <- setdiff(unique(channel_types), .valid_channel_types())
+    if (length(unknown_types) > 0) {
+      stop("ERROR: 'channel_types' must be one of: ",
+           paste(.valid_channel_types(), collapse = ", "), "; got: ",
+           paste(unknown_types, collapse = ", "))
+    }
+  }
 
   # ========== VALIDATE BAD CHANNELS ==========
 
@@ -229,44 +262,54 @@ new_eeg <- function(data,
   return(eeg_object)
 }
 
-#' Classify Channels as EEG, External, or Status (internal)
+#' Valid Channel Types (internal)
 #'
-#' Computes the eeg/external/status classification for a vector of channel
-#' names, once, so that \code{new_eeg()} can store the result on the
-#' \code{eeg} object as \code{channel_types} instead of every downstream
-#' function re-deriving it. Combines the BioSemi status-channel check with
-#' the same two-pass external-channel detection used elsewhere in the
-#' package: pass 1 is the electrode-database lookup
-#' (\code{detect_external_channels()}, see R/setexchannels.R), pass 2 is a
-#' regex fallback for channels renamed with the original name kept in
-#' parentheses (e.g. \code{"MASTOID LEFT (EXG5)"}).
+#' The complete set of values \code{new_eeg()}'s \code{channel_types}
+#' argument accepts, and that \code{\link{set_channel_types}} accepts for
+#' relabeling a channel after loading. Defined once here so every function
+#' that validates or documents channel types stays in sync.
 #'
-#' This only distinguishes broad channel categories (eeg/external/status),
-#' not the physiological sub-type of an external channel (EOG vs ECG vs
-#' EMG vs GSR). BioSemi's EXG1-EXG8 ports are generic in the electrode
-#' database - which physiological signal is wired to a given port is a
-#' fact about how that specific recording session was set up, not
-#' something derivable from the channel name. That labeling is handled
-#' separately by \code{identify_external_channels()} /
-#' \code{apply_external_labels()}.
+#' \code{"eeg"} is a scalp electrode. \code{"status"} is the BioSemi
+#' status/trigger channel. The rest name a channel's physiological role and
+#' are never guessed - they must be stated explicitly, because that fact
+#' comes from how the recording was set up, not from the channel's name:
+#' \code{"eog"} (eye movement), \code{"ecg"} (heart), \code{"emg"} (muscle),
+#' \code{"resp"} (respiration belt), \code{"gsr"} (skin conductance),
+#' \code{"temp"} (temperature), \code{"misc"} (anything else not meant to be
+#' analysed as a signal), or \code{"bio"} (any other physiological signal
+#' with no more specific type here).
+#'
+#' @return Character vector of the allowed \code{channel_types} values.
+#' @keywords internal
+.valid_channel_types <- function() {
+  c("eeg", "eog", "ecg", "emg", "resp", "gsr", "temp", "bio", "misc", "status")
+}
+
+#' Default Channel Types From Channel Names (internal)
+#'
+#' Works out a starting \code{channel_types} value for a vector of channel
+#' names, used by \code{new_eeg()} only when \code{channel_types} is not
+#' supplied. Every channel defaults to \code{"eeg"}, except one literally
+#' named \code{"status"} or \code{"trigger"} (case-insensitive), which is
+#' \code{"status"} - the same name-based rule MNE-Python's readers use for
+#' their STIM channel (\code{stim_channel = "auto"}).
+#'
+#' Nothing else is guessed. A channel's real physiological role - eog, ecg,
+#' emg, resp, gsr, temp, bio, or misc - is a fact about how the recording
+#' was set up, not something derivable from its name, so it must be stated
+#' explicitly: via a reader's own arguments at load time, or via
+#' \code{\link{set_channel_types}} afterward.
 #'
 #' @param channels Character vector of channel names.
 #' @return Character vector the same length as \code{channels}, with values
-#'   \code{"eeg"}, \code{"external"}, or \code{"status"}, in the same order
-#'   as \code{channels}.
+#'   \code{"eeg"} or \code{"status"}, in the same order as \code{channels}.
 #' @keywords internal
 classify_channels <- function(channels) {
   ch    <- channels
   types <- rep("eeg", length(ch))
 
-  status_idx <- which(grepl("^status$", tolower(ch)))
+  status_idx <- which(tolower(ch) %in% c("status", "trigger"))
   types[status_idx] <- "status"
-
-  exg_pattern <- "\\((EXG[1-8]|GSR[12]|Plet|Temp|Resp|Erg[12])\\)"
-  exg_pass1 <- detect_external_channels(ch)
-  exg_pass2 <- ch[grepl(exg_pattern, ch, ignore.case = TRUE)]
-  exg_idx   <- setdiff(which(ch %in% unique(c(exg_pass1, exg_pass2))), status_idx)
-  types[exg_idx] <- "external"
 
   types
 }

@@ -2,7 +2,7 @@
 % Please edit documentation in R/eeg_class.R
 \name{classify_channels}
 \alias{classify_channels}
-\title{Classify Channels as EEG, External, or Status (internal)}
+\title{Default Channel Types From Channel Names (internal)}
 \usage{
 classify_channels(channels)
 }
@@ -11,28 +11,21 @@ classify_channels(channels)
 }
 \value{
 Character vector the same length as \code{channels}, with values
-\code{"eeg"}, \code{"external"}, or \code{"status"}, in the same order
-as \code{channels}.
+\code{"eeg"} or \code{"status"}, in the same order as \code{channels}.
 }
 \description{
-Computes the eeg/external/status classification for a vector of channel
-names, once, so that \code{new_eeg()} can store the result on the
-\code{eeg} object as \code{channel_types} instead of every downstream
-function re-deriving it. Combines the BioSemi status-channel check with
-the same two-pass external-channel detection used elsewhere in the
-package: pass 1 is the electrode-database lookup
-(\code{detect_external_channels()}, see R/setexchannels.R), pass 2 is a
-regex fallback for channels renamed with the original name kept in
-parentheses (e.g. \code{"MASTOID LEFT (EXG5)"}).
+Works out a starting \code{channel_types} value for a vector of channel
+names, used by \code{new_eeg()} only when \code{channel_types} is not
+supplied. Every channel defaults to \code{"eeg"}, except one literally
+named \code{"status"} or \code{"trigger"} (case-insensitive), which is
+\code{"status"} - the same name-based rule MNE-Python's readers use for
+their STIM channel (\code{stim_channel = "auto"}).
 }
 \details{
-This only distinguishes broad channel categories (eeg/external/status),
-not the physiological sub-type of an external channel (EOG vs ECG vs
-EMG vs GSR). BioSemi's EXG1-EXG8 ports are generic in the electrode
-database - which physiological signal is wired to a given port is a
-fact about how that specific recording session was set up, not
-something derivable from the channel name. That labeling is handled
-separately by \code{identify_external_channels()} /
-\code{apply_external_labels()}.
+Nothing else is guessed. A channel's real physiological role - eog, ecg,
+emg, resp, gsr, temp, bio, or misc - is a fact about how the recording
+was set up, not something derivable from its name, so it must be stated
+explicitly: via a reader's own arguments at load time, or via
+\code{\link{set_channel_types}} afterward.
 }
 \keyword{internal}

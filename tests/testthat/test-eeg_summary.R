@@ -33,7 +33,8 @@ library(eeganalysis)
   new_eeg(
     data     = data,
     channels = c("Cz", "Pz", "Oz", "Fz", "EXG1", "Status"),
-    sampling_rate = 256
+    sampling_rate = 256,
+    channel_types = c("eeg", "eeg", "eeg", "eeg", "eog", "status")
   )
 }
 
@@ -133,18 +134,19 @@ test_that("eeg_summary routes EXG channels to exg_stats (Pass 1)", {
 
 
 # ----------------------------------------------------------------------------
-# Test 2.3: EXG channels detected via Pass 2 (renamed with parentheses)
+# Test 2.3: EXG channels renamed with parentheses are routed to exg_stats
 # ----------------------------------------------------------------------------
 # WHAT THIS TESTS: Channels renamed by apply_external_labels(keep_original=TRUE)
-# e.g. "MASTOID LEFT (EXG5)" must still be routed to exg_stats via the regex
-# fallback (Pass 2).
-test_that("eeg_summary routes renamed EXG channels to exg_stats (Pass 2)", {
+# e.g. "MASTOID LEFT (EXG5)" are still routed to exg_stats when explicitly
+# typed as such - the name itself is no longer enough, channel_types decides.
+test_that("eeg_summary routes renamed EXG channels to exg_stats", {
   set.seed(7)
   data <- matrix(rnorm(4 * 200), nrow = 4, ncol = 200)
   eeg <- new_eeg(
     data     = data,
     channels = c("Cz", "Pz", "MASTOID LEFT (EXG5)", "EOG LEFT (EXG1)"),
-    sampling_rate = 256
+    sampling_rate = 256,
+    channel_types = c("eeg", "eeg", "misc", "eog")
   )
 
   capture.output(report <- eeg_summary(eeg))
@@ -181,7 +183,8 @@ test_that("eeg_summary errors when no EEG channels remain", {
   eeg <- new_eeg(
     data     = data,
     channels = c("EXG1", "EXG2", "Status"),
-    sampling_rate = 256
+    sampling_rate = 256,
+    channel_types = c("eog", "eog", "status")
   )
 
   expect_error(
@@ -246,7 +249,8 @@ test_that("eeg_summary exg_stats has one row per EXG channel", {
   eeg <- new_eeg(
     data     = data,
     channels = c("Cz", "Pz", "EXG1", "EXG2", "EXG3"),
-    sampling_rate = 256
+    sampling_rate = 256,
+    channel_types = c("eeg", "eeg", "eog", "eog", "eog")
   )
 
   capture.output(report <- eeg_summary(eeg))
@@ -404,7 +408,8 @@ test_that("eeg_summary never flags EXG channels", {
   eeg <- new_eeg(
     data     = data,
     channels = c("Cz", "Pz", "Oz", "EXG1"),
-    sampling_rate = 256
+    sampling_rate = 256,
+    channel_types = c("eeg", "eeg", "eeg", "eog")
   )
 
   capture.output(report <- eeg_summary(eeg))
@@ -587,7 +592,8 @@ test_that("eeg_summary handles mixed EEG + EXG + Status correctly", {
   eeg <- new_eeg(
     data     = data,
     channels = c("Fp1", "Fp2", "Cz", "Pz", "EXG1", "Status"),
-    sampling_rate = 512
+    sampling_rate = 512,
+    channel_types = c("eeg", "eeg", "eeg", "eeg", "eog", "status")
   )
 
   capture.output(report <- eeg_summary(eeg))
@@ -628,7 +634,8 @@ test_that("eeg_summary EEG stats are unaffected by extreme EXG values", {
   eeg <- new_eeg(
     data     = rbind(eeg_data, exg_data),
     channels = c("Cz", "Pz", "Oz", "EXG1"),
-    sampling_rate = 256
+    sampling_rate = 256,
+    channel_types = c("eeg", "eeg", "eeg", "eog")
   )
 
   capture.output(report <- eeg_summary(eeg))
@@ -747,7 +754,8 @@ test_that("eeg_summary handles bads together with EXG and Status channels", {
     data     = data,
     channels = c("Fp1", "Fp2", "Cz", "Pz", "EXG1", "Status"),
     sampling_rate = 256,
-    bads     = "Fp2"
+    bads     = "Fp2",
+    channel_types = c("eeg", "eeg", "eeg", "eeg", "eog", "status")
   )
 
   capture.output(report <- eeg_summary(eeg))

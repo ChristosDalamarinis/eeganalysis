@@ -205,9 +205,21 @@ extract_events_native <- function(status_signal, sampling_rate) {
 #' @param file_path Character string with path to .bdf file
 #' @param verbose Logical, print progress messages
 #' @param chunk_records Number of data records to read per chunk (default: 100)
+#' @param eog Character vector of channel names to type \code{"eog"} (eye
+#'            movement) in the returned object's \code{channel_types}, or
+#'            \code{NULL} (default, no channel marked). Every name must be a
+#'            channel actually read from the file - the Status channel is
+#'            never one of these, since it is parsed into \code{events}
+#'            instead of kept as a data channel. Mirrors MNE-Python's
+#'            \code{eog} argument to \code{read_raw_bdf()}.
+#' @param misc Character vector of channel names to type \code{"misc"} (not
+#'            meant to be analysed as an EEG signal), or \code{NULL}
+#'            (default). Same rules as \code{eog}; a channel name cannot be
+#'            listed in both. Mirrors MNE-Python's \code{misc} argument.
 #' @return An object of class 'eeg' created with new_eeg()
 #' @export
-read_bdf_native <- function(file_path, verbose = TRUE, chunk_records = 100) {
+read_bdf_native <- function(file_path, verbose = TRUE, chunk_records = 100,
+                            eog = NULL, misc = NULL) {
   
   # ========== VALIDATION ==========
   if (!file.exists(file_path)) {
@@ -270,7 +282,34 @@ read_bdf_native <- function(file_path, verbose = TRUE, chunk_records = 100) {
   }
   
   eeg_idx <- setdiff(1:header$nChannels, status_idx)
-  
+
+  # ========== VALIDATE eog / misc, BUILD channel_types ==========
+  # Default (both NULL): channel_types stays NULL and new_eeg() falls back to
+  # classify_channels() - every channel "eeg", nothing guessed. Only built
+  # into an explicit vector when the caller actually names a channel.
+  eeg_channel_names <- header$labels[eeg_idx]
+  channel_types <- NULL
+
+  if (!is.null(eog) || !is.null(misc)) {
+    eog  <- as.character(eog)
+    misc <- as.character(misc)
+
+    unknown <- setdiff(c(eog, misc), eeg_channel_names)
+    if (length(unknown) > 0) {
+      stop("ERROR: 'eog'/'misc' contain channel name(s) not found in the ",
+           "file: ", paste(unknown, collapse = ", "), call. = FALSE)
+    }
+    overlap <- intersect(eog, misc)
+    if (length(overlap) > 0) {
+      stop("ERROR: channel(s) listed in both 'eog' and 'misc': ",
+           paste(overlap, collapse = ", "), call. = FALSE)
+    }
+
+    channel_types <- rep("eeg", length(eeg_channel_names))
+    channel_types[eeg_channel_names %in% eog]  <- "eog"
+    channel_types[eeg_channel_names %in% misc] <- "misc"
+  }
+
   # ========== PREPARE OUTPUT STORAGE ==========
   n_samples_final <- header$totalSamples[1]
   n_eeg_channels <- length(eeg_idx)
@@ -386,10 +425,10 @@ read_bdf_native <- function(file_path, verbose = TRUE, chunk_records = 100) {
   
   # ========== CREATE EEG OBJECT ==========
   if (verbose) cat("[5/5] Creating EEG object...\n")
-  
+
   eeg_obj <- new_eeg(
     data = eeg_data_physical,
-    channels = header$labels[eeg_idx],
+    channels = eeg_channel_names,
     sampling_rate = sampling_rate,
     times = times,
     events = events_df,
@@ -397,7 +436,8 @@ read_bdf_native <- function(file_path, verbose = TRUE, chunk_records = 100) {
     reference = "Biosemi CMS/DRL",
     preprocessing_history = list(
       paste0("Imported from BDF file using native chunked reader: ", basename(file_path))
-    )
+    ),
+    channel_types = channel_types
   )
   
   if (verbose) cat("\n[OK] Successfully imported BDF file!\n\n")

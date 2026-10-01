@@ -13,22 +13,19 @@
 name(s) to use instead of auto-detection. Every name must exist in
 \code{eeg$channels}.}
 
-\item{pattern}{Character scalar. Case-insensitive substring to search for
-among external channel names when \code{ch_name} is \code{NULL} (e.g.
+\item{pattern}{Character scalar naming the \code{channel_types} value to
+match (case-insensitive) when \code{ch_name} is \code{NULL} (e.g.
 \code{"EOG"}, \code{"ECG"}).}
 }
 \value{
 Character vector of resolved channel name(s), length >= 1.
 }
 \description{
-Some EEG toolchains auto-detect EOG/ECG channels via a dedicated channel
-\emph{type} stored in the recording's own metadata. This
-package has no such sub-type - \code{eeg_obj$channel_types} only
-distinguishes \code{"eeg"}/\code{"external"}/\code{"status"} (see
-\code{classify_channels()}, R/eeg_class.R) - the specific physiological
-role instead lives in the channel \emph{name} itself, via
-\code{\link{apply_external_labels}} (e.g. \code{"EOG_L (EXG1)"}). So
-auto-detection here is a case-insensitive substring match of
-\code{pattern} among \code{channel_types == "external"} channel names.
+Auto-detection reads \code{eeg_obj$channel_types} directly: every channel
+typed \code{pattern} (lower-cased, e.g. \code{"eog"} or \code{"ecg"}) is a
+match. A channel's physiological role has to be stated explicitly - via a
+reader's own \code{eog =}/\code{misc =} arguments at load time, or
+\code{\link{set_channel_types}} afterward - nothing is ever guessed from
+the channel's name (see \code{classify_channels()}, R/eeg_class.R).
 }
 \keyword{internal}

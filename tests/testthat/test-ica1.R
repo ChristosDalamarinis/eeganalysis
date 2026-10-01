@@ -50,7 +50,7 @@ with_null_device <- function(expr) {
 }
 
 # General-purpose ICA fixture: 3 "eeg" channels (Fp1, Fp2, Cz) that are a
-# fixed linear mixture of 2 independent non-Gaussian sources, an "external"
+# fixed linear mixture of 2 independent non-Gaussian sources, an "eog"
 # channel (EXG1) that tracks source 1 like an EOG channel would, a "status"
 # channel of random bits (must always be excluded from default fit_ica()
 # picks), and a small amount of independent noise added to every fitted
@@ -79,7 +79,8 @@ make_ica_fixture <- function(n_samples = 3000, sampling_rate = 256, seed = 123) 
   data     <- rbind(eeg_data, exg1, status)
   channels <- c("Fp1", "Fp2", "Cz", "EXG1", "Status")
 
-  eeg <- new_eeg(data = data, channels = channels, sampling_rate = sampling_rate)
+  eeg <- new_eeg(data = data, channels = channels, sampling_rate = sampling_rate,
+                channel_types = c("eeg", "eeg", "eeg", "eog", "status"))
   list(eeg = eeg, sources = S, mixing = A)
 }
 

@@ -15,7 +15,8 @@ new_eeg(
   preprocessing_history = NULL,
   montage = NULL,
   bads = NULL,
-  annotations = NULL
+  annotations = NULL,
+  channel_types = NULL
 )
 }
 \arguments{
@@ -72,6 +73,22 @@ downstream steps (epoching, ICA fitting) to check against.
 Written by \code{\link{annotate_amplitude}},
 \code{\link{annotate_muscle}}, \code{\link{annotate_nan}},
 and \code{\link{annotate_break}} (see R/annotations.R).}
+
+\item{channel_types}{Character vector with the type of each channel
+(optional), same length and order as \code{channels}. One of
+\code{"eeg"}, \code{"eog"}, \code{"ecg"}, \code{"emg"},
+\code{"resp"}, \code{"gsr"}, \code{"temp"}, \code{"bio"},
+\code{"misc"}, or \code{"status"} per channel (see
+\code{\link{classify_channels}} for what each one means).
+Default: \code{NULL}, which assumes every channel is
+\code{"eeg"} except one literally named \code{"status"} or
+\code{"trigger"} - nothing else is guessed. Pass it when a
+channel's real role is known: at load time (e.g. a reader's own
+\code{eog =}/\code{misc =} arguments), or when a function
+rebuilds an eeg object and must carry a type forward that the
+channel's name alone would not reveal (e.g. a channel built by
+\code{\link{set_bipolar_reference}}, typed \code{"eog"} but
+named just \code{"VEOG"}).}
 }
 \value{
 An object of class 'eeg' containing:
@@ -79,10 +96,8 @@ An object of class 'eeg' containing:
 \item{data}{Numeric matrix of EEG values (channels x time points)}
 \item{channels}{Character vector of channel names}
 \item{channel_types}{Character vector, same length and order as
-\code{channels}, classifying each channel as \code{"eeg"},
-\code{"external"} (EOG/ECG/EMG/GSR/etc.), or \code{"status"}.
-Computed once at construction via \code{classify_channels()} - see
-that function for the classification rules - so downstream code
+\code{channels} - see the \code{channel_types} argument above for
+the allowed values and how this field is filled in. Downstream code
 should read this field rather than re-deriving it from
 \code{channels}.}
 \item{bads}{Character vector of channel names marked as bad (empty

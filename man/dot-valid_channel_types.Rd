@@ -11,7 +11,7 @@ Character vector of the allowed \code{channel_types} values.
 }
 \description{
 The complete set of values \code{new_eeg()}'s \code{channel_types}
-argument accepts, and that \code{\link{set_channel_types}} accepts for
+argument accepts, and that \code{set_channel_types} accepts for
 relabeling a channel after loading. Defined once here so every function
 that validates or documents channel types stays in sync.
 }

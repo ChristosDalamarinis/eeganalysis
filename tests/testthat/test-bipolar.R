@@ -17,7 +17,7 @@
 #     else the full list - so reusing anode's own name works once drop
 #     frees it up, but not otherwise).
 #  3. new_row = eeg$data[anode, ] - eeg$data[cathode, ]; appended to $data,
-#     $channels (as ch_name) and $channel_types (as "external", set
+#     $channels (as ch_name) and $channel_types (as "eog", set
 #     directly - not re-derived via classify_channels()).
 #  4. If drop = TRUE: removes anode/cathode from data/channels/channel_types
 #     and from $bads (cleans up now-stale bad-channel names).
@@ -81,12 +81,12 @@ test_that("the new channel equals anode minus cathode exactly", {
   expect_equal(out$data[idx, ], VEOG_EXPECTED)
 })
 
-test_that("the new channel is classified as external", {
+test_that("the new channel is classified as eog", {
   eeg <- make_bipolar_fixture()
   out <- set_bipolar_reference(eeg, anode = "EXG1", cathode = "EXG2",
                                ch_name = "VEOG")
   idx <- match("VEOG", out$channels)
-  expect_equal(out$channel_types[idx], "external")
+  expect_equal(out$channel_types[idx], "eog")
 })
 
 # ============================================================================

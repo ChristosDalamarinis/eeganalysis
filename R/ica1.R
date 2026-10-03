@@ -364,9 +364,9 @@ print.eeg_ica <- function(x, ...) {
 #' @param channels Character vector of channel names, \code{length(channels)
 #'   == nrow(data)}. Used only to name the returned vector.
 #' @param channel_types Character vector, same length and order as
-#'   \code{channels}, with values \code{"eeg"} / \code{"external"} /
-#'   \code{"status"} - i.e. \code{eeg_obj$channel_types} as computed once by
-#'   \code{classify_channels()} in \code{new_eeg()} (see R/eeg_class.R).
+#'   \code{channels}: the type of each channel - i.e.
+#'   \code{eeg_obj$channel_types} (see \code{\link{new_eeg}} for the possible
+#'   values, such as \code{"eeg"}, \code{"eog"}, \code{"ecg"}, \code{"status"}).
 #'   Channels typed \code{"eeg"} form one pooled-std group and every other
 #'   type (\code{"eog"}, \code{"ecg"}, ...) forms another; \code{"status"}
 #'   entries are not assigned to either group and must already be excluded
@@ -1024,8 +1024,9 @@ print.eeg_ica <- function(x, ...) {
 #'   or a numeric vector of channel indices - which channels of \code{eeg}
 #'   to fit ICA on. If \code{NULL}, every channel with
 #'   \code{channel_types != "status"} and not listed in \code{eeg$bads} is
-#'   used (i.e. \code{"eeg"} and \code{"external"} channels, minus any
-#'   marked bad; the BioSemi status channel is always excluded, matching
+#'   used (i.e. the \code{"eeg"} channels plus any channel typed
+#'   \code{"eog"}, \code{"ecg"} or another non-status type, minus any marked
+#'   bad; the BioSemi status channel is always excluded, matching
 #'   \code{.compute_pre_whitener()}'s expectations). An explicit \code{picks}
 #'   is taken as-is and can include bad channels if requested.
 #' @param reject_by_annotation Logical. If \code{TRUE} (default), timepoints
@@ -1699,12 +1700,12 @@ plot_ica_topography <- function(ica, eeg, component, montage = NULL, ...) {
 #     (sum(pca_explained_variance_[1:n_components_]) /
 #     sum(pca_explained_variance_)) - since whatever variance lives outside
 #     that PCA subspace was never available to any component to explain.
-#   - corr_<channel>: for every "external" channel present in ica$ch_names
-#     (EOG/ECG/EMG/GSR/etc. - see classify_channels(), R/eeg_class.R),
-#     that channel's raw correlation with every component's time-course. A
-#     component correlating strongly with an EOG channel is very likely an
-#     eye-movement/blink artifact, etc. If there are no external channels in
-#     ica$ch_names, no corr_* columns are added.
+#   - corr_<channel>: for every non-EEG channel (any type other than "eeg"
+#     or "status": EOG/ECG/EMG/GSR/etc. - see new_eeg()'s channel_types
+#     argument) present in ica$ch_names, that channel's raw correlation with
+#     every component's time-course. A component correlating strongly with an
+#     EOG channel is very likely an eye-movement/blink artifact, etc. If there
+#     are no such channels in ica$ch_names, no corr_* columns are added.
 #
 # ----------------------------------------------------------------------------
 # ica_component_summary() - one row per component: variance + EOG/ECG corr
@@ -1715,7 +1716,7 @@ plot_ica_topography <- function(ica, eeg, component, montage = NULL, ...) {
 #' numeric signals useful for deciding what to exclude before
 #' \code{apply_ica()}: how much of the total channel-space variance each
 #' component accounts for, and (when available) how strongly each component
-#' correlates with any EOG/ECG/other "external" channel in the data.
+#' correlates with any EOG/ECG/other non-EEG channel in the data.
 #' Complements the visual tools \code{\link{plot_ica_sources}} and
 #' \code{\link{plot_ica_topography}} with numbers that don't require
 #' eyeballing every component.
@@ -1737,9 +1738,9 @@ plot_ica_topography <- function(ica, eeg, component, montage = NULL, ...) {
 #'      variance the PCA step captured with that many components (nothing
 #'      outside that subspace was ever available for any component to
 #'      explain).}
-#'    \item{corr_<channel>}{One column per external (EOG/ECG/etc.) channel in
+#'    \item{corr_<channel>}{One column per non-EEG (EOG/ECG/etc.) channel in
 #'      \code{ica$ch_names}, if any - that channel's correlation with each
-#'      component. Omitted entirely if there are no external channels.}
+#'      component. Omitted entirely if there are no non-EEG channels.}
 #'  }
 #'
 #' @examples

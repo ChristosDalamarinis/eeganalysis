@@ -97,7 +97,7 @@
 }
 
 # ----------------------------------------------------------------------------
-# .resolve_reference_channels() - locate EOG/ECG channel(s) by name
+# .resolve_reference_channels() - locate EOG/ECG channel(s) by type
 # ----------------------------------------------------------------------------
 #' Resolve Reference Channel Name(s) for Artifact Detection (internal)
 #'
@@ -519,10 +519,10 @@
 #' @param eeg The \code{eeg} object \code{ica} was fit on (or one with
 #'   matching channels - see \code{\link{get_sources}}).
 #' @param ch_name \code{NULL} (default), or a character vector of explicit
-#'   EOG channel name(s). If \code{NULL}, every \code{channel_types ==
-#'   "external"} channel whose name contains \code{"EOG"} (case-insensitive)
-#'   is used (see \code{\link{.resolve_reference_channels}}) - errors if none
-#'   is found.
+#'   EOG channel name(s). If \code{NULL}, every channel typed \code{"eog"} in
+#'   \code{eeg$channel_types} is used (see
+#'   \code{\link{.resolve_reference_channels}}) - errors if none is found.
+#'   Set a channel's type with \code{\link{set_channel_types}}.
 #' @param threshold Numeric, or \code{"auto"} (default). \code{"auto"}
 #'   resolves to \code{3.0} if \code{measure = "zscore"}, or \code{0.9} if
 #'   \code{measure = "correlation"}.
@@ -598,10 +598,10 @@ find_bads_eog <- function(ica, eeg, ch_name = NULL, threshold = "auto",
 #' @param eeg The \code{eeg} object \code{ica} was fit on (or one with
 #'   matching channels - see \code{\link{get_sources}}).
 #' @param ch_name \code{NULL} (default), or a character vector of explicit
-#'   ECG channel name(s). If \code{NULL}, every \code{channel_types ==
-#'   "external"} channel whose name contains \code{"ECG"} (case-insensitive)
-#'   is used (see \code{\link{.resolve_reference_channels}}) - errors if none
-#'   is found.
+#'   ECG channel name(s). If \code{NULL}, every channel typed \code{"ecg"} in
+#'   \code{eeg$channel_types} is used (see
+#'   \code{\link{.resolve_reference_channels}}) - errors if none is found.
+#'   Set a channel's type with \code{\link{set_channel_types}}.
 #' @param threshold Numeric, or \code{"auto"} (default). \code{"auto"}
 #'   resolves to \code{3.0} if \code{measure = "zscore"}, or \code{0.9} if
 #'   \code{measure = "correlation"}.
@@ -769,8 +769,9 @@ find_bads_ecg <- function(ica, eeg, ch_name = NULL, threshold = "auto",
 #' }
 #' If fewer than 3 of the fitted channels (\code{ica$ch_names}) have a
 #' montage position, only criterion 1 is used and a warning is issued -
-#' \code{channel_types == "external"} channels never have montage positions
-#' in this package by design (see \code{\link{create_montage}}), so
+#' channels that are not typed \code{"eeg"} (an \code{"eog"} channel, say)
+#' never have montage positions in this package by design (see
+#' \code{\link{create_montage}}), so
 #' requiring every fitted channel to have a position would trigger this
 #' fallback far more often than useful; instead, criteria 2-3 use whichever
 #' subset of \code{ica$ch_names} does have one. The combined threshold is

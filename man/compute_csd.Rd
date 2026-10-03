@@ -23,9 +23,9 @@ transformed; EOG, status and other channels are left exactly as they are.}
 
 \item{montage}{An object of class \code{'montage'} giving the scalp position
 of every EEG channel (see \code{\link{create_montage}}). Default
-\code{NULL}, which uses \code{x$montage}. Epoched objects do not carry a
-montage, so pass one explicitly for those (for example
-\code{montage = eeg$montage}).}
+\code{NULL}, which uses \code{x$montage}. Epochs made by
+\code{\link{epoch_eeg}} carry the montage of the object they were cut
+from, so it only needs passing for objects that have none.}
 
 \item{head_radius}{Numeric, radius of the head sphere in the same units as
 the montage positions (millimetres for \code{\link{create_montage}}). It
@@ -119,7 +119,7 @@ what the method is meant for.
 
   # Epoched data: CSD first, then average (same result as the other order)
   epochs     <- epoch_eeg(eeg, tmin = -0.2, tmax = 0.8)
-  epochs_csd <- compute_csd(epochs, montage = eeg$montage)
+  epochs_csd <- compute_csd(epochs)
   erp_csd    <- average_epochs(epochs_csd)
 }
 

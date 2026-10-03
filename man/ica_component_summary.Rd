@@ -28,9 +28,9 @@ fit on; otherwise sums to less than 1, by the same fraction of
 variance the PCA step captured with that many components (nothing
 outside that subspace was ever available for any component to
 explain).}
-\item{corr_\if{html}{\out{<channel>}}}{One column per external (EOG/ECG/etc.) channel in
+\item{corr_\if{html}{\out{<channel>}}}{One column per non-EEG (EOG/ECG/etc.) channel in
 \code{ica$ch_names}, if any - that channel's correlation with each
-component. Omitted entirely if there are no external channels.}
+component. Omitted entirely if there are no non-EEG channels.}
 }
 }
 \description{
@@ -38,7 +38,7 @@ Builds a table with one row per fitted independent component, giving two
 numeric signals useful for deciding what to exclude before
 \code{apply_ica()}: how much of the total channel-space variance each
 component accounts for, and (when available) how strongly each component
-correlates with any EOG/ECG/other "external" channel in the data.
+correlates with any EOG/ECG/other non-EEG channel in the data.
 Complements the visual tools \code{\link{plot_ica_sources}} and
 \code{\link{plot_ica_topography}} with numbers that don't require
 eyeballing every component.

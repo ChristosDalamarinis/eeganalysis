@@ -302,6 +302,36 @@ calc_g <- function(cosang, stiffness = 4, n_legendre_terms = 50) {
   .legendre_series_eval(cosang, c(0, factors))
 }
 
+#' Spherical Spline Laplacian Function
+#'
+#' Internal helper evaluating the spherical-spline "h" function (Perrin et
+#' al., 1989) at cosine-of-angle values between pairs of points on a
+#' sphere. It is the companion of \code{\link{calc_g}}: the same
+#' Legendre-series kernel with one power less in the denominator, which is
+#' the surface Laplacian of the g kernel with the sign flipped (how sharply
+#' a spline bump bends, rather than how high it is). The current source
+#' density transform needs it; interpolation itself only uses
+#' \code{\link{calc_g}}. Direct port of MNE-Python's
+#' \code{mne.channels.interpolation._calc_h}.
+#'
+#' @param cosang Numeric vector or matrix of cosine-of-angle values (i.e.
+#'   the dot product of unit vectors) between pairs of points on a sphere.
+#' @param stiffness Numeric, spline stiffness (\code{m} in Perrin et al.).
+#'   Default 4, matching MNE.
+#' @param n_legendre_terms Integer, number of Legendre polynomial terms to
+#'   sum. Default 50, matching MNE.
+#'
+#' @return A numeric vector or matrix the same shape as \code{cosang}.
+#'
+#' @seealso \code{\link{calc_g}}
+#' @keywords internal
+calc_h <- function(cosang, stiffness = 4, n_legendre_terms = 50) {
+  n_seq   <- seq_len(n_legendre_terms)
+  factors <- (2 * n_seq + 1) /
+    (n_seq^(stiffness - 1) * (n_seq + 1)^(stiffness - 1) * 4 * pi)
+  .legendre_series_eval(cosang, c(0, factors))
+}
+
 #' Evaluate a Legendre Series (internal)
 #'
 #' Evaluates \code{sum(coeffs[n+1] * P_n(x))} for \code{n = 0..length(coeffs)-1},
@@ -309,8 +339,8 @@ calc_g <- function(cosang, stiffness = 4, n_legendre_terms = 50) {
 #' standard 3-term recurrence (\code{P_0 = 1}, \code{P_1 = x},
 #' \code{n*P_n = (2n-1)*x*P_(n-1) - (n-1)*P_(n-2)}). Equivalent to numpy's
 #' \code{numpy.polynomial.legendre.legval(x, coeffs)}, used by
-#' \code{\link{calc_g}}. Works elementwise whether \code{x} is a plain
-#' vector or a matrix - shape is preserved throughout.
+#' \code{\link{calc_g}} and \code{\link{calc_h}}. Works elementwise whether
+#' \code{x} is a plain vector or a matrix - shape is preserved throughout.
 #'
 #' @param x Numeric vector or matrix, points to evaluate at (typically in
 #'   \code{[-1, 1]}, cosine-of-angle values).

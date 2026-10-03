@@ -757,16 +757,9 @@ eeg_bandpass <- function(eeg_obj,
                               list(history_entry)),
     montage              = eeg_obj$montage,
     bads                 = eeg_obj$bads,
-    annotations          = eeg_obj$annotations
+    annotations          = eeg_obj$annotations,
+    channel_types        = eeg_obj$channel_types
   )
-
-  # new_eeg() re-derives channel_types from the channel names, which turns a
-  # channel typed directly - e.g. "VEOG" from set_bipolar_reference() - back
-  # into "eeg". Put the original types back (skipped for hand-built objects
-  # that have none, which keep the derived ones).
-  if (!is.null(eeg_obj$channel_types)) {
-    out$channel_types <- eeg_obj$channel_types
-  }
 
   out
 }
@@ -1017,16 +1010,9 @@ eeg_notch <- function(eeg_obj,
                               list(history_entry)),
     montage               = eeg_obj$montage,
     bads                  = eeg_obj$bads,
-    annotations           = eeg_obj$annotations
+    annotations           = eeg_obj$annotations,
+    channel_types         = eeg_obj$channel_types
   )
-
-  # new_eeg() re-derives channel_types from the channel names, which turns a
-  # channel typed directly - e.g. "VEOG" from set_bipolar_reference() - back
-  # into "eeg". Put the original types back (skipped for hand-built objects
-  # that have none, which keep the derived ones).
-  if (!is.null(eeg_obj$channel_types)) {
-    out$channel_types <- eeg_obj$channel_types
-  }
 
   out
 }

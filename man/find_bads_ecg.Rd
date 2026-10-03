@@ -25,10 +25,10 @@ find_bads_ecg(
 matching channels - see \code{\link{get_sources}}).}
 
 \item{ch_name}{\code{NULL} (default), or a character vector of explicit
-ECG channel name(s). If \code{NULL}, every \code{channel_types ==
-  "external"} channel whose name contains \code{"ECG"} (case-insensitive)
-is used (see \code{\link{.resolve_reference_channels}}) - errors if none
-is found.}
+ECG channel name(s). If \code{NULL}, every channel typed \code{"ecg"} in
+\code{eeg$channel_types} is used (see
+\code{\link{.resolve_reference_channels}}) - errors if none is found.
+Set a channel's type with \code{\link{set_channel_types}}.}
 
 \item{threshold}{Numeric, or \code{"auto"} (default). \code{"auto"}
 resolves to \code{3.0} if \code{measure = "zscore"}, or \code{0.9} if

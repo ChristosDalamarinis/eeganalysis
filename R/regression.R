@@ -566,11 +566,12 @@ subtract_evoked <- function(epochs, by = c("event_type", "all")) {
 #'   include any EOG channel.
 #' @param picks_artifact \code{NULL} (default), a character vector of channel
 #'   names, or a numeric vector of channel indices: the EOG channels used as
-#'   predictors. If \code{NULL}, they are found by name, using the same lookup
-#'   as \code{\link{find_bads_eog}} (external channels whose name contains
-#'   \code{"EOG"}, e.g. \code{"EOG_L (EXG1)"} or \code{"VEOG"}), and any of
-#'   those marked bad in \code{eeg$bads} are skipped. An explicit
-#'   \code{picks_artifact} is taken as-is.
+#'   predictors. If \code{NULL}, they are found by channel type, using the
+#'   same lookup as \code{\link{find_bads_eog}} (every channel typed
+#'   \code{"eog"}, e.g. a \code{"VEOG"} made with
+#'   \code{\link{set_bipolar_reference}}), and any of those marked bad in
+#'   \code{eeg$bads} are skipped. An explicit \code{picks_artifact} is taken
+#'   as-is.
 #'
 #' @return An object of class \code{eeg_eog_regression} (see
 #'   \code{\link{new_eog_regression}}). Its \code{coef_} matrix has one row

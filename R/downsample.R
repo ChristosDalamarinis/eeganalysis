@@ -427,16 +427,9 @@ downsample <- function(eeg_obj,
     preprocessing_history = new_history,
     montage = eeg_obj$montage,
     bads = eeg_obj$bads,
-    annotations = eeg_obj$annotations
+    annotations = eeg_obj$annotations,
+    channel_types = eeg_obj$channel_types
   )
-
-  # new_eeg() re-derives channel_types from the channel names, which turns a
-  # channel typed directly - e.g. "VEOG" from set_bipolar_reference() - back
-  # into "eeg". Put the original types back (skipped for hand-built objects
-  # that have none, which keep the derived ones).
-  if (!is.null(eeg_obj$channel_types)) {
-    downsampled_eeg$channel_types <- eeg_obj$channel_types
-  }
   
   # ========== SUMMARY MESSAGE ==========
   

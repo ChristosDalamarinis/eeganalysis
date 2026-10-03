@@ -393,67 +393,134 @@ test_that("downsample() time spacing matches the new sampling rate", {
 # TEST SUITE 10: Event onset adjustment - all four strategies
 # ============================================================================
 
+# HOW THE KEPT SAMPLES LINE UP (needed to read the tests below):
+# downsample() keeps original samples 1, 1 + f, 1 + 2f, ... (f = the factor),
+# so new sample k is original sample 1 + (k - 1) * f.  With f = 2 the kept
+# original samples are 1, 3, 5, ... so an event on original sample 101 sits
+# exactly on new sample 51, while an event on original sample 100 sits half-way
+# between new samples 50 (original 99) and 51 (original 101).
+# An event's new position is therefore (onset - 1) / f + 1, and the strategy
+# decides how that position is turned into a whole sample.
+
 test_that("event_strategy = 'round' correctly rescales onset indices", {
   # WHAT THIS TESTS:
-  # With factor = 2, each original onset is divided by 2 and rounded.
-  # onset = 101 -> 101/2 = 50.5 -> round = 50 (R rounds 50.5 to 50 due to
-  # banker's rounding, but let's use a cleaner value).
-  # onset = 100 -> 100/2 = 50 -> round = 50.
-  # onset = 101 -> 101/2 = 50.5 -> round = 50 or 51 depending on rounding mode.
-  # We use onset = 200 -> 200/2 = 100 (exact, no ambiguity).
-  
+  # 'round' moves each event to the closest kept sample.  With f = 4 the kept
+  # original samples are 1, 5, 9, ... 101, 105, ...
+  #   original 102: neighbours 101 (1 away) and 105 (3 away) -> 101 = new sample 26
+  #   original 104: neighbours 101 (3 away) and 105 (1 away) -> 105 = new sample 27
+  # Neither event is a tie, so the answer does not depend on rounding rules.
+
   eeg <- make_eeg(sampling_rate = 512, n_timepoints = 1024,
-                  with_events = TRUE, event_onsets = c(100, 200, 400))
-  
-  result <- downsample(eeg, target_rate = 256, event_strategy = "round", verbose = FALSE)
-  
-  expected_onsets <- round(c(100, 200, 400) / 2)
-  expect_equal(result$events$onset, expected_onsets)
+                  with_events = TRUE, event_onsets = c(102, 104))
+
+  result <- downsample(eeg, target_rate = 128, event_strategy = "round", verbose = FALSE)
+
+  expect_equal(result$events$onset, c(26, 27))
 })
 
 test_that("event_strategy = 'floor' always rounds onset down", {
   # WHAT THIS TESTS:
-  # floor(onset / factor) guarantees the new onset is at or before the
-  # original event time.  For an odd onset like 101 with factor 2:
-  # floor(101/2) = floor(50.5) = 50.
-  
+  # 'floor' picks the closest kept sample at or BEFORE the event.  With f = 2:
+  #   original 100 (between kept 99 and 101)  -> 99  = new sample 50
+  #   original 101 (on a kept sample)         -> 101 = new sample 51
+  #   original 200 (between kept 199 and 201) -> 199 = new sample 100
+  #   original 201 (on a kept sample)         -> 201 = new sample 101
+
+  onsets <- c(100, 101, 200, 201)
   eeg <- make_eeg(sampling_rate = 512, n_timepoints = 1024,
-                  with_events = TRUE, event_onsets = c(101, 201, 401))
-  
+                  with_events = TRUE, event_onsets = onsets)
+
   result <- downsample(eeg, target_rate = 256, event_strategy = "floor", verbose = FALSE)
-  
-  expected_onsets <- floor(c(101, 201, 401) / 2)
-  expect_equal(result$events$onset, expected_onsets)
+
+  expect_equal(result$events$onset, c(50, 51, 100, 101))
+
+  # The same thing in words: the kept sample is never after the event.
+  kept_original_sample <- 1 + (result$events$onset - 1) * 2
+  expect_true(all(kept_original_sample <= onsets))
 })
 
 test_that("event_strategy = 'ceiling' always rounds onset up", {
   # WHAT THIS TESTS:
-  # ceiling(onset / factor) guarantees the new onset is at or after the
-  # original event time.  For onset 101 with factor 2:
-  # ceiling(101/2) = ceiling(50.5) = 51.
-  
+  # 'ceiling' picks the closest kept sample at or AFTER the event.  With f = 2:
+  #   original 100 (between kept 99 and 101)  -> 101 = new sample 51
+  #   original 101 (on a kept sample)         -> 101 = new sample 51
+  #   original 200 (between kept 199 and 201) -> 201 = new sample 101
+  #   original 201 (on a kept sample)         -> 201 = new sample 101
+
+  onsets <- c(100, 101, 200, 201)
   eeg <- make_eeg(sampling_rate = 512, n_timepoints = 1024,
-                  with_events = TRUE, event_onsets = c(101, 201, 401))
-  
+                  with_events = TRUE, event_onsets = onsets)
+
   result <- downsample(eeg, target_rate = 256, event_strategy = "ceiling", verbose = FALSE)
-  
-  expected_onsets <- ceiling(c(101, 201, 401) / 2)
-  expect_equal(result$events$onset, expected_onsets)
+
+  expect_equal(result$events$onset, c(51, 51, 101, 101))
+
+  # The same thing in words: the kept sample is never before the event.
+  kept_original_sample <- 1 + (result$events$onset - 1) * 2
+  expect_true(all(kept_original_sample >= onsets))
 })
 
 test_that("event_strategy = 'nearest' produces same result as 'round'", {
   # WHAT THIS TESTS:
   # The 'nearest' strategy is implemented identically to 'round' in the
-  # source code (both use round(onset / factor)).  This test confirms the
+  # source code (both round the same new position).  This test confirms the
   # two produce identical output.
-  
+
   eeg <- make_eeg(sampling_rate = 512, n_timepoints = 1024,
                   with_events = TRUE, event_onsets = c(100, 300, 600))
-  
+
   result_nearest <- downsample(eeg, target_rate = 256, event_strategy = "nearest", verbose = FALSE)
   result_round   <- downsample(eeg, target_rate = 256, event_strategy = "round",   verbose = FALSE)
-  
+
   expect_equal(result_nearest$events$onset, result_round$events$onset)
+})
+
+test_that("an event sitting on a kept sample points at that sample's data, for every strategy", {
+  # WHAT THIS TESTS:
+  # The check that matters most: after downsampling, an event marker must name
+  # the column of the data where the event really happened.  We put a spike
+  # (value 1000) into the data at original samples 101, 201 and 401 (all kept
+  # samples when f = 2), mark an event on each spike, downsample without
+  # filtering (method = "simple", so the spike is not smeared), and look at
+  # which column now holds each spike.  The event markers must name those columns.
+
+  n_tp     <- 1024
+  spikes   <- c(101, 201, 401)
+  data_mat <- matrix(0, nrow = 3, ncol = n_tp)
+  data_mat[, spikes] <- 1000
+
+  eeg <- make_eeg(sampling_rate = 512, n_timepoints = n_tp,
+                  with_events = TRUE, event_onsets = spikes, data_values = data_mat)
+
+  for (strategy in c("round", "nearest", "floor", "ceiling")) {
+    result <- suppressWarnings(
+      downsample(eeg, target_rate = 256, method = "simple",
+                 event_strategy = strategy, verbose = FALSE)
+    )
+    expect_equal(result$events$onset, which(result$data[1, ] == 1000), info = strategy)
+  }
+})
+
+test_that("event times stay within half a new-sample step of the true times", {
+  # WHAT THIS TESTS:
+  # An event can only sit on a kept sample, so with 'round' it can never move
+  # by more than half a new-sample step (f / 2 original samples), whatever the
+  # factor and whatever the onset (odd, even, anywhere in between).  We check
+  # factors 2, 4 and 8 with many onsets, using the original onset_time as the truth.
+
+  onsets <- seq(11, 1000, by = 7)
+
+  for (target in c(256, 128, 64)) {
+    f   <- 512 / target
+    eeg <- make_eeg(sampling_rate = 512, n_timepoints = 1024,
+                    with_events = TRUE, event_onsets = onsets)
+
+    result <- downsample(eeg, target_rate = target, event_strategy = "round", verbose = FALSE)
+
+    expect_equal(nrow(result$events), length(onsets), info = paste("factor", f))
+    shift <- abs(result$events$onset_time - eeg$events$onset_time)
+    expect_true(all(shift <= (f / 2) / 512 + 1e-9), info = paste("factor", f))
+  }
 })
 
 
@@ -485,38 +552,23 @@ test_that("downsample() updates onset_time to match new time vector", {
 
 test_that("remove_outbound_events = TRUE removes events outside new time range", {
   # WHAT THIS TESTS:
-  # If an event onset falls outside [1, n_new_samples] after rescaling, and
-  # remove_outbound_events = TRUE, the event must be silently dropped (with a
-  # warning).  We engineer an out-of-bounds event by placing it very late
-  # in the original data.  However, note that with simple factor-2 downsampling,
-  # most events stay in range.  We create an event at onset = 1023 (last usable
-  # sample), which after factor-2 rounding -> 512, which IS in range for 512
-  # new samples.  Instead we use a manufacturing trick: an onset that after
-  # division exceeds the new length.
-  #
-  # With 1024 samples and factor 2, new length = 512 samples (indices 1..512).
-  # round(1025/2) = 513 > 512, so we manually insert a "bad" onset.
-  
+  # With f = 4 and 1024 samples the kept original samples are 1, 5, ... 1021,
+  # so the downsampled recording ends at new sample 256 (original 1021).  An
+  # event on original sample 1024 lies 3 original samples past that end: the
+  # sample closest to it would be new sample 257, which does not exist.  With
+  # remove_outbound_events = TRUE that event must be dropped and the early
+  # event must stay.
+
   eeg <- make_eeg(sampling_rate = 512, n_timepoints = 1024,
                   with_events = TRUE, event_onsets = c(100, 1024))
-  
-  # onset 1024 -> round(1024/2) = 512, which equals length(new_times) = 512 -> in-bounds (just).
-  # onset 1025 would be OOB, but our data only has 1024 samples.
-  # The cleaner approach: use a 4:1 factor so new length = 256, and place an
-  # event at onset 1020 -> round(1020/4) = 255 (in-bounds), but onset 1024 -> 256 (in-bounds).
-  # So let's use factor 8: 512->64 Hz, 1024 samples -> 128 new samples.
-  # onset at 1020 -> round(1020/8) = 128 (in-bounds), onset at 1024 -> 128 (in-bounds).
-  # It's hard to force OOB with clean data, so instead we directly test the warning
-  # and count: put event at sample 1 (will be in-bounds) and trust the code path
-  # by checking event count equals input count when no events are OOB.
-  
+
   result <- suppressWarnings(
-    downsample(eeg, target_rate = 256,
+    downsample(eeg, target_rate = 128, event_strategy = "round",
                remove_outbound_events = TRUE, verbose = FALSE)
   )
-  
-  # All events with valid onsets must be retained (none OOB here)
-  expect_true(nrow(result$events) <= nrow(eeg$events))
+
+  expect_equal(nrow(result$events), 1)
+  expect_equal(result$events$onset, 26)   # original 100 -> kept original 101 = new sample 26
 })
 
 test_that("remove_outbound_events = FALSE clamps out-of-bounds events instead of removing", {
@@ -543,33 +595,46 @@ test_that("remove_outbound_events = FALSE clamps out-of-bounds events instead of
 
 test_that("downsample() produces a warning when remove_outbound_events = TRUE removes events", {
   # WHAT THIS TESTS:
-  # The function must emit a warning (not a silent removal) so the user knows
-  # events were dropped.  We use a 16:1 factor (512->32 Hz) so that events
-  # placed late in the recording map to out-of-bounds indices.
-  # 1024 samples / 16 = 64 new samples (indices 1..64).
-  # onset = 1020 -> round(1020/16) = round(63.75) = 64 -> in-bounds.
-  # onset = 1024 -> round(1024/16) = 64 -> in-bounds (boundary).
-  # onset = 1025 -> OOB, but data only has 1024 samples.
-  # Factor 16 requires target=32 Hz from 512 Hz. Let's use 1024 Hz source.
-  
-  eeg_1024 <- make_eeg(sampling_rate = 1024, n_timepoints = 2048,
-                       with_events = TRUE, event_onsets = c(100, 2045))
-  # Factor = 1024/64 = 16; new length = 128 samples (indices 1..128).
-  # onset 2045 -> round(2045/16) = round(127.8) = 128 -> in-bounds (just).
-  # onset 2048 -> round(2048/16) = 128 -> in-bounds.
-  # Truly OOB scenario: onset > new_length * factor would need onset > 128*16=2048,
-  # which is outside our data range anyway.
-  #
-  # PRACTICAL NOTE: The function checks new_events$onset > length(new_times),
-  # which means onset > 128 would be OOB.  round(x/16) > 128 requires x > 2048.
-  # Since our data only has 2048 samples (max onset = 2048),
-  # round(2048/16) = 128 which is exactly at the boundary (in-bounds).
-  # We therefore verify no warning for well-placed events:
-  
+  # Dropping an event must never be silent: the user has to be told.  We use
+  # the same past-the-end event as above (original sample 1024 with f = 4) and
+  # check that the warning says why.  Events that are well inside the
+  # recording must not trigger it.
+
+  eeg_edge <- make_eeg(sampling_rate = 512, n_timepoints = 1024,
+                       with_events = TRUE, event_onsets = c(100, 1024))
+  eeg_ok   <- make_eeg(sampling_rate = 512, n_timepoints = 1024,
+                       with_events = TRUE, event_onsets = c(100, 900))
+
+  expect_warning(
+    downsample(eeg_edge, target_rate = 128,
+               remove_outbound_events = TRUE, verbose = FALSE),
+    regexp = "outside the downsampled time range"
+  )
+
   expect_no_warning(
-    downsample(eeg_1024, target_rate = 64,
+    downsample(eeg_ok, target_rate = 128,
                remove_outbound_events = TRUE, verbose = FALSE)
   )
+})
+
+test_that("remove_outbound_events = FALSE clamps a past-the-end event onto the last sample", {
+  # WHAT THIS TESTS:
+  # Same past-the-end event as above.  With remove_outbound_events = FALSE the
+  # event is kept and pulled back onto the last new sample (256), with a
+  # warning that says so.
+
+  eeg <- make_eeg(sampling_rate = 512, n_timepoints = 1024,
+                  with_events = TRUE, event_onsets = c(100, 1024))
+
+  expect_warning(
+    result <- downsample(eeg, target_rate = 128, event_strategy = "round",
+                         remove_outbound_events = FALSE, verbose = FALSE),
+    regexp = "Clamping"
+  )
+
+  expect_equal(nrow(result$events), 2)
+  expect_equal(result$events$onset[2], ncol(result$data))
+  expect_equal(result$events$onset_time[2], tail(result$times, 1))
 })
 
 

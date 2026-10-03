@@ -59,8 +59,9 @@ centered at a smoothness value of 300.
 }
 If fewer than 3 of the fitted channels (\code{ica$ch_names}) have a
 montage position, only criterion 1 is used and a warning is issued -
-\code{channel_types == "external"} channels never have montage positions
-in this package by design (see \code{\link{create_montage}}), so
+channels that are not typed \code{"eeg"} (an \code{"eog"} channel, say)
+never have montage positions in this package by design (see
+\code{\link{create_montage}}), so
 requiring every fitted channel to have a position would trigger this
 fallback far more often than useful; instead, criteria 2-3 use whichever
 subset of \code{ica$ch_names} does have one. The combined threshold is

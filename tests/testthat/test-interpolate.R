@@ -6,11 +6,12 @@
 #   1. interpolate_bads()             - Exported orchestrator
 #   2. make_interpolation_matrix()    - Internal: spherical-spline weights
 #   3. calc_g()                       - Internal: Legendre-series kernel
-#   4. .legendre_series_eval()        - Internal: Legendre series evaluation
+#   4. calc_h()                       - Internal: companion kernel of calc_g()
+#   5. .legendre_series_eval()        - Internal: Legendre series evaluation
 #
 # Test suites:
 #   1. .legendre_series_eval() against closed-form Legendre polynomials
-#   2. calc_g() shape/symmetry
+#   2. calc_g() shape/symmetry, calc_h() relation to calc_g()
 #   3. make_interpolation_matrix() shape + row-sums-to-1 property
 #   4. interpolate_bads() input validation
 #   5. interpolate_bads() no-op / partial montage coverage
@@ -89,7 +90,7 @@ test_that(".legendre_series_eval preserves matrix shape", {
 })
 
 # ============================================================================
-# TEST SUITE 2: calc_g()
+# TEST SUITE 2: calc_g() and calc_h()
 # ============================================================================
 
 # ----------------------------------------------------------------------------
@@ -115,6 +116,47 @@ test_that("calc_g output shape matches a non-square cosang input", {
   cosang <- matrix(runif(3 * 5, -1, 1), nrow = 3, ncol = 5)
   g <- eeganalysis:::calc_g(cosang)
   expect_equal(dim(g), c(3, 5))
+})
+
+# ----------------------------------------------------------------------------
+# Test 2.3: calc_h is calc_g with the stiffness lowered by one
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: the two kernels differ only by one power in the weight of
+# each term, so calc_h(x, m) must give the same numbers as calc_g(x, m - 1).
+# Guards the "(stiffness - 1)" brackets in calc_h(): without them R still
+# runs, it just silently returns wrong numbers.
+test_that("calc_h equals calc_g with the stiffness lowered by one", {
+  x <- c(-0.9, -0.5, 0, 0.3, 0.7, 0.95)
+
+  # Default stiffness is 4, so the default calc_h() matches calc_g() at 3.
+  expect_equal(eeganalysis:::calc_h(x),
+               eeganalysis:::calc_g(x, stiffness = 3))
+
+  # Holds for another stiffness too, so the exponent is not hard-coded.
+  expect_equal(eeganalysis:::calc_h(x, stiffness = 3),
+               eeganalysis:::calc_g(x, stiffness = 2))
+})
+
+# ----------------------------------------------------------------------------
+# Test 2.4: calc_h is minus the surface Laplacian of calc_g
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: that calc_h() is the right function mathematically, not
+# just a copy of its own formula. For a function f of x = cos(angle) on a
+# sphere, the surface Laplacian is d/dx[(1 - x^2) * df/dx], and the "h"
+# kernel is minus that applied to the "g" kernel. The derivatives are taken
+# numerically (central differences), so this check does not depend on the
+# formula inside calc_h(). Measured agreement is about 1e-6 (relative); the
+# tolerance leaves a wide margin.
+test_that("calc_h is minus the surface Laplacian of calc_g", {
+  calc_g <- eeganalysis:::calc_g
+  x      <- c(-0.9, -0.5, 0, 0.3, 0.7, 0.95)
+  eps    <- 1e-3
+
+  dg    <- function(u) (calc_g(u + eps) - calc_g(u - eps)) / (2 * eps)
+  flux  <- function(u) (1 - u^2) * dg(u)
+  lap_g <- (flux(x + eps) - flux(x - eps)) / (2 * eps)
+
+  expect_equal(-lap_g, eeganalysis:::calc_h(x), tolerance = 1e-4)
 })
 
 # ============================================================================

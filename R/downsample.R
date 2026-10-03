@@ -359,15 +359,16 @@ downsample <- function(eeg_obj,
     original_onset <- new_events$onset
     
     # Apply event strategy to recalculate onset sample indices
+    # Sample numbers start at 1: new sample k is original sample 1 + (k - 1) * factor.
     if (event_strategy == "round") {
-      new_events$onset <- round(original_onset / downsample_factor)
+      new_events$onset <- round((original_onset - 1) / downsample_factor) + 1
     } else if (event_strategy == "floor") {
-      new_events$onset <- floor(original_onset / downsample_factor)
+      new_events$onset <- floor((original_onset - 1) / downsample_factor) + 1
     } else if (event_strategy == "ceiling") {
-      new_events$onset <- ceiling(original_onset / downsample_factor)
+      new_events$onset <- ceiling((original_onset - 1) / downsample_factor) + 1
     } else if (event_strategy == "nearest") {
       # Find nearest sample in downsampled data
-      new_events$onset <- round(original_onset / downsample_factor)
+      new_events$onset <- round((original_onset - 1) / downsample_factor) + 1
     }
     
     # Check for events outside the downsampled time range

@@ -98,10 +98,11 @@ A list of class 'eeg_epochs' containing:
 \item{rejected}{Logical vector indicating rejected epochs}
 \item{rejection_log}{Data frame with rejection reasons, including the channel name that triggered each rejection}
 \item{metadata}{List with experiment metadata, copied from the eeg object}
-\item{channel_types}{Channel types ("eeg", "external", "status"), copied from the eeg object}
+\item{channel_types}{Channel types ("eeg", "eog", "misc", "status"), copied from the eeg object}
 \item{bads}{Channels marked bad, copied from the eeg object}
 \item{reference}{Reference scheme, copied from the eeg object}
 \item{preprocessing_history}{Processing log, copied from the eeg object}
+\item{montage}{Electrode positions, copied from the eeg object}
 }
 }
 \description{

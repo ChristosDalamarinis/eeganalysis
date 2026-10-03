@@ -49,8 +49,8 @@ library(eeganalysis)
           montage = .csd_mont)
 }
 
-# Three epochs cut from an object with three events. Epoched objects do not
-# carry a montage, so the montage is passed to compute_csd() explicitly.
+# Three epochs cut from an object with three events. epoch_eeg() carries the
+# object's montage into the epochs, so compute_csd() finds it there.
 .make_csd_epochs <- function(seed = 1) {
   eeg <- .make_csd_eeg(n_tp = 1000, seed = seed)
   ev <- data.frame(onset = c(300L, 500L, 700L),
@@ -273,11 +273,28 @@ test_that("compute_csd needs a montage", {
 })
 
 # ----------------------------------------------------------------------------
-# Test 4.4: epochs carry no montage, so one must be passed
+# Test 4.4: epochs that carry no montage need one passed in
 # ----------------------------------------------------------------------------
 test_that("compute_csd on epochs without a montage errors", {
   ep <- .make_csd_epochs()
+  ep$montage <- NULL
   expect_error(compute_csd(ep), "No montage available")
+
+  # An explicit montage still works
+  expect_no_error(compute_csd(ep, montage = .csd_mont, verbose = FALSE))
+})
+
+# ----------------------------------------------------------------------------
+# Test 4.4b: epoch_eeg() carries the montage, so none needs to be passed
+# ----------------------------------------------------------------------------
+test_that("compute_csd on epochs uses the montage epoch_eeg() carried over", {
+  ep <- .make_csd_epochs()
+  expect_identical(ep$montage, .csd_mont)
+
+  out_carried  <- compute_csd(ep, verbose = FALSE)
+  out_explicit <- compute_csd(ep, montage = .csd_mont, verbose = FALSE)
+  expect_identical(out_carried$data, out_explicit$data)
+  expect_identical(out_carried$montage, .csd_mont)
 })
 
 # ----------------------------------------------------------------------------

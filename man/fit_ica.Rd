@@ -17,8 +17,9 @@ to fit on.}
 or a numeric vector of channel indices - which channels of \code{eeg}
 to fit ICA on. If \code{NULL}, every channel with
 \code{channel_types != "status"} and not listed in \code{eeg$bads} is
-used (i.e. \code{"eeg"} and \code{"external"} channels, minus any
-marked bad; the BioSemi status channel is always excluded, matching
+used (i.e. the \code{"eeg"} channels plus any channel typed
+\code{"eog"}, \code{"ecg"} or another non-status type, minus any marked
+bad; the BioSemi status channel is always excluded, matching
 \code{.compute_pre_whitener()}'s expectations). An explicit \code{picks}
 is taken as-is and can include bad channels if requested.}
 

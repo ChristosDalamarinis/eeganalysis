@@ -22,7 +22,7 @@ where \code{P_n} is the Legendre polynomial of degree \code{n}, via the
 standard 3-term recurrence (\code{P_0 = 1}, \code{P_1 = x},
 \code{n*P_n = (2n-1)*x*P_(n-1) - (n-1)*P_(n-2)}). Equivalent to numpy's
 \code{numpy.polynomial.legendre.legval(x, coeffs)}, used by
-\code{\link{calc_g}}. Works elementwise whether \code{x} is a plain
-vector or a matrix - shape is preserved throughout.
+\code{\link{calc_g}} and \code{\link{calc_h}}. Works elementwise whether
+\code{x} is a plain vector or a matrix - shape is preserved throughout.
 }
 \keyword{internal}

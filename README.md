@@ -43,6 +43,7 @@ Version 0.0.0.9000 — under active development. Currently reads BioSemi `.bdf` 
 | Epoching & visualization | `epoch_eeg()`, `plot_epochs()` | ✅ |
 | Spectral analysis | `eeg_fft()`, `eeg_psd_welch()`, `eeg_band_power()` | ✅ |
 | Topography & montage | `plot_topography()`, `create_montage()` | ✅ |
+| Current source density (reference-free surface Laplacian; continuous and epoched data) | `compute_csd()` | ✅ |
 | ERP averaging | `average_epochs()` | ⚠️ in development |
 
 ## Dependencies
@@ -210,6 +211,9 @@ eeganalysis
 │   ├── topography.R                         ← Scalp topography plotting
 │   │   └── plot_topography()                ← Interpolated scalp-map plot
 │   │
+│   ├── csd.R                                ← Current source density (surface Laplacian)
+│   │   └── compute_csd()                    ← Reference-free spherical-spline Laplacian (continuous or epoched)
+│   │
 │   ├── epoch2.R                             ← Epoching functions
 │   │   ├── inspect_triggers()               ← Inspect event triggers before epoching
 │   │   ├── epoch_eeg()                      ← Extract time-locked epochs around events
@@ -233,7 +237,7 @@ eeganalysis
 │   │
 │   └── imports.R                            ← Centralized @importFrom declarations
 │
-├── man/                                     ← Auto-generated help files (135, one per exported/internal function)
+├── man/                                     ← Auto-generated help files (139, one per exported/internal function)
 │   ├── new_eeg.Rd
 │   ├── read_bdf_native.Rd
 │   ├── find_bad_channels.Rd
@@ -242,7 +246,7 @@ eeganalysis
 │   ├── apply_ica.Rd
 │   └── ...Rd                                ← Remaining help files
 │
-├── tests/testthat/                          ← Unit tests (testthat, one file per module, 22 total)
+├── tests/testthat/                          ← Unit tests (testthat, one file per module, 23 total)
 │   ├── test-read_bdf_native.R
 │   ├── test-ica1.R
 │   ├── test-bad_channels.R

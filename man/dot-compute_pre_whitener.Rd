@@ -18,9 +18,9 @@ data.}
 == nrow(data)}. Used only to name the returned vector.}
 
 \item{channel_types}{Character vector, same length and order as
-\code{channels}, with values \code{"eeg"} / \code{"external"} /
-\code{"status"} - i.e. \code{eeg_obj$channel_types} as computed once by
-\code{classify_channels()} in \code{new_eeg()} (see R/eeg_class.R).
+\code{channels}: the type of each channel - i.e.
+\code{eeg_obj$channel_types} (see \code{\link{new_eeg}} for the possible
+values, such as \code{"eeg"}, \code{"eog"}, \code{"ecg"}, \code{"status"}).
 Channels typed \code{"eeg"} form one pooled-std group and every other
 type (\code{"eog"}, \code{"ecg"}, ...) forms another; \code{"status"}
 entries are not assigned to either group and must already be excluded

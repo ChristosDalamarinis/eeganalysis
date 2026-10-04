@@ -40,6 +40,23 @@
 #'   blue-white-red diverging palette.
 #' @param main Character string, plot title. Default \code{NULL}, which uses
 #'   \code{"Scalp Topography"}.
+#' @param zero_centered Logical, whether to make the colour scale symmetric
+#'   around zero. The strongest plotted value of either sign then gets the
+#'   full colour at its end of \code{col_palette} (the first colour for the
+#'   most negative value, the last for the most positive), and the middle
+#'   colour means exactly zero. Default \code{FALSE}, which stretches the
+#'   palette from the lowest to the highest plotted value, so the middle
+#'   colour is the middle of that range and not zero. Turn it on for signed
+#'   maps such as the output of \code{\link{compute_csd}}; leave it off for
+#'   maps that are always positive, such as band power, where half of the
+#'   palette would go unused.
+#' @param extrapolate Logical, whether to colour the area outside the outer
+#'   boundary of the electrodes. There is no data there, so the colours are
+#'   extrapolated from the electrodes, and on sharp maps such as the output
+#'   of \code{\link{compute_csd}} that guess can show values larger than any
+#'   electrode measured. Default \code{TRUE} colours the whole head disc, as
+#'   before. With \code{FALSE} that area is left empty (\code{NA} in
+#'   \code{grid_z}).
 #' @param ... Additional arguments (currently unused).
 #'
 #' @return Invisibly returns a list with:
@@ -47,7 +64,11 @@
 #'    \item{grid_x}{Numeric vector, interpolation grid x-axis}
 #'    \item{grid_y}{Numeric vector, interpolation grid y-axis}
 #'    \item{grid_z}{Numeric matrix, the interpolated values (\code{NA} outside
-#'      the head disc)}
+#'      the head disc, and also outside the electrodes when
+#'      \code{extrapolate = FALSE})}
+#'    \item{zlim}{Numeric vector of length 2, the lowest and highest value the
+#'      colour scale runs between (symmetric around zero when
+#'      \code{zero_centered = TRUE}); handy for drawing a colour bar}
 #'    \item{channel_positions}{Data frame of the 2D-projected electrode
 #'      positions and values actually plotted}
 #'  }
@@ -65,15 +86,29 @@
 #' least 3 channels with both a position and a value are required to
 #' interpolate a surface.
 #'
+#' Maps of signed quantities, such as current source density from
+#' \code{\link{compute_csd}} (positive and negative values mean different
+#' things), are easier to read with \code{zero_centered = TRUE} and
+#' \code{extrapolate = FALSE} together: the first makes the middle colour
+#' mean zero, the second keeps the picture from showing values that were
+#' only guessed outside the electrodes.
+#'
 #' @examples
 #' \dontrun{
 #'   eeg <- set_montage(eeg, create_montage())
 #'   power <- eeg_band_power(eeg)
 #'   plot_topography(eeg, setNames(power$alpha, power$channel))
+#'
+#'   # A signed map such as CSD: white means zero, and nothing is painted
+#'   # beyond the electrodes
+#'   csd <- compute_csd(eeg)
+#'   plot_topography(csd, setNames(csd$data[, 1], csd$channels),
+#'                   zero_centered = TRUE, extrapolate = FALSE)
 #' }
 #'
 #' @seealso \code{\link{create_montage}}, \code{\link{set_montage}},
-#'   \code{\link{eeg_band_power}}, \code{\link{plot_eeg_signal}}
+#'   \code{\link{eeg_band_power}}, \code{\link{compute_csd}},
+#'   \code{\link{plot_eeg_signal}}
 #'
 #' @importFrom graphics image contour polygon points text lines par
 #' @importFrom grDevices colorRampPalette
@@ -88,6 +123,8 @@ plot_topography <- function(eeg_obj,
                              show_electrodes = TRUE,
                              col_palette = c("blue", "white", "red"),
                              main = NULL,
+                             zero_centered = FALSE,
+                             extrapolate = TRUE,
                              ...) {
 
   # ========== INPUT VALIDATION ==========
@@ -173,11 +210,16 @@ plot_topography <- function(eeg_obj,
   }
 
   # ========== INTERPOLATE ONTO A REGULAR GRID ==========
+  # Outside the outer boundary of the electrodes there is no data to
+  # interpolate from. With extrapolate = TRUE the surface is extended over
+  # that area anyway, and it can show values larger than any electrode
+  # measured; with extrapolate = FALSE the area is left empty (NA) instead.
 
   fit <- akima::interp(x2d, y2d, vals,
                         xo = seq(-head_r, head_r, length.out = interpolate_res),
                         yo = seq(-head_r, head_r, length.out = interpolate_res),
-                        linear = FALSE, extrap = TRUE, duplicate = "mean")
+                        linear = FALSE, extrap = isTRUE(extrapolate),
+                        duplicate = "mean")
 
   grid_dist   <- sqrt(outer(fit$x^2, fit$y^2, "+"))
   fit$z[grid_dist > head_r] <- NA
@@ -190,8 +232,17 @@ plot_topography <- function(eeg_obj,
 
   palette_fn <- colorRampPalette(col_palette)
 
+  # Colour limits. Left to itself, image() stretches the palette from the
+  # lowest to the highest plotted value, which puts the middle colour at the
+  # middle of that range, not at zero. zero_centered makes the range symmetric
+  # instead, so the middle colour is exactly zero.
+  zlim <- range(fit$z, na.rm = TRUE)
+  if (isTRUE(zero_centered)) {
+    zlim <- c(-1, 1) * max(abs(zlim))
+  }
+
   image(fit$x, fit$y, fit$z,
-        col = palette_fn(100),
+        col = palette_fn(100), zlim = zlim,
         xlab = "", ylab = "", axes = FALSE, asp = 1,
         main = if (is.null(main)) "Scalp Topography" else main)
 
@@ -213,6 +264,7 @@ plot_topography <- function(eeg_obj,
     grid_x = fit$x,
     grid_y = fit$y,
     grid_z = fit$z,
+    zlim = zlim,
     channel_positions = data.frame(channel = common, x2d = x2d, y2d = y2d,
                                     value = vals, stringsAsFactors = FALSE)
   ))

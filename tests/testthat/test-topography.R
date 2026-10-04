@@ -28,6 +28,27 @@ make_topo_fixture <- function() {
   list(eeg = eeg, values = values)
 }
 
+# Helper: a smooth, non-random map on the full 64-channel layout - a broad
+# bump that is 1 at Cz and falls towards 0 at the edge of the head - with an
+# eeg object that carries the montage. Unlike make_topo_fixture() it has no
+# random values, so tests can rely on its exact shape, and it has enough
+# electrodes for a real interpolation: akima::interp() returns a flat
+# all-zero surface when given fewer than 10 points, so the 6-channel fixture
+# above cannot show anything about colours or extrapolation.
+make_blob_fixture <- function() {
+  montage   <- create_montage()
+  positions <- montage$positions
+  xyz       <- as.matrix(positions[, c("x", "y", "z")])
+  xyz       <- xyz / sqrt(rowSums(xyz^2))
+  cosang    <- as.vector(xyz %*% xyz[positions$channel == "Cz", ])
+  angle     <- acos(pmin(pmax(cosang, -1), 1))
+  values    <- setNames(exp(-(angle / 0.6)^2), positions$channel)
+  eeg <- new_eeg(data = matrix(0, nrow = nrow(positions), ncol = 4),
+                 channels = positions$channel, sampling_rate = 100,
+                 montage = montage)
+  list(eeg = eeg, values = values)
+}
+
 # Runs `expr` against a throwaway PNG device so no plot window is displayed
 # during the test run, and always cleans the device up afterwards.
 with_null_device <- function(expr) {
@@ -38,6 +59,16 @@ with_null_device <- function(expr) {
     unlink(tmp)
   })
   force(expr)
+}
+
+# Draws `expr` on a throwaway PNG device and returns the bytes of the image,
+# so that two drawings can be compared.
+png_bytes <- function(expr) {
+  tmp <- tempfile(fileext = ".png")
+  grDevices::png(tmp)
+  on.exit(unlink(tmp), add = TRUE)
+  tryCatch(force(expr), finally = grDevices::dev.off())
+  readBin(tmp, "raw", file.size(tmp))
 }
 
 # ============================================================================
@@ -124,17 +155,22 @@ test_that("plot_topography errors with fewer than 3 usable channels", {
 # Test 2.1: Returns the expected invisible structure
 # ----------------------------------------------------------------------------
 # WHAT THIS TESTS: Verifies a successful call returns (invisibly) a list with
-# grid_x, grid_y, grid_z, and channel_positions, using the montage attached
-# to the eeg object.
+# grid_x, grid_y, grid_z, zlim, and channel_positions, using the montage
+# attached to the eeg object.
 test_that("plot_topography returns grid and channel position data", {
   fx <- make_topo_fixture()
 
   res <- with_null_device(plot_topography(fx$eeg, fx$values))
 
   expect_type(res, "list")
-  expect_named(res, c("grid_x", "grid_y", "grid_z", "channel_positions"))
+  expect_named(
+    res,
+    c("grid_x", "grid_y", "grid_z", "zlim", "channel_positions")
+  )
   expect_type(res$grid_x, "double")
   expect_type(res$grid_y, "double")
+  expect_type(res$zlim, "double")
+  expect_length(res$zlim, 2)
   expect_true(is.matrix(res$grid_z))
   expect_equal(dim(res$grid_z), c(length(res$grid_x), length(res$grid_y)))
   expect_s3_class(res$channel_positions, "data.frame")
@@ -251,6 +287,146 @@ test_that("plot_topography errors when bads exclusion drops below 3 channels", {
 })
 
 # ============================================================================
+#          TEST SUITE 4: zero_centered and extrapolate Arguments
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# Test 4.1: The defaults keep the behaviour from before the new arguments
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies that leaving zero_centered and extrapolate out
+# gives the same result as passing their defaults (FALSE and TRUE), and that
+# the colour limits (zlim) are then simply the range of the plotted values, as
+# before the arguments existed.
+test_that("zero_centered and extrapolate default to the old behaviour", {
+  fx <- make_blob_fixture()
+
+  by_default  <- with_null_device(plot_topography(fx$eeg, fx$values))
+  spelled_out <- with_null_device(
+    plot_topography(fx$eeg, fx$values,
+                    zero_centered = FALSE, extrapolate = TRUE)
+  )
+
+  expect_equal(by_default, spelled_out)
+  expect_equal(by_default$zlim, range(by_default$grid_z, na.rm = TRUE))
+})
+
+# ----------------------------------------------------------------------------
+# Test 4.2: zero_centered makes the colour limits symmetric around zero
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies zero_centered = TRUE leaves the plotted values
+# alone and only changes the colour limits: they become symmetric around zero
+# and just wide enough to hold the strongest plotted value. The bump's values
+# are all positive (0 to 1), so the default limits are not symmetric.
+test_that("zero_centered makes the colour limits symmetric around zero", {
+  fx <- make_blob_fixture()
+
+  default_map  <- with_null_device(plot_topography(fx$eeg, fx$values))
+  centered_map <- with_null_device(
+    plot_topography(fx$eeg, fx$values, zero_centered = TRUE)
+  )
+
+  strongest <- max(abs(range(default_map$grid_z, na.rm = TRUE)))
+
+  expect_equal(centered_map$grid_z, default_map$grid_z)
+  expect_equal(centered_map$zlim, c(-strongest, strongest))
+  expect_false(isTRUE(all.equal(centered_map$zlim, default_map$zlim)))
+})
+
+# ----------------------------------------------------------------------------
+# Test 4.3: extrapolate = FALSE empties the area outside the electrodes only
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies extrapolate = FALSE only blanks out cells (NA)
+# outside the area the electrodes span: more cells are empty than by default,
+# every cell that was already empty stays empty, and every cell that is still
+# painted holds exactly the value it had before. No new warnings.
+test_that("extrapolate = FALSE empties the area outside the electrodes only", {
+  fx <- make_blob_fixture()
+
+  default_map <- with_null_device(plot_topography(fx$eeg, fx$values))
+  expect_no_warning(
+    inside_map <- with_null_device(
+      plot_topography(fx$eeg, fx$values, extrapolate = FALSE)
+    )
+  )
+
+  empty_before <- is.na(default_map$grid_z)
+  empty_now    <- is.na(inside_map$grid_z)
+
+  expect_gt(sum(empty_now), sum(empty_before))
+  expect_true(all(empty_now[empty_before]))
+  expect_equal(inside_map$grid_z[!empty_now], default_map$grid_z[!empty_now])
+})
+
+# ----------------------------------------------------------------------------
+# Test 4.4: Painting outside the electrodes can invent values
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies why extrapolate = FALSE exists. On a smooth bump
+# centred on Cz (1 at Cz, falling to about 0 at the edge) the default map
+# extrapolates beyond the electrodes to well over the largest value any
+# electrode has (the test asks for more than 1.5 times it), while with
+# extrapolate = FALSE the largest plotted value stays at the electrodes' own
+# maximum.
+test_that("extrapolate = FALSE removes values invented beyond the electrodes", {
+  fx <- make_blob_fixture()
+  electrode_max <- max(fx$values)
+
+  default_map <- with_null_device(plot_topography(fx$eeg, fx$values))
+  inside_map  <- with_null_device(
+    plot_topography(fx$eeg, fx$values, extrapolate = FALSE)
+  )
+
+  expect_gt(max(default_map$grid_z, na.rm = TRUE), 1.5 * electrode_max)
+  expect_lte(max(inside_map$grid_z, na.rm = TRUE), 1.05 * electrode_max)
+})
+
+# ----------------------------------------------------------------------------
+# Test 4.5: The two arguments work together
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies that with zero_centered = TRUE and
+# extrapolate = FALSE together the colour limits are symmetric around zero AND
+# come from the map painted only inside the electrodes, so the values invented
+# outside them no longer stretch the colour scale. The map is the bump from
+# Test 4.4 shifted down by 0.5 so that it has both signs.
+test_that("zero_centered and extrapolate = FALSE work together", {
+  fx <- make_blob_fixture()
+  signed <- fx$values - 0.5
+
+  centered_only <- with_null_device(
+    plot_topography(fx$eeg, signed, zero_centered = TRUE)
+  )
+  both <- with_null_device(
+    plot_topography(fx$eeg, signed,
+                    zero_centered = TRUE, extrapolate = FALSE)
+  )
+
+  strongest_inside <- max(abs(range(both$grid_z, na.rm = TRUE)))
+
+  expect_equal(both$zlim, c(-strongest_inside, strongest_inside))
+  expect_lt(both$zlim[2], centered_only$zlim[2])
+})
+
+# ----------------------------------------------------------------------------
+# Test 4.6: zero_centered changes the drawn picture, not just zlim
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies the colour limits reach the heatmap itself: the
+# same map drawn with and without zero_centered gives different images, while
+# drawing the same thing twice gives identical ones (so a difference means the
+# switch, not noise). Without this, zlim could be computed correctly and still
+# never be used for drawing.
+test_that("zero_centered changes the drawn picture", {
+  fx <- make_blob_fixture()
+
+  default_png  <- png_bytes(plot_topography(fx$eeg, fx$values))
+  repeat_png   <- png_bytes(plot_topography(fx$eeg, fx$values))
+  centered_png <- png_bytes(
+    plot_topography(fx$eeg, fx$values, zero_centered = TRUE)
+  )
+
+  expect_identical(default_png, repeat_png)
+  expect_false(identical(default_png, centered_png))
+})
+
+# ============================================================================
 #                     SUMMARY OF TEST COVERAGE
 # ============================================================================
 # - Input validation: non-'eeg' object, missing montage, unnamed values
@@ -260,4 +436,11 @@ test_that("plot_topography errors when bads exclusion drops below 3 channels", {
 #   montage argument overriding/substituting for eeg_obj$montage
 # - eeg_obj$bads exclusion: warns and drops bad channels, no-op when empty,
 #   can trigger the 3-channel minimum error
+# - Colour scale and extrapolation: the defaults keep the old behaviour
+#   (picture and zlim unchanged), zero_centered makes the colour limits
+#   symmetric around zero, extrapolate = FALSE leaves the area outside the
+#   electrodes empty without changing the rest, painting outside the
+#   electrodes can invent values that extrapolate = FALSE removes, the two
+#   arguments work together, and zero_centered changes the drawn picture
+#   (not just the returned zlim)
 # ============================================================================

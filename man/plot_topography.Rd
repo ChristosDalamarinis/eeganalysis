@@ -13,6 +13,8 @@ plot_topography(
   show_electrodes = TRUE,
   col_palette = c("blue", "white", "red"),
   main = NULL,
+  zero_centered = FALSE,
+  extrapolate = TRUE,
   ...
 )
 }
@@ -45,6 +47,25 @@ blue-white-red diverging palette.}
 \item{main}{Character string, plot title. Default \code{NULL}, which uses
 \code{"Scalp Topography"}.}
 
+\item{zero_centered}{Logical, whether to make the colour scale symmetric
+around zero. The strongest plotted value of either sign then gets the
+full colour at its end of \code{col_palette} (the first colour for the
+most negative value, the last for the most positive), and the middle
+colour means exactly zero. Default \code{FALSE}, which stretches the
+palette from the lowest to the highest plotted value, so the middle
+colour is the middle of that range and not zero. Turn it on for signed
+maps such as the output of \code{\link{compute_csd}}; leave it off for
+maps that are always positive, such as band power, where half of the
+palette would go unused.}
+
+\item{extrapolate}{Logical, whether to colour the area outside the outer
+boundary of the electrodes. There is no data there, so the colours are
+extrapolated from the electrodes, and on sharp maps such as the output
+of \code{\link{compute_csd}} that guess can show values larger than any
+electrode measured. Default \code{TRUE} colours the whole head disc, as
+before. With \code{FALSE} that area is left empty (\code{NA} in
+\code{grid_z}).}
+
 \item{...}{Additional arguments (currently unused).}
 }
 \value{
@@ -53,7 +74,11 @@ Invisibly returns a list with:
 \item{grid_x}{Numeric vector, interpolation grid x-axis}
 \item{grid_y}{Numeric vector, interpolation grid y-axis}
 \item{grid_z}{Numeric matrix, the interpolated values (\code{NA} outside
-the head disc)}
+the head disc, and also outside the electrodes when
+\code{extrapolate = FALSE})}
+\item{zlim}{Numeric vector of length 2, the lowest and highest value the
+colour scale runs between (symmetric around zero when
+\code{zero_centered = TRUE}); handy for drawing a colour bar}
 \item{channel_positions}{Data frame of the 2D-projected electrode
 positions and values actually plotted}
 }
@@ -86,6 +111,13 @@ with a warning, the same shared exclude list used elsewhere in the
 package, so a channel marked bad once stays out of the topography too. At
 least 3 channels with both a position and a value are required to
 interpolate a surface.
+
+Maps of signed quantities, such as current source density from
+\code{\link{compute_csd}} (positive and negative values mean different
+things), are easier to read with \code{zero_centered = TRUE} and
+\code{extrapolate = FALSE} together: the first makes the middle colour
+mean zero, the second keeps the picture from showing values that were
+only guessed outside the electrodes.
 }
 
 \examples{
@@ -93,10 +125,17 @@ interpolate a surface.
   eeg <- set_montage(eeg, create_montage())
   power <- eeg_band_power(eeg)
   plot_topography(eeg, setNames(power$alpha, power$channel))
+
+  # A signed map such as CSD: white means zero, and nothing is painted
+  # beyond the electrodes
+  csd <- compute_csd(eeg)
+  plot_topography(csd, setNames(csd$data[, 1], csd$channels),
+                  zero_centered = TRUE, extrapolate = FALSE)
 }
 
 }
 \seealso{
 \code{\link{create_montage}}, \code{\link{set_montage}},
-\code{\link{eeg_band_power}}, \code{\link{plot_eeg_signal}}
+\code{\link{eeg_band_power}}, \code{\link{compute_csd}},
+\code{\link{plot_eeg_signal}}
 }

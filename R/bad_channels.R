@@ -120,9 +120,9 @@
 #'
 #' @export
 find_bad_channels <- function(eeg_obj,
-                               flag_flat_threshold        = 0.5,
-                               flag_amplitude_threshold   = 500,
-                               flag_outlier_sd_multiplier = 3,
+                               flag_flat_threshold         = 0.5,
+                               flag_amplitude_threshold    = 500,
+                               flag_outlier_sd_multiplier  = 3,
                                k                           = 4,
                                correlation_threshold       = 0.45,
                                robust                      = TRUE,

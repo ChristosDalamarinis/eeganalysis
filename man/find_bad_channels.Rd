@@ -118,6 +118,11 @@ position involved at all - deliberately independent of the neighbor-
 correlation check above, which is the opposite: purely spatial, no
 data-similarity comparison across the whole cap. See Breunig et al.
 (2000), "LOF: Identifying Density-Based Local Outliers".
+
+Bridged electrodes (two electrodes shorted together by gel) are not
+caught by any of these checks: they record the same signal twice, so
+they look unusually alike rather than bad. Use
+\code{\link{find_bridged_electrodes}} for that.
 }
 
 \examples{
@@ -137,5 +142,6 @@ data-similarity comparison across the whole cap. See Breunig et al.
 }
 \seealso{
 \code{\link{create_montage}}, \code{\link{set_montage}},
-\code{\link{eeg_summary}}, \code{\link{eeg_rereference}}
+\code{\link{eeg_summary}}, \code{\link{eeg_rereference}},
+\code{\link{find_bridged_electrodes}}
 }

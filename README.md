@@ -35,6 +35,7 @@ Version 0.0.0.9000 — under active development. Currently reads BioSemi `.bdf` 
 | Channel inspection & type assignment | `inspect_biosemi_file()`, `detect_external_channels()`, `set_channel_types()` | ✅ |
 | Downsampling / Filtering | `downsample()`, `eeg_bandpass()`, `eeg_notch()` | ✅ |
 | Bad-channel detection & repair | `find_bad_channels()`, `interpolate_bads()` | ✅ |
+| Electrode bridging (detect and repair neighbouring electrodes shorted together by gel) | `find_bridged_electrodes()`, `interpolate_bridged_electrodes()` | ✅ |
 | Time-range annotations (bad stretches) | `annotate_amplitude()`, `annotate_muscle()`, `annotate_nan()`, `annotate_break()` | ✅ |
 | Re-referencing (incl. adding back a reference electrode the file never stored) | `eeg_rereference()`, `add_reference_channels()` | ✅ |
 | Bipolar referencing (e.g. VEOG/HEOG from a raw electrode pair) | `set_bipolar_reference()` | ✅ |
@@ -163,6 +164,11 @@ eeganalysis
 │   ├── interpolate.R                        ← Bad-channel repair
 │   │   └── interpolate_bads()               ← Spherical-spline interpolation (MNE-matched)
 │   │
+│   ├── bridging.R                           ← Gel-bridged electrode detection & repair
+│   │   ├── find_bridged_electrodes()        ← Find electrode pairs shorted together by gel
+│   │   ├── interpolate_bridged_electrodes() ← Rebuild bridged electrodes (adds a virtual electrode)
+│   │   └── print.eeg_bridges()              ← Display bridging results nicely
+│   │
 │   ├── annotations.R                        ← Time-range bad-data marking
 │   │   ├── annotate_amplitude()             ← Flag flat/spiking stretches (or bad channels)
 │   │   ├── annotate_muscle()                ← Flag EMG bursts (high-freq envelope z-score)
@@ -237,7 +243,7 @@ eeganalysis
 │   │
 │   └── imports.R                            ← Centralized @importFrom declarations
 │
-├── man/                                     ← Auto-generated help files (139, one per exported/internal function)
+├── man/                                     ← Auto-generated help files (148, one per exported/internal function)
 │   ├── new_eeg.Rd
 │   ├── read_bdf_native.Rd
 │   ├── find_bad_channels.Rd
@@ -246,7 +252,7 @@ eeganalysis
 │   ├── apply_ica.Rd
 │   └── ...Rd                                ← Remaining help files
 │
-├── tests/testthat/                          ← Unit tests (testthat, one file per module, 23 total)
+├── tests/testthat/                          ← Unit tests (testthat, one file per module, 24 total)
 │   ├── test-read_bdf_native.R
 │   ├── test-ica1.R
 │   ├── test-bad_channels.R

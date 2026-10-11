@@ -637,9 +637,8 @@ test_that("the data that come back are real numbers, never complex", {
 # ----------------------------------------------------------------------------
 # Test 3.8: The result is a valid 'eeg' object
 # ----------------------------------------------------------------------------
-# WHAT THIS TESTS: Verifies the result can go straight into other functions:
-# printing and the diagnostic summary run, and it can be transformed again after
-# the warning.
+# WHAT THIS TESTS: Verifies the result can go straight into other functions of
+# the package: printing it and the diagnostic summary run without an error.
 test_that("the result can be used by other functions of the package", {
   r <- apply_hilbert(eeg0, "envelope", verbose = FALSE)
   expect_no_error(capture.output(print(r)))

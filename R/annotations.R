@@ -667,30 +667,14 @@ annotate_muscle <- function(eeg_obj,
 
 #' Hilbert Envelope via FFT (internal)
 #'
-#' Computes the analytic signal of \code{x} via the standard FFT recipe
-#' (double the positive frequencies, zero the negative ones, keep DC and
-#' Nyquist unscaled) and returns its magnitude, i.e. the envelope.
+#' Magnitude of the analytic signal of \code{x}, i.e. the envelope, computed
+#' without zero padding. A thin wrapper around \code{\link{.analytic_signal}}.
 #'
 #' @param x Numeric vector.
 #' @return Numeric vector, same length as \code{x} - the envelope.
 #' @keywords internal
 .hilbert_envelope <- function(x) {
-
-  n  <- length(x)
-  Xf <- fft(x)
-  h  <- numeric(n)
-
-  if (n %% 2 == 0) {
-    h[1] <- 1
-    h[n / 2 + 1] <- 1
-    if (n > 2) h[2:(n / 2)] <- 2
-  } else {
-    h[1] <- 1
-    if (n > 1) h[2:((n + 1) / 2)] <- 2
-  }
-
-  analytic <- fft(Xf * h, inverse = TRUE) / n
-  Mod(analytic)
+  Mod(.analytic_signal(x))
 }
 
 #' Per-Row Z-Score, Population SD (internal)

@@ -13,8 +13,9 @@
 Numeric vector, same length as \code{x}, values in \code{[0, 1)}.
 }
 \description{
-Sibling of \code{\link{.hilbert_envelope}} (R/annotations.R) - identical
-analytic-signal FFT construction, but returns the normalized
-\emph{phase} (\code{[0, 1)}, one full cycle) instead of the magnitude.
+Sibling of \code{\link{.hilbert_envelope}} (R/annotations.R) - the same
+analytic signal (\code{\link{.analytic_signal}}, no zero padding), but
+returns the normalized \emph{phase} (\code{[0, 1)}, one full cycle) instead
+of the magnitude.
 }
 \keyword{internal}

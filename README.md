@@ -43,6 +43,7 @@ Version 0.0.0.9000 — under active development. Currently reads BioSemi `.bdf` 
 | EOG regression (fast alternative to ICA for eye artifacts; continuous and epoched data) | `fit_eog_regression()`, `apply_eog_regression()`, `subtract_evoked()` | ✅ |
 | Epoching & visualization | `epoch_eeg()`, `plot_epochs()` | ✅ |
 | Spectral analysis | `eeg_fft()`, `eeg_psd_welch()`, `eeg_band_power()` | ✅ |
+| Hilbert transform (amplitude envelope or phase of each channel; continuous and epoched data) | `apply_hilbert()` | ✅ |
 | Topography & montage | `plot_topography()`, `create_montage()` | ✅ |
 | Current source density (reference-free surface Laplacian; continuous and epoched data) | `compute_csd()` | ✅ |
 | ERP averaging | `average_epochs()` | ⚠️ in development |
@@ -235,6 +236,9 @@ eeganalysis
 │   │   ├── eeg_band_power()                 ← Band-limited power
 │   │   └── print.eeg_spectrum()             ← Display spectrum object nicely
 │   │
+│   ├── hilbert.R                            ← Hilbert transform (envelope and phase)
+│   │   └── apply_hilbert()                  ← Replace channels by their envelope or phase (continuous or epoched)
+│   │
 │   ├── plot_signal.R                        ← Raw signal plotting
 │   │   └── plot_eeg_signal()                ← Plot raw/continuous EEG traces
 │   │
@@ -243,7 +247,7 @@ eeganalysis
 │   │
 │   └── imports.R                            ← Centralized @importFrom declarations
 │
-├── man/                                     ← Auto-generated help files (148, one per exported/internal function)
+├── man/                                     ← Auto-generated help files (150, one per exported/internal function)
 │   ├── new_eeg.Rd
 │   ├── read_bdf_native.Rd
 │   ├── find_bad_channels.Rd

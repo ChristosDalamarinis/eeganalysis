@@ -13,8 +13,7 @@
 Numeric vector, same length as \code{x} - the envelope.
 }
 \description{
-Computes the analytic signal of \code{x} via the standard FFT recipe
-(double the positive frequencies, zero the negative ones, keep DC and
-Nyquist unscaled) and returns its magnitude, i.e. the envelope.
+Magnitude of the analytic signal of \code{x}, i.e. the envelope, computed
+without zero padding. A thin wrapper around \code{\link{.analytic_signal}}.
 }
 \keyword{internal}

@@ -372,30 +372,16 @@
 # ----------------------------------------------------------------------------
 #' Hilbert Instantaneous Phase via FFT (internal)
 #'
-#' Sibling of \code{\link{.hilbert_envelope}} (R/annotations.R) - identical
-#' analytic-signal FFT construction, but returns the normalized
-#' \emph{phase} (\code{[0, 1)}, one full cycle) instead of the magnitude.
+#' Sibling of \code{\link{.hilbert_envelope}} (R/annotations.R) - the same
+#' analytic signal (\code{\link{.analytic_signal}}, no zero padding), but
+#' returns the normalized \emph{phase} (\code{[0, 1)}, one full cycle) instead
+#' of the magnitude.
 #'
 #' @param x Numeric vector.
 #' @return Numeric vector, same length as \code{x}, values in \code{[0, 1)}.
 #' @keywords internal
 .hilbert_phase <- function(x) {
-
-  n  <- length(x)
-  Xf <- fft(x)
-  h  <- numeric(n)
-
-  if (n %% 2 == 0) {
-    h[1] <- 1
-    h[n / 2 + 1] <- 1
-    if (n > 2) h[2:(n / 2)] <- 2
-  } else {
-    h[1] <- 1
-    if (n > 1) h[2:((n + 1) / 2)] <- 2
-  }
-
-  analytic <- fft(Xf * h, inverse = TRUE) / n
-  (Arg(analytic) + pi) / (2 * pi)
+  (Arg(.analytic_signal(x)) + pi) / (2 * pi)
 }
 
 # ----------------------------------------------------------------------------

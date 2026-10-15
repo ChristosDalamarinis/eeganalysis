@@ -16,8 +16,8 @@
 }
 \description{
 Accepts only the words that are really implemented for the chosen method and
-stops with a clear message for any other word. (The FIR code only tells
-"zero" apart from everything else, so a different word would give a result
-that is shifted in time, without any warning.)
+stops with a clear message for any other word. (A word that is not backed
+by the matching filter would give a result that is shifted in time, without
+any warning.)
 }
 \keyword{internal}

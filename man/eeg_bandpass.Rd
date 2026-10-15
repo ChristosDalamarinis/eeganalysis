@@ -56,10 +56,11 @@ Default: "hamming". Used only with method = "fir".}
 
 \item{phase}{Character. The allowed words depend on
 \code{method}. "fir": "zero" (default), one pass
-with the group delay corrected. "iir": "zero"
-(default), forward then backward, no delay; or
-"forward", one pass, causal. Any other word is an
-error.}
+with the group delay corrected; or "minimum", one
+pass with a filter that only looks at the past
+(causal). "iir": "zero" (default), forward then
+backward, no delay; or "forward", one pass, causal.
+Any other word is an error.}
 
 \item{pad}{Character. Padding at both ends of the recording.
 Only "reflect_limited" (default) is implemented.}
@@ -95,6 +96,18 @@ an event can leave a trace before it happened. With \code{phase = "forward"}
 the filter is run once: nothing can appear before an event (the filter is
 causal), but different frequencies are delayed by different amounts. Only
 the Butterworth family is implemented so far.
+
+\strong{Causal FIR filter} (\code{phase = "minimum"}): the usual symmetric
+filter is rebuilt as a minimum-phase filter of the same length and with the
+same magnitude response (cepstrum method), so that all of its action lies on
+the past side of every sample and no delay correction is made. Nothing can
+appear before an event, but different frequencies are delayed by different
+amounts. For a filter that has no gain at 0 Hz (a high-pass or band-pass)
+the conversion is very sensitive to rounding: two correct implementations
+agree to about 1e-4 of the signal size, mostly below the lowest cutoff. The
+conversion uses a long FFT, so for a very long filter, such as a 0.1 Hz
+high-pass at 2048 Hz (67585 taps), it takes about 40 seconds and 1 GB of
+memory; downsampling first makes it much cheaper.
 }
 \references{
 Butterworth, S. (1930). On the theory of filter amplifiers. Wireless

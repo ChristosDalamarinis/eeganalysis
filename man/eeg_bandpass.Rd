@@ -2,12 +2,14 @@
 % Please edit documentation in R/filter1.R
 \name{eeg_bandpass}
 \alias{eeg_bandpass}
-\title{EEG Bandpass / Highpass / Lowpass FIR Filter}
+\title{EEG Bandpass / Highpass / Lowpass Filter (FIR or IIR)}
 \usage{
 eeg_bandpass(
   eeg_obj,
   l_freq = NULL,
   h_freq = NULL,
+  method = c("fir", "iir"),
+  iir_params = NULL,
   l_trans_bandwidth = "auto",
   h_trans_bandwidth = "auto",
   filter_length = "auto",
@@ -27,28 +29,40 @@ NULL = no highpass (lowpass only).}
 \item{h_freq}{Numeric or NULL. Lowpass cutoff in Hz.
 NULL = no lowpass (highpass only).}
 
+\item{method}{Character. "fir" (default) or "iir".}
+
+\item{iir_params}{NULL or a named list, used only with
+\code{method = "iir"}: \code{order} (default 4; a
+band-pass has twice as many poles) and \code{ftype}
+(only "butter" so far).}
+
 \item{l_trans_bandwidth}{Numeric or "auto". Highpass transition bandwidth
 in Hz. "auto" uses MNE's rule:
 min(max(0.25*l_freq, 2.0), l_freq).
-Default: "auto".}
+Default: "auto". Used only with method = "fir".}
 
 \item{h_trans_bandwidth}{Numeric or "auto". Lowpass transition bandwidth
 in Hz. "auto" uses MNE's rule:
 min(max(0.25*h_freq, 2.0), nyquist-h_freq).
-Default: "auto".}
+Default: "auto". Used only with method = "fir".}
 
 \item{filter_length}{Integer or "auto". FIR kernel length in samples.
 "auto" uses MNE's formula:
 ceil(3.3 / min_trans_bw * sfreq), forced odd.
-Default: "auto".}
+Default: "auto". Used only with method = "fir".}
 
 \item{fir_window}{Character. Window function for kernel design.
-Default: "hamming".}
+Default: "hamming". Used only with method = "fir".}
 
-\item{phase}{Character. "zero" (default) applies single-pass
-with group delay correction.}
+\item{phase}{Character. The allowed words depend on
+\code{method}. "fir": "zero" (default), one pass
+with the group delay corrected. "iir": "zero"
+(default), forward then backward, no delay; or
+"forward", one pass, causal. Any other word is an
+error.}
 
-\item{pad}{Character. Padding mode. Default: "reflect_limited".}
+\item{pad}{Character. Padding at both ends of the recording.
+Only "reflect_limited" (default) is implemented.}
 
 \item{channels}{Character or integer vector, or NULL. Channel names
 or indices to filter. NULL = all channels.}
@@ -61,10 +75,31 @@ An object of class 'eeg' with filtered data and updated
 preprocessing_history.
 }
 \description{
-Applies a zero-phase FIR filter to EEG data, (method='fir', phase='zero',
-fir_window='hamming', fir_design='firwin', pad='reflect_limited').
+Applies a zero-phase FIR filter (the default) or an IIR Butterworth filter
+to EEG data. With the defaults, (method='fir', phase='zero',
+fir_window='hamming', fir_design='firwin', pad='reflect_limited'), it is a
+zero-phase FIR filter.
 }
 \details{
 Supports highpass-only (h_freq=NULL), lowpass-only (l_freq=NULL),
 or bandpass (both specified).
+
+\strong{IIR filters} (\code{method = "iir"}) are Butterworth filters, built
+from their poles and zeros and run as a chain of second-order sections, so
+they stay accurate even for slow filters (a low cutoff compared with the
+sampling rate). The cutoff frequencies are the points where ONE pass of the
+filter is 3 dB down. With \code{phase = "zero"} the filter is run forward and
+then backward: there is no delay, the response is 6 dB down at the cutoff,
+and, because the backward pass looks at the signal before an event as well,
+an event can leave a trace before it happened. With \code{phase = "forward"}
+the filter is run once: nothing can appear before an event (the filter is
+causal), but different frequencies are delayed by different amounts. Only
+the Butterworth family is implemented so far.
+}
+\references{
+Butterworth, S. (1930). On the theory of filter amplifiers. Wireless
+Engineer, 7, 536-541.
+
+Oppenheim, A. V., & Schafer, R. W. (2010). Discrete-Time Signal Processing
+(3rd ed.). Pearson.
 }

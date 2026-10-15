@@ -507,6 +507,466 @@
 }
 
 
+# ============================================================================
+#                        IIR FILTERING (BUTTERWORTH)
+# ============================================================================
+#
+# An IIR filter feeds some of its own past output back in, so a short recipe
+# gives a long, smooth response. Here the filter is built from its poles and
+# zeros and then cut into small "second-order sections" (two poles and two
+# zeros each). The signal goes through the sections one after the other.
+# Keeping the filter in small pieces keeps every number accurate; one long
+# recipe (two lists of numbers) loses digits for slow filters, which makes the
+# filter inaccurate or even unstable.
+#
+# References:
+#   Butterworth, S. (1930). On the theory of filter amplifiers.
+#     Wireless Engineer, 7, 536-541.
+#   Oppenheim, A. V., & Schafer, R. W. (2010). Discrete-Time Signal
+#     Processing (3rd ed.). Pearson. (frequency transformations, bilinear
+#     transform, cascade of second-order sections)
+
+# ----------------------------------------------------------------------------
+# .check_phase() / .check_pad() / .resolve_iir_params() - argument checks
+# ----------------------------------------------------------------------------
+
+#' Check the 'phase' argument of a filter function
+#'
+#' Accepts only the words that are really implemented for the chosen method and
+#' stops with a clear message for any other word. (The FIR code only tells
+#' "zero" apart from everything else, so a different word would give a result
+#' that is shifted in time, without any warning.)
+#'
+#' @param phase  The value given by the user.
+#' @param method Character. "fir" or "iir".
+#' @return \code{phase}, unchanged, if it is allowed.
+#' @keywords internal
+.check_phase <- function(phase, method) {
+  allowed <- if (identical(method, "iir")) c("zero", "forward") else "zero"
+  if (!is.character(phase) || length(phase) != 1L || is.na(phase) ||
+      !(phase %in% allowed)) {
+    stop("'phase' must be one of ", paste0("\"", allowed, "\"", collapse = ", "),
+         " for an ", toupper(method), " filter.", call. = FALSE)
+  }
+  phase
+}
+
+#' Check the 'pad' argument of a filter function
+#'
+#' Only "reflect_limited" is implemented, so any other word is an error
+#' instead of being silently ignored.
+#'
+#' @param pad The value given by the user.
+#' @return \code{pad}, unchanged, if it is allowed.
+#' @keywords internal
+.check_pad <- function(pad) {
+  if (!identical(pad, "reflect_limited")) {
+    stop("'pad' must be \"reflect_limited\" (the only padding implemented).",
+         call. = FALSE)
+  }
+  pad
+}
+
+#' Fill in and check the 'iir_params' argument
+#'
+#' @param iir_params NULL or a named list with the elements \code{order} and
+#'   \code{ftype}. Missing elements take the defaults (order 4, "butter").
+#' @return A list with the elements \code{order} (integer) and \code{ftype}.
+#' @keywords internal
+.resolve_iir_params <- function(iir_params) {
+  out <- list(order = 4L, ftype = "butter")
+  if (is.null(iir_params)) return(out)
+
+  if (!is.list(iir_params) ||
+      (length(iir_params) > 0L &&
+       (is.null(names(iir_params)) || any(names(iir_params) == "")))) {
+    stop("'iir_params' must be NULL or a named list, ",
+         "e.g. list(order = 4, ftype = \"butter\").", call. = FALSE)
+  }
+  unknown <- setdiff(names(iir_params), names(out))
+  if (length(unknown) > 0L) {
+    stop("Unknown element(s) in 'iir_params': ", paste(unknown, collapse = ", "),
+         ". Allowed: order, ftype.", call. = FALSE)
+  }
+  for (nm in names(iir_params)) out[[nm]] <- iir_params[[nm]]
+
+  if (!is.numeric(out$order) || length(out$order) != 1L || is.na(out$order) ||
+      out$order < 1 || out$order != round(out$order)) {
+    stop("'iir_params$order' must be a single whole number >= 1.", call. = FALSE)
+  }
+  if (!identical(out$ftype, "butter")) {
+    stop("'iir_params$ftype' must be \"butter\" ",
+         "(the only filter family implemented so far).", call. = FALSE)
+  }
+  out$order <- as.integer(out$order)
+  out
+}
+
+# ----------------------------------------------------------------------------
+# .butter_zpk() / .zpk_to_sos() / .design_iir_sos() - the design
+# ----------------------------------------------------------------------------
+
+#' Poles, zeros and gain of a digital Butterworth filter
+#'
+#' Builds the filter directly from its poles and zeros (no long polynomials) in
+#' three steps: (1) the textbook analog low-pass filter has its poles on a
+#' circle; (2) a frequency transformation moves them to the wanted cutoff(s)
+#' and turns the low-pass into a high-pass, band-pass or band-stop; (3) the
+#' bilinear transform converts the result to a digital filter.
+#'
+#' @param order Integer. Order of the low-pass prototype.
+#' @param Wn    Numeric. Cutoff(s) as a fraction of the Nyquist frequency, in
+#'   (0, 1): one value for "low" and "high", two (lower, upper) for "pass" and
+#'   "stop".
+#' @param type  Character. "low", "high", "pass" or "stop".
+#' @return A list with \code{z} (zeros), \code{p} (poles, complex) and
+#'   \code{k} (gain).
+#' @keywords internal
+.butter_zpk <- function(order, Wn, type) {
+
+  # (1) analog low-pass prototype: cutoff 1 rad/s, poles on the left half of
+  #     the unit circle, no finite zeros
+  m <- seq(-order + 1, order - 1, by = 2)
+  p <- -exp(1i * pi * m / (2 * order))
+  z <- complex(0)
+  k <- 1
+
+  # pre-warp the cutoff(s): the bilinear transform squeezes the frequency axis,
+  # so the analog cutoff is stretched first (sampling frequency taken as 2)
+  fs     <- 2
+  warped <- 2 * fs * tan(pi * Wn / fs)
+  degree <- length(p) - length(z)            # zeros that sit at infinity
+
+  # (2) move the poles to the cutoff(s) / change the filter type
+  if (type == "low") {
+    p <- p * warped
+    k <- k * warped^degree
+  } else if (type == "high") {
+    k <- k * Re(prod(-z) / prod(-p))
+    p <- warped / p
+    z <- rep(0, degree)
+  } else if (type == "pass") {
+    bw <- warped[2] - warped[1]              # width of the band
+    wo <- sqrt(warped[1] * warped[2])        # centre of the band
+    p  <- p * bw / 2
+    sp <- sqrt(p^2 - wo^2 + 0i)
+    p  <- c(p + sp, p - sp)                  # every pole becomes two
+    z  <- rep(0, degree)
+    k  <- k * bw^degree
+  } else {                                   # "stop"
+    bw <- warped[2] - warped[1]
+    wo <- sqrt(warped[1] * warped[2])
+    k  <- k * Re(prod(-z) / prod(-p))
+    p  <- (bw / 2) / p
+    sp <- sqrt(p^2 - wo^2 + 0i)
+    p  <- c(p + sp, p - sp)
+    z  <- c(rep(1i * wo, degree), rep(-1i * wo, degree))
+  }
+
+  # (3) bilinear transform to the digital plane
+  fs2    <- 2 * fs
+  degree <- length(p) - length(z)            # zeros still at infinity land at -1
+  list(z = c((fs2 + z) / (fs2 - z), rep(-1, degree)),
+       p = (fs2 + p) / (fs2 - p),
+       k = k * Re(prod(fs2 - z) / prod(fs2 - p)))
+}
+
+#' Pair poles and zeros two by two (second-order sections)
+#'
+#' Complex poles come in conjugate pairs and each pair becomes one section.
+#' Real poles are paired two by two (a single left-over real pole becomes a
+#' first-order section). The zeros are paired the same way. The total gain goes
+#' into the first section.
+#'
+#' @param z,p Complex vectors. Zeros and poles.
+#' @param k   Numeric. Gain.
+#' @return A matrix with one row per section and the columns b0 b1 b2 a0 a1 a2
+#'   (a0 is always 1).
+#' @keywords internal
+.zpk_to_sos <- function(z, p, k) {
+
+  tol <- 1e-8
+
+  pair_up <- function(r) {
+    upper <- r[Im(r) > tol]                          # one of each conjugate pair
+    real  <- sort(Re(r[abs(Im(r)) <= tol]))
+    secs  <- lapply(upper, function(rt) c(-2 * Re(rt), Mod(rt)^2))
+    i <- 1L
+    j <- length(real)
+    while (i < j) {                                  # smallest with largest
+      secs[[length(secs) + 1L]] <- c(-(real[i] + real[j]), real[i] * real[j])
+      i <- i + 1L
+      j <- j - 1L
+    }
+    if (i == j) {                                    # one left over
+      secs[[length(secs) + 1L]] <- c(-real[i], 0)
+    }
+    secs
+  }
+
+  p_secs <- pair_up(p)
+  z_secs <- pair_up(z)
+  stopifnot(length(p_secs) == length(z_secs))
+
+  sos <- matrix(0, nrow = length(p_secs), ncol = 6L)
+  for (s in seq_along(p_secs)) {
+    sos[s, ] <- c(1, z_secs[[s]], 1, p_secs[[s]])
+  }
+  sos[1L, 1:3] <- sos[1L, 1:3] * k
+  sos
+}
+
+#' Design the IIR filter asked for by eeg_bandpass()
+#'
+#' @param l_freq,h_freq Cutoffs in Hz, or NULL: both = band-pass, only
+#'   \code{l_freq} = high-pass, only \code{h_freq} = low-pass.
+#' @param sfreq Numeric. Sampling rate in Hz.
+#' @param order Integer. Filter order.
+#' @return A matrix of second-order sections (see \code{.zpk_to_sos()}).
+#' @keywords internal
+.design_iir_sos <- function(l_freq, h_freq, sfreq, order = 4L) {
+  nyquist <- sfreq / 2
+  if (!is.null(l_freq) && !is.null(h_freq)) {
+    type <- "pass"
+    Wn   <- c(l_freq, h_freq) / nyquist
+  } else if (!is.null(l_freq)) {
+    type <- "high"
+    Wn   <- l_freq / nyquist
+  } else {
+    type <- "low"
+    Wn   <- h_freq / nyquist
+  }
+  zpk <- .butter_zpk(order, Wn, type)
+  .zpk_to_sos(zpk$z, zpk$p, zpk$k)
+}
+
+# ----------------------------------------------------------------------------
+# .sos_pass() / .iir_ringing_samples() / .iir_filter() - applying the filter
+# ----------------------------------------------------------------------------
+
+#' Run a signal once through all second-order sections
+#'
+#' Each section looks at the last two inputs and the last two outputs:
+#' \code{y[n] = b0 x[n] + b1 x[n-1] + b2 x[n-2] - a1 y[n-1] - a2 y[n-2]}.
+#' Base R's \code{stats::filter()} does the two halves of that rule (the input
+#' part and the feedback part).
+#'
+#' @param sos    Matrix of second-order sections (b0 b1 b2 a0 a1 a2 per row).
+#' @param x      Numeric vector. The signal.
+#' @param steady Logical. FALSE: every section starts with an empty memory (what
+#'   a causal filter does at the start of a recording). TRUE: every section
+#'   starts as if the signal had been flat, equal to its first sample, for ever
+#'   before; this removes the switch-on jolt of the forward-backward method.
+#' @return Numeric vector, same length as \code{x}.
+#' @keywords internal
+.sos_pass <- function(sos, x, steady = FALSE) {
+
+  y     <- x
+  level <- x[1]                        # the flat level the sections have "seen"
+
+  for (s in seq_len(nrow(sos))) {
+    b <- sos[s, 1:3]
+    a <- sos[s, 4:6]
+
+    if (steady) {
+      gain0   <- sum(b) / sum(a)       # what this section does to a flat signal
+      mem_in  <- level
+      mem_out <- gain0 * level
+      level   <- gain0 * level         # the next section sees this flat level
+    } else {
+      mem_in  <- 0
+      mem_out <- 0
+    }
+
+    # input part: b0*x[n] + b1*x[n-1] + b2*x[n-2]  (two remembered inputs first)
+    fir <- stats::filter(c(rep(mem_in, 2L), y), b, sides = 1)
+    fir <- as.numeric(fir[!is.na(fir)])
+
+    # feedback part: minus a1*y[n-1] minus a2*y[n-2]  (two remembered outputs)
+    y <- as.numeric(stats::filter(fir, -a[2:3], method = "recursive",
+                                  init = rep(mem_out, 2L)))
+  }
+  y
+}
+
+#' How many samples an IIR filter keeps ringing after one spike
+#'
+#' Sends one spike through the filter and looks at the response in blocks of
+#' 1000 samples. The ringing ends at the last sample of the last block that
+#' still holds a value larger than 0.1 \% of the largest value seen so far. The
+#' result is used as the length of the padding for zero-phase filtering. A slow
+#' high-pass whose response after the first sample stays below 0.1 \% of its
+#' peak gets 0 (no padding).
+#'
+#' @param sos      Matrix of second-order sections.
+#' @param max_try  Integer. Longest response to look at, in samples.
+#' @return Integer-valued number of samples.
+#' @keywords internal
+.iir_ringing_samples <- function(sos, max_try = 100000L) {
+
+  per_chunk  <- 1000L
+  n_chunks   <- ceiling(max_try / per_chunk)
+
+  spike      <- numeric(per_chunk * n_chunks)
+  spike[1L]  <- 1
+  h          <- abs(.sos_pass(sos, spike))     # the whole response in one go
+
+  last_good  <- per_chunk
+  thresh_val <- 0
+
+  for (ii in seq_len(n_chunks) - 1L) {           # block number, counted from 0
+    block      <- h[(ii * per_chunk + 1L):((ii + 1L) * per_chunk)]
+    thresh_val <- max(0.001 * max(block), thresh_val)
+    big        <- which(block > thresh_val)
+    if (length(big) > 0L) {
+      last_good <- big[length(big)] - 1L         # position in the block, from 0
+    } else {
+      return((ii - 1L) * per_chunk + last_good)
+    }
+  }
+
+  warning("could not properly estimate the ringing of the filter",
+          call. = FALSE)
+  per_chunk * n_chunks
+}
+
+#' Filter one channel with second-order sections
+#'
+#' \code{phase = "forward"}: one pass, nothing can appear before an event
+#' (causal); the filter starts with an empty memory and nothing is padded.
+#' \code{phase = "zero"}: the signal is padded at both ends (odd reflection),
+#' run forward, the result is run backward, and the padding is cut off.
+#'
+#' @param x      Numeric vector. One channel.
+#' @param sos    Matrix of second-order sections.
+#' @param phase  "zero" or "forward".
+#' @param padlen Integer. Samples of padding at each end ("zero" only).
+#' @return Numeric vector, same length as \code{x}.
+#' @keywords internal
+.iir_filter <- function(x, sos, phase, padlen) {
+
+  if (phase == "forward") {
+    return(.sos_pass(sos, x))
+  }
+
+  padlen <- min(padlen, length(x) - 1L)     # never pad by more than the signal
+  x_ext  <- if (padlen > 0L) .reflect_limited_pad(x, padlen, padlen) else x
+
+  y <- .sos_pass(sos, x_ext, steady = TRUE)             # forward
+  y <- rev(.sos_pass(sos, rev(y), steady = TRUE))       # backward
+
+  if (padlen > 0L) y[(padlen + 1L):(length(y) - padlen)] else y
+}
+
+# ----------------------------------------------------------------------------
+# .bandpass_iir() - the IIR half of eeg_bandpass()
+# ----------------------------------------------------------------------------
+
+#' IIR half of eeg_bandpass()
+#'
+#' Called by \code{\link{eeg_bandpass}} when \code{method = "iir"}, after all
+#' arguments have been checked. Designs the filter, applies it to the chosen
+#' channels and returns the new eeg object.
+#'
+#' @param eeg_obj    An object of class 'eeg'.
+#' @param l_freq,h_freq Cutoffs in Hz (NULL = not used).
+#' @param iir_params List with \code{order} (see \code{.resolve_iir_params()}).
+#' @param phase      "zero" or "forward".
+#' @param ch_idx     Integer vector. Rows of the data to filter.
+#' @param verbose    Logical. Print parameters and progress.
+#' @return An object of class 'eeg'.
+#' @keywords internal
+.bandpass_iir <- function(eeg_obj, l_freq, h_freq, iir_params, phase,
+                          ch_idx, verbose) {
+
+  sfreq      <- eeg_obj$sampling_rate
+  n_channels <- nrow(eeg_obj$data)
+
+  filter_type <- if (!is.null(l_freq) && !is.null(h_freq)) {
+    paste0("Bandpass (", l_freq, " - ", h_freq, " Hz)")
+  } else if (!is.null(l_freq)) {
+    paste0("Highpass (", l_freq, " Hz)")
+  } else {
+    paste0("Lowpass (", h_freq, " Hz)")
+  }
+
+  # ========== DESIGN: SECTIONS, AND THE PADDING LENGTH ==========
+
+  sos    <- .design_iir_sos(l_freq, h_freq, sfreq, order = iir_params$order)
+  padlen <- if (phase == "zero") .iir_ringing_samples(sos) else 0L
+  pad_text <- if (padlen > 0L) {
+    paste0("reflect_limited, ", padlen, " samples at each end")
+  } else {
+    "none"
+  }
+
+  # ========== VERBOSE HEADER ==========
+
+  if (verbose) {
+    cat("\n", strrep("=", 70), "\n", sep = "")
+    cat("EEG IIR Filtering\n")
+    cat(strrep("=", 70), "\n")
+    cat("  Filter type:          ", filter_type, "\n")
+    cat("  Sampling rate:        ", sfreq, " Hz\n")
+    cat("  Nyquist:              ", sfreq / 2, " Hz\n")
+    cat("  Family / order:        Butterworth /", iir_params$order, "\n")
+    cat("  Sections:             ", nrow(sos), "\n")
+    cat("  Phase:                ", phase, "\n")
+    cat("  Padding:              ", pad_text, "\n")
+    cat("  Channels:             ", length(ch_idx), "/", n_channels, "\n")
+    cat(strrep("-", 70), "\n")
+  }
+
+  # ========== APPLY FILTER CHANNEL BY CHANNEL ==========
+
+  filtered_data <- eeg_obj$data
+
+  if (verbose) {
+    pb <- txtProgressBar(min = 0, max = length(ch_idx),
+                         style = 3, width = 50, char = "=")
+  }
+
+  for (idx in seq_along(ch_idx)) {
+    i <- ch_idx[idx]
+    filtered_data[i, ] <- .iir_filter(filtered_data[i, ], sos, phase, padlen)
+    if (verbose) setTxtProgressBar(pb, idx)
+  }
+
+  if (verbose) {
+    close(pb)
+    cat("\n", strrep("=", 70), "\n")
+  }
+
+  # ========== BUILD PREPROCESSING HISTORY ENTRY ==========
+
+  history_entry <- paste0(
+    "IIR bandpass: ", filter_type,
+    " | Butterworth order: ", iir_params$order,
+    " | phase: ", phase,
+    " | pad: ", pad_text,
+    " | channels: ", length(ch_idx), "/", n_channels
+  )
+
+  # ========== RETURN UPDATED EEG OBJECT ==========
+
+  new_eeg(
+    data                  = filtered_data,
+    channels              = eeg_obj$channels,
+    sampling_rate         = eeg_obj$sampling_rate,
+    times                 = eeg_obj$times,
+    events                = eeg_obj$events,
+    metadata              = eeg_obj$metadata,
+    reference             = eeg_obj$reference,
+    preprocessing_history = c(eeg_obj$preprocessing_history,
+                              list(history_entry)),
+    montage               = eeg_obj$montage,
+    bads                  = eeg_obj$bads,
+    annotations           = eeg_obj$annotations,
+    channel_types         = eeg_obj$channel_types
+  )
+}
+
+
 
 
 
@@ -520,36 +980,67 @@
 # eeg_bandpass()
 # ----------------------------------------------------------------------------
 
-#' EEG Bandpass / Highpass / Lowpass FIR Filter
+#' EEG Bandpass / Highpass / Lowpass Filter (FIR or IIR)
 #'
-#' Applies a zero-phase FIR filter to EEG data, (method='fir', phase='zero',
-#' fir_window='hamming', fir_design='firwin', pad='reflect_limited').
+#' Applies a zero-phase FIR filter (the default) or an IIR Butterworth filter
+#' to EEG data. With the defaults, (method='fir', phase='zero',
+#' fir_window='hamming', fir_design='firwin', pad='reflect_limited'), it is a
+#' zero-phase FIR filter.
 #'
 #' Supports highpass-only (h_freq=NULL), lowpass-only (l_freq=NULL),
 #' or bandpass (both specified).
+#'
+#' \strong{IIR filters} (\code{method = "iir"}) are Butterworth filters, built
+#' from their poles and zeros and run as a chain of second-order sections, so
+#' they stay accurate even for slow filters (a low cutoff compared with the
+#' sampling rate). The cutoff frequencies are the points where ONE pass of the
+#' filter is 3 dB down. With \code{phase = "zero"} the filter is run forward and
+#' then backward: there is no delay, the response is 6 dB down at the cutoff,
+#' and, because the backward pass looks at the signal before an event as well,
+#' an event can leave a trace before it happened. With \code{phase = "forward"}
+#' the filter is run once: nothing can appear before an event (the filter is
+#' causal), but different frequencies are delayed by different amounts. Only
+#' the Butterworth family is implemented so far.
+#'
+#' @references
+#' Butterworth, S. (1930). On the theory of filter amplifiers. Wireless
+#' Engineer, 7, 536-541.
+#'
+#' Oppenheim, A. V., & Schafer, R. W. (2010). Discrete-Time Signal Processing
+#' (3rd ed.). Pearson.
 #'
 #' @param eeg_obj          An object of class 'eeg'.
 #' @param l_freq           Numeric or NULL. Highpass cutoff in Hz.
 #'                         NULL = no highpass (lowpass only).
 #' @param h_freq           Numeric or NULL. Lowpass cutoff in Hz.
 #'                         NULL = no lowpass (highpass only).
+#' @param method           Character. "fir" (default) or "iir".
+#' @param iir_params       NULL or a named list, used only with
+#'                         \code{method = "iir"}: \code{order} (default 4; a
+#'                         band-pass has twice as many poles) and \code{ftype}
+#'                         (only "butter" so far).
 #' @param l_trans_bandwidth Numeric or "auto". Highpass transition bandwidth
 #'                         in Hz. "auto" uses MNE's rule:
 #'                         min(max(0.25*l_freq, 2.0), l_freq).
-#'                         Default: "auto".
+#'                         Default: "auto". Used only with method = "fir".
 #' @param h_trans_bandwidth Numeric or "auto". Lowpass transition bandwidth
 #'                         in Hz. "auto" uses MNE's rule:
 #'                         min(max(0.25*h_freq, 2.0), nyquist-h_freq).
-#'                         Default: "auto".
+#'                         Default: "auto". Used only with method = "fir".
 #' @param filter_length    Integer or "auto". FIR kernel length in samples.
 #'                         "auto" uses MNE's formula:
 #'                         ceil(3.3 / min_trans_bw * sfreq), forced odd.
-#'                         Default: "auto".
+#'                         Default: "auto". Used only with method = "fir".
 #' @param fir_window       Character. Window function for kernel design.
-#'                         Default: "hamming".
-#' @param phase            Character. "zero" (default) applies single-pass
-#'                         with group delay correction.
-#' @param pad              Character. Padding mode. Default: "reflect_limited".
+#'                         Default: "hamming". Used only with method = "fir".
+#' @param phase            Character. The allowed words depend on
+#'                         \code{method}. "fir": "zero" (default), one pass
+#'                         with the group delay corrected. "iir": "zero"
+#'                         (default), forward then backward, no delay; or
+#'                         "forward", one pass, causal. Any other word is an
+#'                         error.
+#' @param pad              Character. Padding at both ends of the recording.
+#'                         Only "reflect_limited" (default) is implemented.
 #' @param channels         Character or integer vector, or NULL. Channel names
 #'                         or indices to filter. NULL = all channels.
 #' @param verbose          Logical. Print filter parameters and progress.
@@ -562,6 +1053,8 @@
 eeg_bandpass <- function(eeg_obj,
                          l_freq              = NULL,
                          h_freq              = NULL,
+                         method              = c("fir", "iir"),
+                         iir_params          = NULL,
                          l_trans_bandwidth   = "auto",
                          h_trans_bandwidth   = "auto",
                          filter_length       = "auto",
@@ -594,6 +1087,31 @@ eeg_bandpass <- function(eeg_obj,
     stop("'l_freq' (", l_freq, ") must be less than 'h_freq' (", h_freq, ").",
          call. = FALSE)
   }
+
+  # ========== CHECK METHOD, PHASE, PAD AND IIR SETTINGS ==========
+
+  method <- match.arg(method)       # "fir" unless the user asks for "iir"
+  phase  <- .check_phase(phase, method)
+  pad    <- .check_pad(pad)
+
+  if (method == "iir") {
+    iir_params <- .resolve_iir_params(iir_params)
+
+    # These four only describe an FIR kernel. If the user set one of them on
+    # purpose, say that it is not used (missing() is TRUE when an argument was
+    # left at its default).
+    fir_only <- c(l_trans_bandwidth = !missing(l_trans_bandwidth),
+                  h_trans_bandwidth = !missing(h_trans_bandwidth),
+                  filter_length     = !missing(filter_length),
+                  fir_window        = !missing(fir_window))
+    if (any(fir_only)) {
+      warning("Not used with method = \"iir\": ",
+              paste(names(fir_only)[fir_only], collapse = ", "), ".",
+              call. = FALSE)
+    }
+  } else if (!is.null(iir_params)) {
+    warning("'iir_params' is not used with method = \"fir\".", call. = FALSE)
+  }
   
   # ========== RESOLVE CHANNEL INDICES ==========
   
@@ -618,6 +1136,14 @@ eeg_bandpass <- function(eeg_obj,
          call. = FALSE)
   }
   
+  # ========== IIR: HAND OVER TO ITS OWN FUNCTION ==========
+  # Everything below this block is the FIR path, unchanged.
+
+  if (method == "iir") {
+    return(.bandpass_iir(eeg_obj, l_freq, h_freq, iir_params, phase,
+                         ch_idx, verbose))
+  }
+
   # ========== COMPUTE TRANSITION BANDWIDTHS ==========
   
   l_trans_bw <- if (is.null(l_freq)) {
@@ -831,6 +1357,8 @@ eeg_notch <- function(eeg_obj,
   if (!is.numeric(trans_bandwidth) || trans_bandwidth <= 0) {
     stop("'trans_bandwidth' must be a positive numeric value.", call. = FALSE)
   }
+  phase <- .check_phase(phase, "fir")
+  pad   <- .check_pad(pad)
   
   sfreq   <- eeg_obj$sampling_rate
   nyquist <- sfreq / 2.0

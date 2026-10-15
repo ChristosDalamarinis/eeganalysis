@@ -36,8 +36,10 @@ Default: 1.}
 
 \item{fir_window}{Character. Window function. Default: "hamming".}
 
-\item{phase}{Character. "zero" for zero-phase single-pass.
-Default: "zero".}
+\item{phase}{Character. "zero" (default) for zero-phase
+single-pass, or "minimum" for a causal filter that
+only looks at the past (nothing appears before an
+event). Any other word is an error.}
 
 \item{pad}{Character. Padding mode. Default: "reflect_limited".}
 

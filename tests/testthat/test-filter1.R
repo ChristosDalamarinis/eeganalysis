@@ -1,5 +1,5 @@
 # test_filter1.R
-# Unit tests for filter1.R — FIR filtering pipeline
+# Unit tests for filter1.R — FIR and IIR filtering pipeline
 #
 # Run with:
 #   testthat::test_file("test_filter1.R")
@@ -356,6 +356,233 @@ test_that(".overlap_add_filter attenuates stop-band content", {
   expect_lt(sd(y_mid - ref_mid), 0.01)
 })
 
+# ─── .check_phase() / .check_pad() / .resolve_iir_params() ───────────────────
+
+test_that(".check_phase accepts only 'zero' for an FIR filter", {
+  expect_equal(.check_phase("zero", "fir"), "zero")
+  for (bad in c("Zero", "ZERO", " zero", "zero-double", "minimum", "forward",
+                "banana", "")) {
+    expect_error(.check_phase(bad, "fir"),
+                 "'phase' must be one of \"zero\" for an FIR filter",
+                 info = paste0("phase = \"", bad, "\""))
+  }
+})
+
+test_that(".check_phase accepts 'zero' and 'forward' for an IIR filter", {
+  expect_equal(.check_phase("zero",    "iir"), "zero")
+  expect_equal(.check_phase("forward", "iir"), "forward")
+  for (bad in c("minimum", "zero-double", "Forward", "banana")) {
+    expect_error(.check_phase(bad, "iir"),
+                 "'phase' must be one of \"zero\", \"forward\" for an IIR filter",
+                 info = paste0("phase = \"", bad, "\""))
+  }
+})
+
+test_that(".check_phase rejects anything that is not one single word", {
+  for (bad in list(1, NULL, NA_character_, c("zero", "zero"), TRUE, list("zero"))) {
+    expect_error(.check_phase(bad, "fir"), "'phase' must be one of")
+  }
+})
+
+test_that(".check_pad accepts only 'reflect_limited'", {
+  expect_equal(.check_pad("reflect_limited"), "reflect_limited")
+  for (bad in list("reflect", "banana", "", NULL, NA_character_, 1)) {
+    expect_error(.check_pad(bad), "'pad' must be \"reflect_limited\"")
+  }
+})
+
+test_that(".resolve_iir_params fills in the defaults", {
+  expect_equal(.resolve_iir_params(NULL),
+               list(order = 4L, ftype = "butter"))
+  expect_equal(.resolve_iir_params(list()),
+               list(order = 4L, ftype = "butter"))
+  expect_equal(.resolve_iir_params(list(order = 6)),
+               list(order = 6L, ftype = "butter"))
+  # a whole number is stored as an integer
+  expect_identical(.resolve_iir_params(list(order = 6))$order, 6L)
+})
+
+test_that(".resolve_iir_params rejects bad input with a clear message", {
+  expect_error(.resolve_iir_params(4),                      "must be NULL or a named list")
+  expect_error(.resolve_iir_params(list(4)),                "must be NULL or a named list")
+  expect_error(.resolve_iir_params(list(ordr = 4)),         "Unknown element\\(s\\).*ordr")
+  expect_error(.resolve_iir_params(list(order = 0)),        "whole number >= 1")
+  expect_error(.resolve_iir_params(list(order = 2.5)),      "whole number >= 1")
+  expect_error(.resolve_iir_params(list(order = "4")),      "whole number >= 1")
+  expect_error(.resolve_iir_params(list(order = NA_real_)), "whole number >= 1")
+  expect_error(.resolve_iir_params(list(order = c(2, 4))),  "whole number >= 1")
+  expect_error(.resolve_iir_params(list(ftype = "cheby1")), "must be \"butter\"")
+})
+
+# ─── .butter_zpk() / .zpk_to_sos() / .design_iir_sos() ───────────────────────
+
+# Multiply the small second-order pieces back together into one long recipe
+# (two lists of numbers, b and a), to compare with the signal package.
+sos_to_ba <- function(sos) {
+  # product of two polynomials given by their coefficients, term by term (no
+  # FFT, so a zero stays an exact zero)
+  mult2 <- function(a, b) {
+    out <- numeric(length(a) + length(b) - 1L)
+    for (i in seq_along(a)) {
+      k <- i:(i + length(b) - 1L)
+      out[k] <- out[k] + a[i] * b
+    }
+    out
+  }
+  poly_mult <- function(p) Reduce(mult2, p)
+  list(b = poly_mult(lapply(seq_len(nrow(sos)), function(s) sos[s, 1:3])),
+       a = poly_mult(lapply(seq_len(nrow(sos)), function(s) sos[s, 4:6])))
+}
+
+# A first-order piece is stored with a zero in its last place, so the product
+# can have trailing zeros that signal::butter() does not have.
+trim_zeros <- function(v) {
+  while (length(v) > 1L && v[length(v)] == 0) v <- v[-length(v)]
+  v
+}
+
+test_that(".design_iir_sos multiplies back to the filter signal::butter() designs", {
+  # gentle settings, where the long recipe is still accurate
+  cases <- list(
+    list(l = 1,    h = 40,   order = 4, type = "pass", W = c(1, 40) / 128),
+    list(l = 8,    h = 12,   order = 2, type = "pass", W = c(8, 12) / 128),
+    list(l = 1,    h = NULL, order = 5, type = "high", W = 1 / 128),
+    list(l = NULL, h = 40,   order = 3, type = "low",  W = 40 / 128)
+  )
+  for (cs in cases) {
+    sos <- .design_iir_sos(cs$l, cs$h, 256, order = cs$order)
+    ba  <- sos_to_ba(sos)
+    ref <- signal::butter(cs$order, cs$W, type = cs$type)
+    expect_equal(trim_zeros(ba$a), as.numeric(ref$a), tolerance = 1e-9,
+                 info = paste(cs$type, cs$order, "a"))
+    expect_equal(trim_zeros(ba$b), as.numeric(ref$b), tolerance = 1e-9,
+                 info = paste(cs$type, cs$order, "b"))
+  }
+})
+
+test_that(".butter_zpk band-stop multiplies back to the filter signal::butter() designs", {
+  W   <- c(48, 52) / 128
+  zpk <- .butter_zpk(4L, W, "stop")
+  ba  <- sos_to_ba(.zpk_to_sos(zpk$z, zpk$p, zpk$k))
+  ref <- signal::butter(4, W, type = "stop")
+  expect_equal(ba$a, as.numeric(ref$a), tolerance = 1e-9)
+  expect_equal(ba$b, as.numeric(ref$b), tolerance = 1e-9)
+})
+
+test_that(".design_iir_sos makes one section per pair of poles", {
+  expect_equal(nrow(.design_iir_sos(1,    40,   256, order = 4)), 4L)  # band-pass: 8 poles
+  expect_equal(nrow(.design_iir_sos(1,    NULL, 256, order = 4)), 2L)  # high-pass: 4 poles
+  expect_equal(nrow(.design_iir_sos(NULL, 40,   256, order = 4)), 2L)  # low-pass: 4 poles
+  expect_equal(nrow(.design_iir_sos(1,    NULL, 256, order = 5)), 3L)  # odd order: one first-order piece
+  expect_equal(nrow(.design_iir_sos(NULL, 40,   256, order = 3)), 2L)
+  expect_equal(ncol(.design_iir_sos(1, 40, 256)), 6L)                  # b0 b1 b2 a0 a1 a2
+  expect_true(all(.design_iir_sos(1, 40, 256)[, 4] == 1))              # a0 is always 1
+})
+
+test_that("every section of a slow or high-order filter has its poles inside the unit circle", {
+  max_pole <- function(sos) {
+    max(vapply(seq_len(nrow(sos)),
+               function(s) max(Mod(polyroot(c(sos[s, 6], sos[s, 5], 1)))),
+               numeric(1)))
+  }
+  zz <- .butter_zpk(4L, c(49.375, 50.625) / 1024, "stop")
+  designs <- list(
+    .design_iir_sos(0.1,  NULL, 2048, order = 8),
+    .design_iir_sos(0.1,  40,   2048, order = 6),
+    .design_iir_sos(1,    40,   2048, order = 4),
+    .design_iir_sos(NULL, 40,   256,  order = 3),
+    .zpk_to_sos(zz$z, zz$p, zz$k)
+  )
+  for (i in seq_along(designs)) {
+    expect_lt(max_pole(designs[[i]]), 1, label = paste("design", i))
+  }
+})
+
+# ─── .sos_pass() / .iir_ringing_samples() / .iir_filter() ────────────────────
+
+test_that(".sos_pass keeps the length of the signal", {
+  sos <- .design_iir_sos(1, 40, 256, order = 4)
+  x   <- sin(seq_len(500) / 7)
+  expect_length(.sos_pass(sos, x), 500L)
+  expect_length(.sos_pass(sos, x, steady = TRUE), 500L)
+})
+
+test_that(".sos_pass with one section is the plain difference equation", {
+  # y[n] = b0 x[n] + b1 x[n-1] + b2 x[n-2] - a1 y[n-1] - a2 y[n-2],
+  # with an empty memory before the first sample
+  sos <- matrix(c(0.2, 0.3, 0.1, 1, -0.5, 0.25), nrow = 1L)
+  x   <- c(1, -2, 0.5, 3, 0, 0, 1, -1)
+  y   <- numeric(length(x))
+  for (n in seq_along(x)) {
+    x1 <- if (n > 1) x[n - 1] else 0
+    x2 <- if (n > 2) x[n - 2] else 0
+    y1 <- if (n > 1) y[n - 1] else 0
+    y2 <- if (n > 2) y[n - 2] else 0
+    y[n] <- 0.2 * x[n] + 0.3 * x1 + 0.1 * x2 + 0.5 * y1 - 0.25 * y2
+  }
+  expect_equal(.sos_pass(sos, x), y)
+})
+
+test_that(".sos_pass with several sections runs them one after the other", {
+  sos <- .design_iir_sos(1, 40, 256, order = 4)
+  x   <- cos(seq_len(400) / 5) + seq_len(400) / 100
+  y   <- x
+  for (s in seq_len(nrow(sos))) y <- .sos_pass(sos[s, , drop = FALSE], y)
+  expect_equal(.sos_pass(sos, x), y)
+})
+
+test_that(".sos_pass steady start: a flat signal stays flat from the first sample", {
+  sos  <- .design_iir_sos(1, 40, 256, order = 4)
+  flat <- rep(100, 300)
+  # a band-pass removes a flat level; with the steady start there is no jolt ...
+  expect_lt(max(abs(.sos_pass(sos, flat, steady = TRUE))), 1e-9)
+  # ... with an empty memory the filter "switches on" and the jolt is large
+  expect_gt(max(abs(.sos_pass(sos, flat))), 1)
+})
+
+test_that(".sos_pass steady start: a flat signal comes out of a low-pass just as flat", {
+  # a low-pass lets a flat level through unchanged (gain 1 at 0 Hz), so with
+  # the steady start the output is that same level from the very first sample
+  sos <- .design_iir_sos(NULL, 40, 256, order = 4)
+  expect_equal(.sos_pass(sos, rep(100, 300), steady = TRUE), rep(100, 300),
+               tolerance = 1e-9)
+})
+
+test_that(".iir_ringing_samples gives the values of MNE's ringing estimate", {
+  expect_equal(.iir_ringing_samples(.design_iir_sos(1,   40,   256,  4L)),  405)
+  expect_equal(.iir_ringing_samples(.design_iir_sos(0.1, NULL, 512,  4L)),  567)
+  expect_equal(.iir_ringing_samples(.design_iir_sos(1,   40,   512,  4L)),  808)
+  expect_equal(.iir_ringing_samples(.design_iir_sos(0.1, 40,   2048, 4L)), 3798)
+  # a slow high-pass whose response after the first sample stays below 0.1 %
+  # of its peak: no padding at all
+  expect_equal(.iir_ringing_samples(.design_iir_sos(0.1, NULL, 2048, 4L)),    0)
+  zz <- .butter_zpk(4L, c(49.375, 50.625) / 256, "stop")
+  expect_equal(.iir_ringing_samples(.zpk_to_sos(zz$z, zz$p, zz$k)), 814)
+})
+
+test_that(".iir_filter 'forward' is one causal pass; 'zero' pads, runs both ways, cuts", {
+  sos <- .design_iir_sos(1, 40, 256, order = 4)
+  x   <- sin(seq_len(800) / 9) + seq_len(800) / 50
+  expect_equal(.iir_filter(x, sos, "forward", 0L), .sos_pass(sos, x))
+
+  pad     <- 405L
+  by_hand <- rev(.sos_pass(sos,
+                           rev(.sos_pass(sos, .reflect_limited_pad(x, pad, pad),
+                                         steady = TRUE)),
+                           steady = TRUE))
+  expect_equal(.iir_filter(x, sos, "zero", pad),
+               by_hand[(pad + 1L):(length(by_hand) - pad)])
+})
+
+test_that(".iir_filter cuts the padding down for a signal shorter than the padding", {
+  sos <- .design_iir_sos(1, 40, 256, order = 4)
+  x   <- sin(seq_len(100) / 3)
+  y   <- .iir_filter(x, sos, "zero", 405L)      # 405 > 99, so it pads by 99
+  expect_length(y, 100L)
+  expect_true(all(is.finite(y)))
+  expect_equal(y, .iir_filter(x, sos, "zero", 99L))
+})
+
 # ─── eeg_bandpass() — input validation ───────────────────────────────────────
 
 test_that("eeg_bandpass rejects non-eeg input", {
@@ -535,6 +762,312 @@ test_that("eeg_bandpass BP5 (hann window) matches MNE to 1e-10", {
   expect_lt(max(abs(out$data[1, ] - mne)), 1e-10)
 })
 
+# ─── eeg_bandpass() — method, phase, pad and iir_params ──────────────────────
+
+test_that("eeg_bandpass rejects a method that is not 'fir' or 'iir'", {
+  expect_error(eeg_bandpass(eeg1ch, l_freq = 1, h_freq = 40,
+                            method = "IIR", verbose = FALSE),
+               "should be one of")
+  expect_error(eeg_bandpass(eeg1ch, l_freq = 1, h_freq = 40,
+                            method = "butter", verbose = FALSE),
+               "should be one of")
+})
+
+test_that("eeg_bandpass rejects phase words that are not implemented (FIR)", {
+  # Before the check, any word except "zero" was accepted and gave a result
+  # that was shifted in time, with no message.
+  for (bad in c("Zero", "banana", "minimum", "forward", "")) {
+    expect_error(eeg_bandpass(eeg1ch, l_freq = 1, h_freq = 40,
+                              phase = bad, verbose = FALSE),
+                 "'phase' must be one of \"zero\" for an FIR filter",
+                 info = paste0("phase = \"", bad, "\""))
+  }
+})
+
+test_that("eeg_bandpass rejects phase words that are not implemented (IIR)", {
+  for (bad in c("Zero", "banana", "minimum", "zero-double")) {
+    expect_error(eeg_bandpass(eeg1ch, l_freq = 1, h_freq = 40, method = "iir",
+                              phase = bad, verbose = FALSE),
+                 "'phase' must be one of \"zero\", \"forward\" for an IIR filter",
+                 info = paste0("phase = \"", bad, "\""))
+  }
+})
+
+test_that("eeg_bandpass rejects a padding that is not implemented, for FIR and IIR", {
+  expect_error(eeg_bandpass(eeg1ch, l_freq = 1, h_freq = 40,
+                            pad = "banana", verbose = FALSE),
+               "'pad' must be \"reflect_limited\"")
+  expect_error(eeg_bandpass(eeg1ch, l_freq = 1, h_freq = 40, method = "iir",
+                            pad = "reflect", verbose = FALSE),
+               "'pad' must be \"reflect_limited\"")
+})
+
+test_that("eeg_bandpass checks iir_params when method is 'iir'", {
+  expect_error(eeg_bandpass(eeg1ch, l_freq = 1, h_freq = 40, method = "iir",
+                            iir_params = list(order = 0), verbose = FALSE),
+               "whole number")
+  expect_error(eeg_bandpass(eeg1ch, l_freq = 1, h_freq = 40, method = "iir",
+                            iir_params = list(ftype = "cheby1"), verbose = FALSE),
+               "must be \"butter\"")
+  expect_error(eeg_bandpass(eeg1ch, l_freq = 1, h_freq = 40, method = "iir",
+                            iir_params = list(ordr = 4), verbose = FALSE),
+               "Unknown element")
+})
+
+test_that("eeg_bandpass warns about arguments the chosen method does not use", {
+  expect_warning(eeg_bandpass(eeg1ch, l_freq = 1, h_freq = 40, method = "iir",
+                              l_trans_bandwidth = 2, verbose = FALSE),
+                 "Not used with method = \"iir\": l_trans_bandwidth\\.")
+  expect_warning(eeg_bandpass(eeg1ch, l_freq = 1, h_freq = 40, method = "iir",
+                              fir_window = "hann", filter_length = 500,
+                              verbose = FALSE),
+                 "filter_length, fir_window")
+  expect_warning(eeg_bandpass(eeg1ch, l_freq = 1, h_freq = 40,
+                              iir_params = list(order = 3), verbose = FALSE),
+                 "'iir_params' is not used with method = \"fir\"")
+  # left at their defaults there is nothing to warn about
+  expect_no_warning(eeg_bandpass(eeg1ch, l_freq = 1, h_freq = 40,
+                                 method = "iir", verbose = FALSE))
+  expect_no_warning(eeg_bandpass(eeg1ch, l_freq = 1, h_freq = 40,
+                                 verbose = FALSE))
+})
+
+test_that("method = 'fir' written out gives exactly the default result", {
+  a <- eeg_bandpass(eeg1ch, l_freq = 1, h_freq = 40, verbose = FALSE)
+  b <- eeg_bandpass(eeg1ch, l_freq = 1, h_freq = 40, method = "fir",
+                    verbose = FALSE)
+  expect_identical(a$data, b$data)
+})
+
+# ─── eeg_bandpass(method = "iir") — return structure ─────────────────────────
+
+test_that("IIR bandpass returns an eeg object with the same dimensions", {
+  out <- eeg_bandpass(eeg1ch, l_freq = 1, h_freq = 40, method = "iir",
+                      verbose = FALSE)
+  expect_s3_class(out, "eeg")
+  expect_equal(dim(out$data), dim(eeg1ch$data))
+  expect_true(all(is.finite(out$data)))
+  expect_false(isTRUE(all.equal(out$data, eeg1ch$data)))
+})
+
+test_that("IIR bandpass appends one history entry that names the settings", {
+  out <- eeg_bandpass(eeg1ch, l_freq = 1, h_freq = 40, method = "iir",
+                      verbose = FALSE)
+  expect_length(out$preprocessing_history, 1L)
+  entry <- out$preprocessing_history[[1]]
+  expect_match(entry, "^IIR bandpass: Bandpass \\(1 - 40 Hz\\)")
+  expect_match(entry, "Butterworth order: 4")
+  expect_match(entry, "phase: zero")
+  expect_match(entry, "pad: reflect_limited, 405 samples at each end")
+
+  fwd <- eeg_bandpass(eeg1ch, l_freq = 8, h_freq = NULL, method = "iir",
+                      phase = "forward", iir_params = list(order = 2),
+                      verbose = FALSE)
+  entry <- fwd$preprocessing_history[[1]]
+  expect_match(entry, "^IIR bandpass: Highpass \\(8 Hz\\)")
+  expect_match(entry, "Butterworth order: 2")
+  expect_match(entry, "phase: forward")
+  expect_match(entry, "pad: none")
+})
+
+test_that("IIR bandpass preserves channels, rate, bads, montage, annotations and types", {
+  eeg_state <- eeg1ch
+  eeg_state$bads        <- "CH1"
+  eeg_state$montage     <- create_montage()
+  eeg_state$annotations <- annots_2rows
+
+  out <- eeg_bandpass(eeg_state, l_freq = 1, h_freq = 40, method = "iir",
+                      verbose = FALSE)
+  expect_equal(out$channels,      eeg_state$channels)
+  expect_equal(out$sampling_rate, eeg_state$sampling_rate)
+  expect_equal(out$bads,          eeg_state$bads)
+  expect_equal(out$montage,       eeg_state$montage)
+  expect_equal(out$annotations,   annots_2rows)
+
+  out_v <- eeg_bandpass(eeg_veog, l_freq = 1, h_freq = 40, method = "iir",
+                        verbose = FALSE)
+  expect_equal(out_v$channel_types, eeg_veog$channel_types)
+  expect_equal(out_v$channel_types[out_v$channels == "VEOG"], "eog")
+})
+
+test_that("IIR bandpass channel selection leaves the other channels unchanged", {
+  set.seed(3)
+  eeg3 <- new_eeg(
+    data          = matrix(rnorm(1024 * 3, sd = 10), nrow = 3),
+    channels      = c("Fp1", "Fp2", "Fz"),
+    sampling_rate = 256L
+  )
+  by_name <- eeg_bandpass(eeg3, l_freq = 1, h_freq = 40, method = "iir",
+                          channels = "Fp2", verbose = FALSE)
+  expect_equal(by_name$data[1, ], eeg3$data[1, ])
+  expect_equal(by_name$data[3, ], eeg3$data[3, ])
+  expect_false(isTRUE(all.equal(by_name$data[2, ], eeg3$data[2, ])))
+
+  by_index <- eeg_bandpass(eeg3, l_freq = 1, h_freq = 40, method = "iir",
+                           channels = 1L, verbose = FALSE)
+  expect_equal(by_index$data[2, ], eeg3$data[2, ])
+  expect_equal(by_index$data[3, ], eeg3$data[3, ])
+})
+
+test_that("IIR bandpass filters every channel on its own", {
+  set.seed(7)
+  eeg3 <- new_eeg(
+    data          = matrix(rnorm(1024 * 3, sd = 10), nrow = 3),
+    channels      = c("Fp1", "Fp2", "Fz"),
+    sampling_rate = 256L
+  )
+  all3 <- eeg_bandpass(eeg3, l_freq = 1, h_freq = 40, method = "iir",
+                       verbose = FALSE)
+  for (i in 1:3) {
+    one <- new_eeg(data = eeg3$data[i, , drop = FALSE], channels = "X",
+                   sampling_rate = 256L)
+    alone <- eeg_bandpass(one, l_freq = 1, h_freq = 40, method = "iir",
+                          verbose = FALSE)$data[1, ]
+    expect_equal(all3$data[i, ], alone)
+  }
+})
+
+test_that("IIR bandpass prints a header when verbose", {
+  expect_output(eeg_bandpass(eeg1ch, l_freq = 1, h_freq = 40, method = "iir",
+                             verbose = TRUE),
+                "EEG IIR Filtering")
+})
+
+# ─── eeg_bandpass(method = "iir") — MNE numerical accuracy ───────────────────
+#
+# The reference numbers below were made with MNE's own IIR filter (Butterworth,
+# second-order sections) on the signal built by iir_test_signal(): sines plus a
+# slow drift, no random numbers. They sit inside this file, so these tests need
+# neither Python nor the reference folder. Each setting lists sample values at
+# positions `idx` and the sum of squares of the whole output.
+
+iir_test_signal <- function(n, sfreq) {
+  i <- seq_len(n) - 1
+  t <- i / sfreq
+  20 * sin(2 * pi * 0.3 * t + 0.5) + 10 * sin(2 * pi * 10 * t) +
+    5 * sin(2 * pi * 50 * t + 1) + 3 * cos(2 * pi * 3 * t) + 0.01 * i
+}
+
+iir_vs_mne <- function(fs, n, l, h, order, phase, idx, ref, ss) {
+  eeg <- new_eeg(data          = matrix(iir_test_signal(n, fs), nrow = 1L),
+                 channels      = "CH1",
+                 sampling_rate = fs)
+  y <- eeg_bandpass(eeg, l_freq = l, h_freq = h, method = "iir",
+                    iir_params = list(order = order), phase = phase,
+                    verbose = FALSE)$data[1, ]
+  expect_lt(max(abs(y[idx] - ref)), 1e-8)
+  expect_equal(sum(y^2), ss, tolerance = 1e-8)
+}
+
+test_that("eeg_bandpass IIR BP (1-40 Hz, order 4, zero phase, 256 Hz) matches MNE", {
+  iir_vs_mne(256L, 3000L, 1, 40, 4L, "zero",
+    idx = c(1, 2, 40, 500, 1500, 2500, 2999, 3000),
+    ref = c(0.00653979260359, -0.86571459856, -7.45440384139, 1.88128890451,
+            -6.3020538824, -6.92728907952, 0.726414044944, 0.114241219425),
+    ss  = 165138.004778)
+})
+
+test_that("eeg_bandpass IIR BP (1-40 Hz, order 4, forward, 256 Hz) matches MNE", {
+  iir_vs_mne(256L, 3000L, 1, 40, 4L, "forward",
+    idx = c(1, 2, 40, 500, 1500, 2500, 2999, 3000),
+    ref = c(0.327853256445, 2.16347117068, -1.36836538073, 6.55589844577,
+            0.152681213534, -7.10602452525, 3.89583281158, 6.87818690393),
+    ss  = 168556.368698)
+})
+
+test_that("eeg_bandpass IIR HP (0.1 Hz, order 8, zero phase, 512 Hz) matches MNE", {
+  # a slow, high-order filter: written as one long recipe it blows up
+  iir_vs_mne(512L, 6000L, 0.1, NULL, 8L, "zero",
+    idx = c(1, 2, 40, 500, 3000, 5500, 5999, 6000),
+    ref = c(4.55908231015, 6.648986507, -10.2229661567, -1.79279860907,
+            -24.3358478573, 19.7287882537, -11.7206841605, -8.28965419999),
+    ss  = 1429470.73296)
+})
+
+test_that("eeg_bandpass IIR LP (40 Hz, order 3, zero phase, 256 Hz) matches MNE", {
+  # an odd order: one of the sections is a first-order piece
+  iir_vs_mne(256L, 3000L, NULL, 40, 3L, "zero",
+    idx = c(1, 2, 40, 500, 1500, 2500, 2999, 3000),
+    ref = c(16.7968075782, 16.1453420479, 9.40738419159, -10.5141394716,
+            -8.58713505469, 19.4365240462, 26.1486489159, 25.8208415682),
+    ss  = 1791079.435)
+})
+
+test_that("eeg_bandpass IIR HP (1 Hz, order 5, forward, 256 Hz) matches MNE", {
+  iir_vs_mne(256L, 3000L, 1, NULL, 5L, "forward",
+    idx = c(1, 2, 40, 500, 1500, 2500, 2999, 3000),
+    ref = c(16.1419101655, 17.0840381844, -14.3409111656, -3.40714865451,
+            -8.17127310808, -6.59251105635, 2.49045632868, 5.53474559627),
+    ss  = 202661.564327)
+})
+
+test_that("eeg_bandpass IIR BP (1-40 Hz, order 4, zero phase, 2048 Hz) matches MNE", {
+  # the native BioSemi rate, where one long recipe is already 19 % off
+  iir_vs_mne(2048L, 6000L, 1, 40, 4L, "zero",
+    idx = c(1, 2, 40, 500, 3000, 5500, 5999, 6000),
+    ref = c(0.0449552398375, -0.0691135954815, 6.22291348605, 3.35746641838,
+            -9.56247590211, -5.95425415805, 0.492744974721, 0.0039508996732),
+    ss  = 346522.041134)
+})
+
+test_that("eeg_bandpass IIR matches MNE for a signal shorter than the padding", {
+  # 300 samples, padding length 405: the padding is cut down to 299
+  iir_vs_mne(256L, 300L, 1, 40, 4L, "zero",
+    idx = c(1, 2, 40, 150, 250, 299, 300),
+    ref = c(0.173490031343, -0.687915850752, -6.94774083651, -9.4678543149,
+            -4.32586652522, 2.76541495719, -0.42949334726),
+    ss  = 20634.004844)
+})
+
+# ─── eeg_bandpass(method = "iir") — behaviour ────────────────────────────────
+
+test_that("phase = 'forward' is causal: nothing before a spike; 'zero' is not", {
+  spike <- new_eeg(data          = matrix(c(rep(0, 999), 1, rep(0, 1000)), nrow = 1L),
+                   channels      = "CH1",
+                   sampling_rate = 256L)
+  fwd  <- eeg_bandpass(spike, l_freq = 1, h_freq = 40, method = "iir",
+                       phase = "forward", verbose = FALSE)$data[1, ]
+  zero <- eeg_bandpass(spike, l_freq = 1, h_freq = 40, method = "iir",
+                       phase = "zero", verbose = FALSE)$data[1, ]
+  expect_true(all(fwd[1:999] == 0))            # exactly nothing before the spike
+  expect_gt(max(abs(fwd[1000:2000])), 0.01)    # but it does ring afterwards
+  expect_gt(max(abs(zero[1:999])), 0.01)       # forward-backward rings before it
+})
+
+test_that("a flat line stays flat through a zero-phase IIR band-pass (no switch-on jolt)", {
+  flat <- new_eeg(data          = matrix(100, nrow = 1L, ncol = 3000L),
+                  channels      = "CH1",
+                  sampling_rate = 256L)
+  out  <- eeg_bandpass(flat, l_freq = 1, h_freq = 40, method = "iir",
+                       verbose = FALSE)$data
+  expect_lt(max(abs(out)), 1e-8)
+})
+
+test_that("zero-phase IIR halves the amplitude at the cutoff (the 6 dB in the help)", {
+  tt <- (0:5999) / 256
+  amplitude <- function(f) {
+    s <- new_eeg(data          = matrix(sin(2 * pi * f * tt), nrow = 1L),
+                 channels      = "CH1",
+                 sampling_rate = 256L)
+    y <- eeg_bandpass(s, h_freq = 40, method = "iir",
+                      verbose = FALSE)$data[1, 2001:4000]
+    sqrt(2) * sd(y)
+  }
+  expect_equal(amplitude(5),  1,   tolerance = 0.01)   # passed
+  expect_equal(amplitude(40), 0.5, tolerance = 0.01)   # at the cutoff: 6 dB down
+  expect_lt(amplitude(100), 0.01)                      # stopped
+})
+
+test_that("a slow high-order high-pass at 2048 Hz stays finite and removes the drift", {
+  x   <- iir_test_signal(8192L, 2048)
+  eeg <- new_eeg(data = matrix(x, nrow = 1L), channels = "CH1",
+                 sampling_rate = 2048L)
+  out <- eeg_bandpass(eeg, l_freq = 0.1, method = "iir",
+                      iir_params = list(order = 8), verbose = FALSE)$data[1, ]
+  expect_true(all(is.finite(out)))
+  expect_lt(max(abs(out)), 100)
+})
+
 # ─── eeg_notch() — input validation ──────────────────────────────────────────
 
 test_that("eeg_notch rejects non-eeg input", {
@@ -565,6 +1098,19 @@ test_that("eeg_notch rejects unknown channel name", {
     eeg_notch(eeg1ch, freqs = 50, channels = "BOGUS", verbose = FALSE),
     "Channel\\(s\\) not found"
   )
+})
+
+test_that("eeg_notch rejects a phase word that is not implemented", {
+  for (bad in c("Zero", "banana", "minimum", "forward")) {
+    expect_error(eeg_notch(eeg1ch, phase = bad, verbose = FALSE),
+                 "'phase' must be one of \"zero\" for an FIR filter",
+                 info = paste0("phase = \"", bad, "\""))
+  }
+})
+
+test_that("eeg_notch rejects a padding that is not implemented", {
+  expect_error(eeg_notch(eeg1ch, pad = "reflect", verbose = FALSE),
+               "'pad' must be \"reflect_limited\"")
 })
 
 # ─── eeg_notch() — return structure ──────────────────────────────────────────

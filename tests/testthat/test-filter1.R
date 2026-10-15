@@ -281,6 +281,71 @@ test_that(".firwin_kernel BP5 (hann window) matches MNE reference kernel", {
   expect_lt(max(abs(h_r - h_mne)), 1e-14)
 })
 
+# ─── .minimum_phase() ────────────────────────────────────────────────────────
+
+# The low-pass kernel that eeg_bandpass(h_freq = 40) builds at 256 Hz (85 taps)
+# and the band-pass kernel for 1-40 Hz (845 taps), before any conversion.
+k_lp40_zero <- .firwin_kernel(85L,  c(0, 40 / 128, 50 / 128, 1), c(1, 1, 0, 0))
+k_bp_zero   <- .firwin_kernel(845L, c(0, 1 / 128, 40 / 128, 50 / 128, 1),
+                              c(0, 1, 1, 0, 0))
+
+test_that(".minimum_phase keeps the length of the kernel", {
+  expect_length(.minimum_phase(k_lp40_zero), 85L)
+  expect_length(.minimum_phase(k_bp_zero), 845L)
+  expect_length(.minimum_phase(.firwin_kernel(21L, c(0, 0.3, 0.8, 1),
+                                              c(1, 1, 0, 0))), 21L)
+})
+
+test_that(".minimum_phase of a low-pass kernel matches MNE's kernel to 1e-9", {
+  # taps 1, 2, 3, 5, 10, 20, 40 and 85 of MNE's minimum-phase kernel for a
+  # 40 Hz low-pass at 256 Hz
+  h   <- .minimum_phase(k_lp40_zero)
+  idx <- c(1, 2, 3, 5, 10, 20, 40, 85)
+  ref <- c(0.00462391301253, 0.0254803632106, 0.0759820815113, 0.246058012443,
+           -0.129179899937, 0.0600985781137, -0.0105722723452, 3.57746655584e-05)
+  expect_lt(max(abs(h[idx] - ref)), 1e-9)
+  expect_equal(sum(h^2), 0.341549872734, tolerance = 1e-9)
+})
+
+test_that(".minimum_phase of a band-pass kernel matches MNE's kernel (rounding-limited)", {
+  # A kernel with no gain at 0 Hz: the conversion takes the logarithm of what is
+  # only rounding noise there, so two correct programs agree to about 1e-5
+  # (MNE against a rounding-sized change of its own kernel: the same).
+  h   <- .minimum_phase(k_bp_zero)
+  idx <- c(1, 2, 3, 5, 10, 50, 200, 845)
+  ref <- c(0.00458993186733, 0.0251816675142, 0.0746798757112, 0.237619324692,
+           -0.153920508315, -0.00761565654522, 0.00222697582623, 6.31410959782e-07)
+  expect_lt(max(abs(h[idx] - ref)), 1e-3)
+  expect_equal(sum(h^2), 0.336712499055, tolerance = 1e-4)
+})
+
+test_that(".minimum_phase copes with a kernel that has an exact zero at 0 Hz", {
+  # The taps sum to exactly 0, so the magnitude response is exactly 0 at 0 Hz and
+  # its logarithm would be minus infinity; a tiny floor keeps it finite.
+  expect_equal(.minimum_phase(c(-1, 2, -1)),
+               c(0.977716519805, -1.99950090166, 1.02450076794),
+               tolerance = 1e-9)
+  expect_equal(.minimum_phase(c(-0.5, 0, 1, 0, -0.5)),
+               c(0.488858259903, 0, -0.999750450828, 0, 0.512250383971),
+               tolerance = 1e-9)
+})
+
+test_that(".minimum_phase keeps the magnitude response and moves the energy to the start", {
+  h_min <- .minimum_phase(k_bp_zero)
+  mag   <- function(h) Mod(fft(c(h, numeric(4096 - length(h)))))[1:2049]  # 0-128 Hz
+  f     <- (0:2048) / 2048 * 128
+  band  <- f >= 3 & f <= 38
+  # the same loudness at every frequency of the pass band ...
+  expect_lt(max(abs(mag(h_min) - mag(k_bp_zero))[band] / mag(k_bp_zero)[band]),
+            1e-4)
+  # ... but the symmetric kernel has its energy in the middle (tap 423 of 845)
+  # and the minimum-phase kernel has it at the start
+  centre <- function(h) sum(seq_along(h) * h^2) / sum(h^2)
+  expect_equal(centre(k_bp_zero), 423)
+  expect_lt(centre(h_min), 50)
+  expect_gt(sum(h_min[1:100]^2) / sum(h_min^2), 0.95)
+})
+
 # ─── .reflect_limited_pad() ──────────────────────────────────────────────────
 
 test_that(".reflect_limited_pad output length = n + n_left + n_right", {
@@ -358,12 +423,13 @@ test_that(".overlap_add_filter attenuates stop-band content", {
 
 # ─── .check_phase() / .check_pad() / .resolve_iir_params() ───────────────────
 
-test_that(".check_phase accepts only 'zero' for an FIR filter", {
-  expect_equal(.check_phase("zero", "fir"), "zero")
-  for (bad in c("Zero", "ZERO", " zero", "zero-double", "minimum", "forward",
-                "banana", "")) {
+test_that(".check_phase accepts 'zero' and 'minimum' for an FIR filter", {
+  expect_equal(.check_phase("zero",    "fir"), "zero")
+  expect_equal(.check_phase("minimum", "fir"), "minimum")
+  for (bad in c("Zero", "ZERO", " zero", "zero-double", "minimum-half",
+                "linear", "forward", "banana", "")) {
     expect_error(.check_phase(bad, "fir"),
-                 "'phase' must be one of \"zero\" for an FIR filter",
+                 "'phase' must be one of \"zero\", \"minimum\" for an FIR filter",
                  info = paste0("phase = \"", bad, "\""))
   }
 })
@@ -776,10 +842,10 @@ test_that("eeg_bandpass rejects a method that is not 'fir' or 'iir'", {
 test_that("eeg_bandpass rejects phase words that are not implemented (FIR)", {
   # Before the check, any word except "zero" was accepted and gave a result
   # that was shifted in time, with no message.
-  for (bad in c("Zero", "banana", "minimum", "forward", "")) {
+  for (bad in c("Zero", "banana", "minimum-half", "zero-double", "forward", "")) {
     expect_error(eeg_bandpass(eeg1ch, l_freq = 1, h_freq = 40,
                               phase = bad, verbose = FALSE),
-                 "'phase' must be one of \"zero\" for an FIR filter",
+                 "'phase' must be one of \"zero\", \"minimum\" for an FIR filter",
                  info = paste0("phase = \"", bad, "\""))
   }
 })
@@ -1068,6 +1134,78 @@ test_that("a slow high-order high-pass at 2048 Hz stays finite and removes the d
   expect_lt(max(abs(out)), 100)
 })
 
+# ─── eeg_bandpass(phase = "minimum") — the causal FIR filter ─────────────────
+
+test_that("FIR phase = 'minimum' returns an eeg object and logs the phase", {
+  out <- eeg_bandpass(eeg1ch, l_freq = 1, h_freq = 40, phase = "minimum",
+                      verbose = FALSE)
+  expect_s3_class(out, "eeg")
+  expect_equal(dim(out$data), dim(eeg1ch$data))
+  expect_true(all(is.finite(out$data)))
+  expect_match(out$preprocessing_history[[1]],
+               "^FIR bandpass: Bandpass \\(1 - 40 Hz\\)")
+  expect_match(out$preprocessing_history[[1]], "phase: minimum")
+
+  zero <- eeg_bandpass(eeg1ch, l_freq = 1, h_freq = 40, verbose = FALSE)
+  expect_false(isTRUE(all.equal(out$data, zero$data)))
+})
+
+test_that("FIR phase = 'minimum' is causal: nothing before a spike; 'zero' is not", {
+  spike <- new_eeg(data          = matrix(c(rep(0, 999), 1, rep(0, 1000)), nrow = 1L),
+                   channels      = "CH1",
+                   sampling_rate = 256L)
+  y_min  <- eeg_bandpass(spike, l_freq = 1, h_freq = 40, phase = "minimum",
+                         verbose = FALSE)$data[1, ]
+  y_zero <- eeg_bandpass(spike, l_freq = 1, h_freq = 40, phase = "zero",
+                         verbose = FALSE)$data[1, ]
+  expect_lt(max(abs(y_min[1:999])), 1e-12)     # nothing before the spike
+  expect_gt(max(abs(y_zero[1:999])), 0.01)     # the zero-phase filter rings before it
+  # the peak comes 5 samples after the spike (MNE: the same)
+  expect_equal(which.max(abs(y_min)) - 1000L, 5L)
+})
+
+# Same signal and layout as iir_vs_mne() above, for the FIR filter with
+# phase = "minimum"; the reference numbers are MNE's own output.
+fir_min_vs_mne <- function(fs, n, l, h, idx, ref, ss,
+                           tol_probe = 1e-8, tol_ss = 1e-8) {
+  eeg <- new_eeg(data          = matrix(iir_test_signal(n, fs), nrow = 1L),
+                 channels      = "CH1",
+                 sampling_rate = fs)
+  y <- eeg_bandpass(eeg, l_freq = l, h_freq = h, phase = "minimum",
+                    verbose = FALSE)$data[1, ]
+  expect_lt(max(abs(y[idx] - ref)), tol_probe)
+  expect_equal(sum(y^2), ss, tolerance = tol_ss)
+}
+
+test_that("eeg_bandpass FIR minimum, low-pass (40 Hz, 256 Hz) matches MNE to 1e-8", {
+  fir_min_vs_mne(256L, 3000L, NULL, 40,
+    idx = c(1, 2, 40, 500, 1500, 2500, 2999, 3000),
+    ref = c(12.2702655553, 13.9290878098, 18.8203957995, -2.40105912352,
+            0.528689754692, 28.0483443021, 19.0474229229, 21.2356553171),
+    ss  = 1787923.36519)
+})
+
+test_that("eeg_bandpass FIR minimum, band-pass (1-40 Hz, 256 Hz) matches MNE (rounding-limited)", {
+  # No gain at 0 Hz: the conversion to a minimum-phase kernel is sensitive to
+  # rounding noise there, so even MNE against itself differs at this level
+  # (about 1e-3 of the values, mostly below the 1 Hz cutoff and near the start).
+  fir_min_vs_mne(256L, 3000L, 1, 40,
+    idx = c(1, 2, 40, 500, 1500, 2500, 2999, 3000),
+    ref = c(-7.79379116356, -6.04789272142, 0.801898729736, 11.6303093219,
+            6.01806229564, 2.29781371417, 0.253741932213, 2.5604493885),
+    ss  = 181327.565575,
+    tol_probe = 0.05, tol_ss = 1e-3)
+})
+
+test_that("eeg_bandpass FIR minimum, band-pass (8-12 Hz, 256 Hz) matches MNE (rounding-limited)", {
+  fir_min_vs_mne(256L, 3000L, 8, 12,
+    idx = c(1, 2, 40, 500, 1500, 2500, 2999, 3000),
+    ref = c(-9.30524866255, -8.15092930602, 7.82708592774, 9.48666196546,
+            7.56286863526, 4.48838651223, -4.91299808958, -2.65341325639),
+    ss  = 149062.488634,
+    tol_probe = 0.05, tol_ss = 1e-3)
+})
+
 # ─── eeg_notch() — input validation ──────────────────────────────────────────
 
 test_that("eeg_notch rejects non-eeg input", {
@@ -1101,9 +1239,9 @@ test_that("eeg_notch rejects unknown channel name", {
 })
 
 test_that("eeg_notch rejects a phase word that is not implemented", {
-  for (bad in c("Zero", "banana", "minimum", "forward")) {
+  for (bad in c("Zero", "banana", "minimum-half", "zero-double", "forward")) {
     expect_error(eeg_notch(eeg1ch, phase = bad, verbose = FALSE),
-                 "'phase' must be one of \"zero\" for an FIR filter",
+                 "'phase' must be one of \"zero\", \"minimum\" for an FIR filter",
                  info = paste0("phase = \"", bad, "\""))
   }
 })
@@ -1210,6 +1348,35 @@ test_that("eeg_notch N2 ([20,50,80] Hz, hamming) matches MNE to 1e-10", {
   mne <- load_ref("n2_filtered.csv")
   expect_equal(length(out$data[1, ]), length(mne))
   expect_lt(max(abs(out$data[1, ] - mne)), 1e-10)
+})
+
+# ─── eeg_notch(phase = "minimum") — the causal notch ─────────────────────────
+
+test_that("eeg_notch phase = 'minimum' matches MNE to 1e-8 (50 Hz at 512 Hz)", {
+  eeg <- new_eeg(data          = matrix(iir_test_signal(3000L, 512), nrow = 1L),
+                 channels      = "CH1",
+                 sampling_rate = 512L)
+  y <- eeg_notch(eeg, freqs = 50, phase = "minimum", verbose = FALSE)$data[1, ]
+  idx <- c(1, 2, 40, 500, 1500, 2500, 2999, 3000)
+  ref <- c(20.9132253922, 20.6961462987, 4.51458477642, 12.1990025974,
+           20.4597147577, 8.32797123767, 6.79745775153, 5.76547830353)
+  expect_lt(max(abs(y[idx] - ref)), 1e-8)
+  expect_equal(sum(y^2), 1505212.05793, tolerance = 1e-8)
+})
+
+test_that("eeg_notch phase = 'minimum' is causal and logs the phase", {
+  # The notch kernel is 3381 samples long, so the spike must be farther from
+  # the start than that: the padding mirrors the recording's edge, and a spike
+  # closer to it would leak its mirror image into the samples before it.
+  spike <- new_eeg(data          = matrix(c(rep(0, 5999), 1, rep(0, 2000)), nrow = 1L),
+                   channels      = "CH1",
+                   sampling_rate = 512L)
+  out <- eeg_notch(spike, freqs = 50, phase = "minimum", verbose = FALSE)
+  expect_lt(max(abs(out$data[1, 1:5999])), 1e-12)
+  expect_match(out$preprocessing_history[[1]], "^FIR notch: ")
+  expect_match(out$preprocessing_history[[1]], "phase: minimum")
+  zero <- eeg_notch(spike, freqs = 50, verbose = FALSE)
+  expect_gt(max(abs(zero$data[1, 1:5999])), 1e-3)   # the zero-phase notch rings before the spike
 })
 
 # ─── filter chaining ─────────────────────────────────────────────────────────

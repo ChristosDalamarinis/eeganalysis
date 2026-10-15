@@ -344,6 +344,58 @@
 }
 
 # ----------------------------------------------------------------------------
+# .minimum_phase() - preparation helper
+# ----------------------------------------------------------------------------
+
+#' Turn a symmetric FIR kernel into a minimum-phase kernel
+#'
+#' A symmetric (linear-phase) kernel looks equally far into the past and into
+#' the future of every sample, which is why a zero-phase filter can leave a
+#' trace before an event. This function builds the kernel with the same length
+#' and the same magnitude response that puts all of its action on the past
+#' side (a causal, minimum-phase filter), so nothing appears before an event.
+#' It uses the cepstrum (homomorphic) method: take the logarithm of the
+#' magnitude response, fold the cepstrum onto positive time, and go back with
+#' the exponential. The FFT is zero-padded to a power of two of about 200
+#' times the kernel length, so that the folding does not wrap around.
+#'
+#' @references
+#' Oppenheim, A. V., & Schafer, R. W. (2010). Discrete-Time Signal Processing
+#' (3rd ed.). Pearson. (chapter 13: cepstrum analysis and homomorphic
+#' deconvolution)
+#'
+#' @param h Numeric vector. A symmetric FIR kernel, as built by
+#'   \code{.firwin_kernel()}.
+#' @return Numeric vector, same length as \code{h}.
+#' @keywords internal
+.minimum_phase <- function(h) {
+
+  n     <- length(h)
+  n_fft <- 2^ceiling(log2(2 * (n - 1) / 0.01))
+
+  # magnitude response on a fine frequency grid (zero-padded FFT); a tiny floor
+  # keeps the logarithm finite where the response is exactly zero
+  mag <- Mod(fft(c(h, numeric(n_fft - n))))
+  mag <- mag + 1e-7 * min(mag[mag > 0])
+
+  # cepstrum = inverse FFT of the log magnitude (fft(inverse = TRUE) does not
+  # divide by the length, so that is done here)
+  cep <- Re(fft(log(mag), inverse = TRUE)) / n_fft
+
+  # fold onto positive time: keep time 0, double the positive times, drop the
+  # negative times (and the single sample in the middle: n_fft is a power of
+  # two, so it is even)
+  fold                  <- numeric(n_fft)
+  fold[1]               <- 1
+  fold[2:(n_fft %/% 2)] <- 2
+
+  # back to the time domain: exp of the folded spectrum, inverse FFT, real part
+  h_min <- Re(fft(exp(fft(cep * fold)), inverse = TRUE)) / n_fft
+
+  h_min[seq_len(n)]                                  # same length as h
+}
+
+# ----------------------------------------------------------------------------
 # .reflect_limited_pad() - preparation helper
 # ----------------------------------------------------------------------------
 
@@ -533,16 +585,20 @@
 #' Check the 'phase' argument of a filter function
 #'
 #' Accepts only the words that are really implemented for the chosen method and
-#' stops with a clear message for any other word. (The FIR code only tells
-#' "zero" apart from everything else, so a different word would give a result
-#' that is shifted in time, without any warning.)
+#' stops with a clear message for any other word. (A word that is not backed
+#' by the matching filter would give a result that is shifted in time, without
+#' any warning.)
 #'
 #' @param phase  The value given by the user.
 #' @param method Character. "fir" or "iir".
 #' @return \code{phase}, unchanged, if it is allowed.
 #' @keywords internal
 .check_phase <- function(phase, method) {
-  allowed <- if (identical(method, "iir")) c("zero", "forward") else "zero"
+  allowed <- if (identical(method, "iir")) {
+    c("zero", "forward")
+  } else {
+    c("zero", "minimum")
+  }
   if (!is.character(phase) || length(phase) != 1L || is.na(phase) ||
       !(phase %in% allowed)) {
     stop("'phase' must be one of ", paste0("\"", allowed, "\"", collapse = ", "),
@@ -1002,6 +1058,18 @@
 #' causal), but different frequencies are delayed by different amounts. Only
 #' the Butterworth family is implemented so far.
 #'
+#' \strong{Causal FIR filter} (\code{phase = "minimum"}): the usual symmetric
+#' filter is rebuilt as a minimum-phase filter of the same length and with the
+#' same magnitude response (cepstrum method), so that all of its action lies on
+#' the past side of every sample and no delay correction is made. Nothing can
+#' appear before an event, but different frequencies are delayed by different
+#' amounts. For a filter that has no gain at 0 Hz (a high-pass or band-pass)
+#' the conversion is very sensitive to rounding: two correct implementations
+#' agree to about 1e-4 of the signal size, mostly below the lowest cutoff. The
+#' conversion uses a long FFT, so for a very long filter, such as a 0.1 Hz
+#' high-pass at 2048 Hz (67585 taps), it takes about 40 seconds and 1 GB of
+#' memory; downsampling first makes it much cheaper.
+#'
 #' @references
 #' Butterworth, S. (1930). On the theory of filter amplifiers. Wireless
 #' Engineer, 7, 536-541.
@@ -1035,10 +1103,11 @@
 #'                         Default: "hamming". Used only with method = "fir".
 #' @param phase            Character. The allowed words depend on
 #'                         \code{method}. "fir": "zero" (default), one pass
-#'                         with the group delay corrected. "iir": "zero"
-#'                         (default), forward then backward, no delay; or
-#'                         "forward", one pass, causal. Any other word is an
-#'                         error.
+#'                         with the group delay corrected; or "minimum", one
+#'                         pass with a filter that only looks at the past
+#'                         (causal). "iir": "zero" (default), forward then
+#'                         backward, no delay; or "forward", one pass, causal.
+#'                         Any other word is an error.
 #' @param pad              Character. Padding at both ends of the recording.
 #'                         Only "reflect_limited" (default) is implemented.
 #' @param channels         Character or integer vector, or NULL. Channel names
@@ -1212,6 +1281,11 @@ eeg_bandpass <- function(eeg_obj,
   
   h <- .firwin_kernel(N, freq, gain, window = fir_window)
 
+  # "minimum": the same filter shape, rebuilt so that all of its action is on
+  # the past side of every sample (causal). No delay correction is made later,
+  # because .overlap_add_filter() only does that for words starting with "zero".
+  if (phase == "minimum") h <- .minimum_phase(h)
+
   # ========== VERBOSE HEADER ==========
   
   if (verbose) {
@@ -1322,8 +1396,10 @@ eeg_bandpass <- function(eeg_obj,
 #' @param filter_length    Integer or "auto". Kernel length in samples.
 #'                         "auto" uses MNE's formula. Default: "auto".
 #' @param fir_window       Character. Window function. Default: "hamming".
-#' @param phase            Character. "zero" for zero-phase single-pass.
-#'                         Default: "zero".
+#' @param phase            Character. "zero" (default) for zero-phase
+#'                         single-pass, or "minimum" for a causal filter that
+#'                         only looks at the past (nothing appears before an
+#'                         event). Any other word is an error.
 #' @param pad              Character. Padding mode. Default: "reflect_limited".
 #' @param channels         Character or integer vector, or NULL. Channels to
 #'                         filter. NULL = all channels. Default: NULL.
@@ -1483,6 +1559,9 @@ eeg_notch <- function(eeg_obj,
 
   # --- Design one kernel for all notch bands ---
   h <- .firwin_kernel(N, freq_arr, gain_arr, window = fir_window)
+
+  # "minimum": same as in eeg_bandpass(): a causal kernel, no delay correction
+  if (phase == "minimum") h <- .minimum_phase(h)
 
   if (verbose) {
     for (fi in seq_along(freqs)) {

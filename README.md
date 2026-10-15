@@ -33,7 +33,7 @@ Version 0.0.0.9000 — under active development. Currently reads BioSemi `.bdf` 
 |------------------------|------------------------|------------------------|
 | Import BioSemi `.bdf` | `read_bdf_native()` | ✅ |
 | Channel inspection & type assignment | `inspect_biosemi_file()`, `detect_external_channels()`, `set_channel_types()` | ✅ |
-| Downsampling / Filtering | `downsample()`, `eeg_bandpass()`, `eeg_notch()` | ✅ |
+| Downsampling / Filtering (FIR or Butterworth IIR bandpass, highpass and lowpass; FIR notch) | `downsample()`, `eeg_bandpass()`, `eeg_notch()` | ✅ |
 | Bad-channel detection & repair | `find_bad_channels()`, `interpolate_bads()` | ✅ |
 | Electrode bridging (detect and repair neighbouring electrodes shorted together by gel) | `find_bridged_electrodes()`, `interpolate_bridged_electrodes()` | ✅ |
 | Time-range annotations (bad stretches) | `annotate_amplitude()`, `annotate_muscle()`, `annotate_nan()`, `annotate_break()` | ✅ |
@@ -155,9 +155,9 @@ eeganalysis
 │   ├── downsample.R                         ← Smart downsampling
 │   │   └── downsample()                     ← Downsample with anti-aliasing filter
 │   │
-│   ├── filter1.R                            ← FIR filtering
-│   │   ├── eeg_bandpass()                   ← Hamming-window FIR bandpass filter
-│   │   └── eeg_notch()                      ← Multi-band notch filter for line noise
+│   ├── filter1.R                            ← FIR and IIR filtering
+│   │   ├── eeg_bandpass()                   ← Bandpass/highpass/lowpass: Hamming-window FIR or Butterworth IIR
+│   │   └── eeg_notch()                      ← Multi-band FIR notch filter for line noise
 │   │
 │   ├── bad_channels.R                       ← Bad-channel detection
 │   │   └── find_bad_channels()              ← Flat/amplitude/outlier + spatial + LOF checks
@@ -247,7 +247,7 @@ eeganalysis
 │   │
 │   └── imports.R                            ← Centralized @importFrom declarations
 │
-├── man/                                     ← Auto-generated help files (150, one per exported/internal function)
+├── man/                                     ← Auto-generated help files (160, one per exported/internal function)
 │   ├── new_eeg.Rd
 │   ├── read_bdf_native.Rd
 │   ├── find_bad_channels.Rd
@@ -256,7 +256,7 @@ eeganalysis
 │   ├── apply_ica.Rd
 │   └── ...Rd                                ← Remaining help files
 │
-├── tests/testthat/                          ← Unit tests (testthat, one file per module, 24 total)
+├── tests/testthat/                          ← Unit tests (testthat, one file per module, 25 total)
 │   ├── test-read_bdf_native.R
 │   ├── test-ica1.R
 │   ├── test-bad_channels.R

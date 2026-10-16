@@ -1022,6 +1022,164 @@
   )
 }
 
+# ----------------------------------------------------------------------------
+# .notch_iir() - the IIR half of eeg_notch()
+# ----------------------------------------------------------------------------
+
+#' IIR half of eeg_notch()
+#'
+#' Called by \code{\link{eeg_notch}} when \code{method = "iir"}, after the
+#' common arguments have been checked. Every frequency gets its own Butterworth
+#' band-stop filter. The filters are applied one after the other, from the
+#' lowest frequency to the highest, so the result is the same as calling
+#' \code{eeg_notch()} once per frequency.
+#'
+#' @param eeg_obj         An object of class 'eeg'.
+#' @param freqs           Numeric. Notch frequencies in Hz.
+#' @param notch_widths    Numeric, same length as \code{freqs}. Width of each
+#'   stop band in Hz.
+#' @param trans_bandwidth Numeric. Transition width in Hz; the cutoffs lie half
+#'   of it further out on each side of the stop band.
+#' @param iir_params      List with \code{order} (see
+#'   \code{.resolve_iir_params()}).
+#' @param phase           "zero" or "forward".
+#' @param ch_idx          Integer vector. Rows of the data to filter.
+#' @param verbose         Logical. Print parameters and progress.
+#' @return An object of class 'eeg'.
+#' @keywords internal
+.notch_iir <- function(eeg_obj, freqs, notch_widths, trans_bandwidth,
+                       iir_params, phase, ch_idx, verbose) {
+
+  sfreq      <- eeg_obj$sampling_rate
+  nyquist    <- sfreq / 2
+  n_channels <- nrow(eeg_obj$data)
+
+  if (!is.numeric(notch_widths) || anyNA(notch_widths) ||
+      any(notch_widths < 0)) {
+    stop("'notch_widths' must be NULL or non-negative numbers.", call. = FALSE)
+  }
+
+  # Go through the frequencies from low to high, whatever order they were typed
+  # in (each width stays with its frequency). The filters could be applied in
+  # any order, but the very first and last samples would differ a little.
+  ord          <- order(freqs)
+  freqs        <- freqs[ord]
+  notch_widths <- notch_widths[ord]
+
+  # ========== CUTOFFS ==========
+  # The two points where ONE pass of the filter is 3 dB down: the stop band,
+  # widened by half the transition width on each side.
+
+  tb_2     <- trans_bandwidth / 2
+  low_cut  <- freqs - notch_widths / 2 - tb_2
+  high_cut <- freqs + notch_widths / 2 + tb_2
+
+  for (fi in seq_along(freqs)) {
+    if (low_cut[fi] <= 0) {
+      stop("Notch lower edge (", round(low_cut[fi], 4), " Hz) is <= 0 for freq=",
+           freqs[fi], " Hz. Reduce trans_bandwidth or notch_width.", call. = FALSE)
+    }
+    if (high_cut[fi] >= nyquist) {
+      stop("Notch upper edge (", round(high_cut[fi], 4), " Hz) >= Nyquist (",
+           nyquist, " Hz) for freq=", freqs[fi], " Hz.", call. = FALSE)
+    }
+  }
+
+  # ========== DESIGN: SECTIONS AND PADDING LENGTH, ONE SET PER FREQUENCY ==========
+
+  sos_list <- vector("list", length(freqs))
+  padlen   <- numeric(length(freqs))
+  for (fi in seq_along(freqs)) {
+    zpk <- .butter_zpk(iir_params$order,
+                       c(low_cut[fi], high_cut[fi]) / nyquist, "stop")
+    sos_list[[fi]] <- .zpk_to_sos(zpk$z, zpk$p, zpk$k)
+    padlen[fi]     <- if (phase == "zero") .iir_ringing_samples(sos_list[[fi]]) else 0
+  }
+  pad_text <- if (any(padlen > 0)) {
+    paste0("reflect_limited, ",
+           paste(format(padlen, scientific = FALSE, trim = TRUE), collapse = " / "),
+           " samples at each end")
+  } else {
+    "none"
+  }
+
+  # ========== VERBOSE HEADER ==========
+
+  if (verbose) {
+    cat("\n", strrep("=", 70), "\n", sep = "")
+    cat("EEG IIR Notch Filtering\n")
+    cat(strrep("=", 70), "\n")
+    cat("  Notch frequencies:    ", paste(freqs, collapse = ", "), " Hz\n")
+    cat("  Notch widths:         ", paste(round(notch_widths, 4), collapse = ", "), " Hz\n")
+    cat("  Transition bandwidth: ", trans_bandwidth, " Hz\n")
+    cat("  Sampling rate:        ", sfreq, " Hz\n")
+    cat("  Family / order:        Butterworth /", iir_params$order, "\n")
+    cat("  Phase:                ", phase, "\n")
+    cat("  Padding:              ", pad_text, "\n")
+    cat("  Channels:             ", length(ch_idx), "/", n_channels, "\n")
+    cat(strrep("-", 70), "\n")
+    for (fi in seq_along(freqs)) {
+      cat(sprintf("  Notch %d/%d: %.1f Hz  [cutoffs %.4f - %.4f Hz, %d sections]\n",
+                  fi, length(freqs), freqs[fi], low_cut[fi], high_cut[fi],
+                  nrow(sos_list[[fi]])))
+    }
+  }
+
+  # ========== APPLY THE FILTERS CHANNEL BY CHANNEL ==========
+
+  filtered_data <- eeg_obj$data
+
+  if (verbose) {
+    pb <- txtProgressBar(min = 0, max = length(ch_idx),
+                         style = 3, width = 50, char = "=")
+  }
+
+  for (idx in seq_along(ch_idx)) {
+    i <- ch_idx[idx]
+    x <- filtered_data[i, ]
+    for (fi in seq_along(freqs)) {
+      x <- .iir_filter(x, sos_list[[fi]], phase, padlen[fi])
+    }
+    filtered_data[i, ] <- x
+    if (verbose) setTxtProgressBar(pb, idx)
+  }
+
+  if (verbose) {
+    close(pb)
+    cat("\n", strrep("=", 70), "\n")
+  }
+
+  # ========== BUILD PREPROCESSING HISTORY ENTRY ==========
+
+  history_parts <- paste0(freqs, " Hz (\u00B1",     # plus/minus symbol
+                          round(notch_widths / 2 + tb_2, 4), " Hz)")
+  history_entry <- paste0(
+    "IIR notch: ", paste(history_parts, collapse = ", "),
+    " | Butterworth order: ", iir_params$order,
+    " | phase: ", phase,
+    " | pad: ", pad_text,
+    " | channels: ", length(ch_idx), "/", n_channels
+  )
+
+  # ========== RETURN UPDATED EEG OBJECT ==========
+
+  new_eeg(
+    data                  = filtered_data,
+    channels              = eeg_obj$channels,
+    sampling_rate         = eeg_obj$sampling_rate,
+    times                 = eeg_obj$times,
+    events                = eeg_obj$events,
+    metadata              = eeg_obj$metadata,
+    reference             = eeg_obj$reference,
+    preprocessing_history = c(eeg_obj$preprocessing_history,
+                              list(history_entry)),
+    montage               = eeg_obj$montage,
+    bads                  = eeg_obj$bads,
+    annotations           = eeg_obj$annotations,
+    channel_types         = eeg_obj$channel_types
+  )
+}
+
 
 
 
@@ -1370,11 +1528,13 @@ eeg_bandpass <- function(eeg_obj,
 # eeg_notch()
 # ----------------------------------------------------------------------------
 #
-#' EEG Notch (Band-Stop) FIR Filter
+#' EEG Notch (Band-Stop) Filter (FIR or IIR)
 #'
 #' Removes narrow frequency bands from EEG data to eliminate electrical line
-#' noise (method='fir', phase='zero', fir_window='hamming', fir_design='firwin',
-#' pad='reflect_limited').
+#' noise, with a zero-phase FIR filter (the default) or an IIR Butterworth
+#' band-stop filter. With the defaults, (method='fir', phase='zero',
+#' fir_window='hamming', fir_design='firwin', pad='reflect_limited'), it is a
+#' zero-phase FIR filter.
 #'
 #' Internally implements notch as a bandstop FIR filter, exactly as MNE does:
 #'   lows  = freq - notch_width/2 - trans_bandwidth/2
@@ -1384,6 +1544,31 @@ eeg_bandpass <- function(eeg_obj,
 #' Multiple frequencies (e.g. harmonics) are combined into a single multi-band
 #' FIR kernel and applied in one pass.
 #'
+#' \strong{IIR filters} (\code{method = "iir"}) are Butterworth band-stop
+#' filters, built from their poles and zeros and run as a chain of
+#' second-order sections, so they stay accurate at high sampling rates (see
+#' \code{\link{eeg_bandpass}}). The two cutoffs of a notch are the \code{lows}
+#' and \code{highs} given above: the points where ONE pass of the filter is
+#' 3 dB down. So \code{trans_bandwidth} only moves the cutoffs outwards (by
+#' half of it on each side); unlike for the FIR filter it is not the width of
+#' a transition band. With \code{phase = "zero"} the filter is run forward and
+#' then backward: there is no delay, the response is 6 dB down at the cutoffs,
+#' and, because the backward pass looks at the signal before an event as well,
+#' an event can leave a trace before it happened. With \code{phase = "forward"}
+#' the filter is run once: nothing can appear before an event (the filter is
+#' causal), but different frequencies are delayed by different amounts. Every
+#' frequency in \code{freqs} gets its own band-stop filter, and the filters are
+#' applied one after the other, from the lowest frequency to the highest: the
+#' result is the same as calling \code{eeg_notch()} once for each frequency.
+#' Only the Butterworth family is implemented so far.
+#'
+#' @references
+#' Butterworth, S. (1930). On the theory of filter amplifiers. Wireless
+#' Engineer, 7, 536-541.
+#'
+#' Oppenheim, A. V., & Schafer, R. W. (2010). Discrete-Time Signal Processing
+#' (3rd ed.). Pearson.
+#'
 #' @param eeg_obj          An object of class 'eeg'.
 #' @param freqs            Numeric vector. Frequencies to notch in Hz.
 #'                         E.g. c(50, 100, 150) for line noise + harmonics.
@@ -1392,14 +1577,25 @@ eeg_bandpass <- function(eeg_obj,
 #'                         centred at each freq. NULL uses:
 #'                         freq / 200. Default: NULL.
 #' @param trans_bandwidth  Numeric. Width of each transition band in Hz.
-#'                         Default: 1.
+#'                         Default: 1. With method = "iir" it only moves the
+#'                         two cutoffs of each notch outwards, by half of it.
+#' @param method           Character. "fir" (default) or "iir".
+#' @param iir_params       NULL or a named list, used only with
+#'                         \code{method = "iir"}: \code{order} (default 4; a
+#'                         band-stop has twice as many poles) and \code{ftype}
+#'                         (only "butter" so far).
 #' @param filter_length    Integer or "auto". Kernel length in samples.
 #'                         "auto" uses MNE's formula. Default: "auto".
+#'                         Used only with method = "fir".
 #' @param fir_window       Character. Window function. Default: "hamming".
-#' @param phase            Character. "zero" (default) for zero-phase
-#'                         single-pass, or "minimum" for a causal filter that
-#'                         only looks at the past (nothing appears before an
-#'                         event). Any other word is an error.
+#'                         Used only with method = "fir".
+#' @param phase            Character. The allowed words depend on
+#'                         \code{method}. "fir": "zero" (default), one pass
+#'                         with the group delay corrected; or "minimum", one
+#'                         pass with a filter that only looks at the past
+#'                         (causal). "iir": "zero" (default), forward then
+#'                         backward, no delay; or "forward", one pass, causal.
+#'                         Any other word is an error.
 #' @param pad              Character. Padding mode. Default: "reflect_limited".
 #' @param channels         Character or integer vector, or NULL. Channels to
 #'                         filter. NULL = all channels. Default: NULL.
@@ -1414,6 +1610,8 @@ eeg_notch <- function(eeg_obj,
                       freqs            = 50,
                       notch_widths     = NULL,
                       trans_bandwidth  = 1,
+                      method           = c("fir", "iir"),
+                      iir_params       = NULL,
                       filter_length    = "auto",
                       fir_window       = "hamming",
                       phase            = "zero",
@@ -1433,12 +1631,30 @@ eeg_notch <- function(eeg_obj,
   if (!is.numeric(trans_bandwidth) || trans_bandwidth <= 0) {
     stop("'trans_bandwidth' must be a positive numeric value.", call. = FALSE)
   }
-  phase <- .check_phase(phase, "fir")
-  pad   <- .check_pad(pad)
-  
+  method <- match.arg(method)       # "fir" unless the user asks for "iir"
+  phase  <- .check_phase(phase, method)
+  pad    <- .check_pad(pad)
+
+  if (method == "iir") {
+    iir_params <- .resolve_iir_params(iir_params)
+
+    # These two only describe an FIR kernel. If the user set one of them on
+    # purpose, say that it is not used (missing() is TRUE when an argument was
+    # left at its default). trans_bandwidth is used by both methods.
+    fir_only <- c(filter_length = !missing(filter_length),
+                  fir_window    = !missing(fir_window))
+    if (any(fir_only)) {
+      warning("Not used with method = \"iir\": ",
+              paste(names(fir_only)[fir_only], collapse = ", "), ".",
+              call. = FALSE)
+    }
+  } else if (!is.null(iir_params)) {
+    warning("'iir_params' is not used with method = \"fir\".", call. = FALSE)
+  }
+
   sfreq   <- eeg_obj$sampling_rate
   nyquist <- sfreq / 2.0
-  
+
   if (any(freqs >= nyquist)) {
     stop("All 'freqs' must be less than the Nyquist frequency (",
          nyquist, " Hz).", call. = FALSE)
@@ -1475,9 +1691,17 @@ eeg_notch <- function(eeg_obj,
     stop("'channels' must be NULL, a character vector, or an integer vector.",
          call. = FALSE)
   }
-  
+
+  # ========== IIR: HAND OVER TO ITS OWN FUNCTION ==========
+  # Everything below this block is the FIR path, unchanged.
+
+  if (method == "iir") {
+    return(.notch_iir(eeg_obj, freqs, notch_widths, trans_bandwidth,
+                      iir_params, phase, ch_idx, verbose))
+  }
+
   # ========== VERBOSE HEADER ==========
-  
+
   if (verbose) {
     cat("\n", strrep("=", 70), "\n", sep = "")
     cat("EEG FIR Notch Filtering\n")

@@ -108,7 +108,12 @@ The function performs the following steps:
 
 \strong{Anti-aliasing filtering} prevents spectral aliasing by removing frequencies
 above the new Nyquist frequency before decimation. The Butterworth filter is
-applied with zero-phase filtering (forward-backward) using filtfilt().
+applied with zero-phase filtering: the signal goes through the filter forward
+and then backward, so there is no delay. It is built and run exactly like the
+IIR filter of \code{\link{eeg_bandpass}} (a chain of second-order sections),
+and the signal is padded at both ends first, so the first and last moments of
+the recording are not distorted, also when the data carry a large offset (as
+raw BioSemi data often do).
 
 \strong{Frequency Preservation:}
 The cutoff frequency determines what frequencies are preserved:
@@ -129,24 +134,25 @@ The cutoff frequency determines what frequencies are preserved:
 \examples{
 \dontrun{
   # Standard ERP analysis (preserve 0.5-50 Hz)
-  eeg_down <- downsample_eeg(eeg, target_rate = 256,
-                             preserve_bands = c(0.5, 50))
+  eeg_down <- downsample(eeg, target_rate = 256,
+                         preserve_bands = c(0.5, 50))
 
   # RIFT study (preserve 60-100 Hz)
-  eeg_down <- downsample_eeg(eeg, target_rate = 512,
-                             preserve_bands = c(60, 100),
-                             filter_order = 10)
+  eeg_down <- downsample(eeg, target_rate = 512,
+                         preserve_bands = c(60, 100),
+                         filter_order = 10)
   
   # Conservative downsampling
-  eeg_down <- downsample_eeg(eeg, target_rate = 256,
-                             cutoff_ratio = 0.8,
-                             event_strategy = "floor")
+  eeg_down <- downsample(eeg, target_rate = 256,
+                         cutoff_ratio = 0.8,
+                         event_strategy = "floor")
   
   # Batch processing (silent)
-  eeg_down <- downsample_eeg(eeg, target_rate = 256, verbose = FALSE)
+  eeg_down <- downsample(eeg, target_rate = 256, verbose = FALSE)
 }
 
 }
 \seealso{
-\code{\link{new_eeg}} for EEG object structure
+\code{\link{new_eeg}} for EEG object structure,
+\code{\link{eeg_bandpass}} for the filter code that is used
 }

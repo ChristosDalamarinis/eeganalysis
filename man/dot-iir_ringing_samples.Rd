@@ -17,9 +17,9 @@ Integer-valued number of samples.
 \description{
 Sends one spike through the filter and looks at the response in blocks of
 1000 samples. The ringing ends at the last sample of the last block that
-still holds a value larger than 0.1 \\% of the largest value seen so far. The
+still holds a value larger than 0.1\% of the largest value seen so far. The
 result is used as the length of the padding for zero-phase filtering. A slow
-high-pass whose response after the first sample stays below 0.1 \\% of its
+high-pass whose response after the first sample stays below 0.1\% of its
 peak gets 0 (no padding).
 }
 \keyword{internal}

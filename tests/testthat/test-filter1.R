@@ -1379,6 +1379,345 @@ test_that("eeg_notch phase = 'minimum' is causal and logs the phase", {
   expect_gt(max(abs(zero$data[1, 1:5999])), 1e-3)   # the zero-phase notch rings before the spike
 })
 
+# ─── eeg_notch(method = "iir") — method, phase, pad and iir_params ───────────
+
+test_that("eeg_notch rejects a method that is not 'fir' or 'iir'", {
+  expect_error(eeg_notch(eeg1ch, freqs = 50, method = "IIR", verbose = FALSE),
+               "should be one of")
+  expect_error(eeg_notch(eeg1ch, freqs = 50, method = "butter", verbose = FALSE),
+               "should be one of")
+})
+
+test_that("eeg_notch rejects phase words that are not implemented (IIR)", {
+  for (bad in c("Zero", "banana", "minimum", "zero-double")) {
+    expect_error(eeg_notch(eeg1ch, freqs = 50, method = "iir", phase = bad,
+                           verbose = FALSE),
+                 "'phase' must be one of \"zero\", \"forward\" for an IIR filter",
+                 info = paste0("phase = \"", bad, "\""))
+  }
+  # "forward" is a real word for the IIR filter
+  expect_no_error(eeg_notch(eeg1ch, freqs = 50, method = "iir",
+                            phase = "forward", verbose = FALSE))
+})
+
+test_that("eeg_notch rejects a padding that is not implemented, for IIR too", {
+  expect_error(eeg_notch(eeg1ch, freqs = 50, method = "iir", pad = "reflect",
+                         verbose = FALSE),
+               "'pad' must be \"reflect_limited\"")
+})
+
+test_that("eeg_notch checks iir_params when method is 'iir'", {
+  expect_error(eeg_notch(eeg1ch, freqs = 50, method = "iir",
+                         iir_params = list(order = 0), verbose = FALSE),
+               "whole number")
+  expect_error(eeg_notch(eeg1ch, freqs = 50, method = "iir",
+                         iir_params = list(ftype = "cheby1"), verbose = FALSE),
+               "must be \"butter\"")
+  expect_error(eeg_notch(eeg1ch, freqs = 50, method = "iir",
+                         iir_params = list(ordr = 4), verbose = FALSE),
+               "Unknown element")
+})
+
+test_that("eeg_notch warns about arguments the chosen method does not use", {
+  expect_warning(eeg_notch(eeg1ch, freqs = 50, method = "iir",
+                           fir_window = "hann", filter_length = 3000,
+                           verbose = FALSE),
+                 "Not used with method = \"iir\": filter_length, fir_window\\.")
+  expect_warning(eeg_notch(eeg1ch, freqs = 50, iir_params = list(order = 3),
+                           verbose = FALSE),
+                 "'iir_params' is not used with method = \"fir\"")
+  # trans_bandwidth and notch_widths ARE used by the IIR filter (they place
+  # the cutoffs), and left at their defaults there is nothing to warn about
+  expect_no_warning(eeg_notch(eeg1ch, freqs = 50, method = "iir",
+                              trans_bandwidth = 2, notch_widths = 1,
+                              verbose = FALSE))
+  expect_no_warning(eeg_notch(eeg1ch, freqs = 50, method = "iir",
+                              verbose = FALSE))
+  expect_no_warning(eeg_notch(eeg1ch, freqs = 50, verbose = FALSE))
+})
+
+test_that("eeg_notch with method = 'fir' written out gives exactly the default result", {
+  a <- eeg_notch(eeg1ch, freqs = 50, verbose = FALSE)
+  b <- eeg_notch(eeg1ch, freqs = 50, method = "fir", verbose = FALSE)
+  expect_identical(a$data, b$data)
+})
+
+test_that("an IIR notch needs a cutoff inside (0, Nyquist) and a non-negative width", {
+  # 256 Hz: a notch at 0.4 Hz would start below 0 Hz, one at 127.2 Hz would end above 128 Hz
+  expect_error(eeg_notch(eeg1ch, freqs = 0.4, method = "iir", verbose = FALSE),
+               "Notch lower edge")
+  expect_error(eeg_notch(eeg1ch, freqs = 127.2, method = "iir", verbose = FALSE),
+               "Notch upper edge")
+  expect_error(eeg_notch(eeg1ch, freqs = 50, notch_widths = -1,
+                         method = "iir", verbose = FALSE),
+               "non-negative")
+  expect_error(eeg_notch(eeg1ch, freqs = c(20, 50), notch_widths = c(1, NA),
+                         method = "iir", verbose = FALSE),
+               "non-negative")
+})
+
+# ─── eeg_notch(method = "iir") — return structure ────────────────────────────
+
+test_that("IIR notch returns an eeg object with the same dimensions", {
+  out <- eeg_notch(eeg1ch, freqs = 50, method = "iir", verbose = FALSE)
+  expect_s3_class(out, "eeg")
+  expect_equal(dim(out$data), dim(eeg1ch$data))
+  expect_true(all(is.finite(out$data)))
+  expect_false(isTRUE(all.equal(out$data, eeg1ch$data)))
+})
+
+test_that("IIR notch appends one history entry that names the settings", {
+  # the padding lengths (581 and 503 samples) are the ones the reference
+  # implementation uses for the same two filters at 256 Hz
+  out <- eeg_notch(eeg1ch, freqs = 50, method = "iir", verbose = FALSE)
+  expect_length(out$preprocessing_history, 1L)
+  entry <- out$preprocessing_history[[1]]
+  expect_match(entry, "^IIR notch: 50 Hz \\(\u00B10\\.625 Hz\\)")
+  expect_match(entry, "Butterworth order: 4")
+  expect_match(entry, "phase: zero")
+  expect_match(entry, "pad: reflect_limited, 581 samples at each end")
+  expect_match(entry, "channels: 1/1")
+
+  two <- eeg_notch(eeg1ch, freqs = c(50, 100), method = "iir", verbose = FALSE)
+  entry <- two$preprocessing_history[[1]]
+  expect_match(entry, "^IIR notch: 50 Hz \\(\u00B10\\.625 Hz\\), 100 Hz \\(\u00B10\\.75 Hz\\)")
+  expect_match(entry, "pad: reflect_limited, 581 / 503 samples at each end")
+
+  fwd <- eeg_notch(eeg1ch, freqs = 50, method = "iir", phase = "forward",
+                   iir_params = list(order = 2), verbose = FALSE)
+  entry <- fwd$preprocessing_history[[1]]
+  expect_match(entry, "Butterworth order: 2")
+  expect_match(entry, "phase: forward")
+  expect_match(entry, "pad: none")
+})
+
+test_that("IIR notch preserves channels, rate, bads, montage, annotations and types", {
+  eeg_state <- eeg1ch
+  eeg_state$bads        <- "CH1"
+  eeg_state$montage     <- create_montage()
+  eeg_state$annotations <- annots_2rows
+
+  out <- eeg_notch(eeg_state, freqs = 50, method = "iir", verbose = FALSE)
+  expect_equal(out$channels,      eeg_state$channels)
+  expect_equal(out$sampling_rate, eeg_state$sampling_rate)
+  expect_equal(out$bads,          eeg_state$bads)
+  expect_equal(out$montage,       eeg_state$montage)
+  expect_equal(out$annotations,   annots_2rows)
+
+  out_v <- eeg_notch(eeg_veog, freqs = 50, method = "iir", verbose = FALSE)
+  expect_equal(out_v$channel_types, eeg_veog$channel_types)
+  expect_equal(out_v$channel_types[out_v$channels == "VEOG"], "eog")
+})
+
+test_that("IIR notch channel selection leaves the other channels unchanged", {
+  set.seed(3)
+  eeg3 <- new_eeg(
+    data          = matrix(rnorm(1024 * 3, sd = 10), nrow = 3),
+    channels      = c("Fp1", "Fp2", "Fz"),
+    sampling_rate = 256L
+  )
+  by_name <- eeg_notch(eeg3, freqs = 50, method = "iir", channels = "Fp2",
+                       verbose = FALSE)
+  expect_equal(by_name$data[1, ], eeg3$data[1, ])
+  expect_equal(by_name$data[3, ], eeg3$data[3, ])
+  expect_false(isTRUE(all.equal(by_name$data[2, ], eeg3$data[2, ])))
+
+  by_index <- eeg_notch(eeg3, freqs = 50, method = "iir", channels = 1L,
+                        verbose = FALSE)
+  expect_equal(by_index$data[2, ], eeg3$data[2, ])
+  expect_equal(by_index$data[3, ], eeg3$data[3, ])
+})
+
+test_that("IIR notch filters every channel on its own", {
+  set.seed(7)
+  eeg3 <- new_eeg(
+    data          = matrix(rnorm(1024 * 3, sd = 10), nrow = 3),
+    channels      = c("Fp1", "Fp2", "Fz"),
+    sampling_rate = 256L
+  )
+  all3 <- eeg_notch(eeg3, freqs = c(50, 100), method = "iir", verbose = FALSE)
+  for (i in 1:3) {
+    one <- new_eeg(data = eeg3$data[i, , drop = FALSE], channels = "X",
+                   sampling_rate = 256L)
+    alone <- eeg_notch(one, freqs = c(50, 100), method = "iir",
+                       verbose = FALSE)$data[1, ]
+    expect_equal(all3$data[i, ], alone)
+  }
+})
+
+test_that("IIR notch prints a header when verbose", {
+  expect_output(eeg_notch(eeg1ch, freqs = 50, method = "iir", verbose = TRUE),
+                "EEG IIR Notch Filtering")
+})
+
+# ─── eeg_notch(method = "iir") — MNE numerical accuracy ──────────────────────
+#
+# The reference numbers below were made with MNE's own IIR notch (Butterworth
+# band-stop, second-order sections) on the signal built by iir_test_signal().
+# MNE accepts only ONE frequency per IIR call, so the cases with several
+# frequencies are MNE called once per frequency, from the lowest to the
+# highest, each call on the output of the one before. Each case lists sample
+# values at positions `idx` and the sum of squares of the whole output.
+
+notch_vs_mne <- function(fs, n, freqs, phase, idx, ref, ss, ...) {
+  eeg <- new_eeg(data          = matrix(iir_test_signal(n, fs), nrow = 1L),
+                 channels      = "CH1",
+                 sampling_rate = fs)
+  y <- eeg_notch(eeg, freqs = freqs, method = "iir", phase = phase,
+                 verbose = FALSE, ...)$data[1, ]
+  expect_lt(max(abs(y[idx] - ref)), 1e-8)
+  expect_equal(sum(y^2), ss, tolerance = 1e-8)
+}
+
+test_that("eeg_notch IIR (50 Hz, order 4, zero phase, 512 Hz) matches MNE", {
+  notch_vs_mne(512L, 3000L, 50, "zero",
+    idx = c(1, 2, 40, 500, 1500, 2500, 2999, 3000),
+    ref = c(16.7143625503, 17.3009439634, 3.91713299192, 12.1394169251,
+            20.241864259, 8.30322865085, 7.50754261674, 6.64156177247),
+    ss  = 1503600.48315)
+})
+
+test_that("eeg_notch IIR (50 Hz, order 4, forward, 512 Hz) matches MNE", {
+  notch_vs_mne(512L, 3000L, 50, "forward",
+    idx = c(1, 2, 40, 500, 1500, 2500, 2999, 3000),
+    ref = c(16.4625830444, 17.9663716983, 2.94626070716, 11.5212002705,
+            20.2215756209, 8.29489995604, 6.85429532421, 5.81470737871),
+    ss  = 1503498.52531)
+})
+
+test_that("eeg_notch IIR (50 Hz, order 4, zero phase, 2048 Hz) matches MNE", {
+  # the native BioSemi rate, where a narrow band-stop is the hard case for
+  # one long recipe
+  notch_vs_mne(2048L, 6000L, 50, "zero",
+    idx = c(1, 2, 40, 500, 3000, 5500, 5999, 6000),
+    ref = c(17.0593497114, 17.3161082405, 26.8365853529, 25.6058075063,
+            17.4420961489, 36.171323811, 61.826559528, 61.7700361765),
+    ss  = 5991676.3015)
+})
+
+test_that("eeg_notch IIR (50 Hz, order 4, forward, 2048 Hz) matches MNE", {
+  notch_vs_mne(2048L, 6000L, 50, "forward",
+    idx = c(1, 2, 40, 500, 3000, 5500, 5999, 6000),
+    ref = c(16.7119186552, 17.2390818665, 25.5864884718, 23.6946895632,
+            17.5265610001, 36.4817799423, 65.1672572018, 65.1440885005),
+    ss  = 5987899.68175)
+})
+
+test_that("eeg_notch IIR (60 Hz, width 2, trans_bandwidth 0.5, order 3, 256 Hz) matches MNE", {
+  # an odd order: one of the sections is a first-order piece
+  notch_vs_mne(256L, 3000L, 60, "zero",
+    idx = c(1, 2, 40, 500, 1500, 2500, 2999, 3000),
+    ref = c(16.7932641941, 18.8434160857, 5.13239272534, -13.3893755656,
+            -10.312863791, 23.6313577815, 22.689577104, 25.8324294936),
+    ss  = 1827545.89635,
+    notch_widths = 2, trans_bandwidth = 0.5, iir_params = list(order = 3))
+})
+
+test_that("eeg_notch IIR (50 and 100 Hz, zero phase, 512 Hz) matches MNE called once per frequency", {
+  notch_vs_mne(512L, 3000L, c(50, 100), "zero",
+    idx = c(1, 2, 40, 500, 1500, 2500, 2999, 3000),
+    ref = c(16.7143722582, 17.2883420437, 3.92594365701, 12.1397964271,
+            20.2418896255, 8.30299601013, 7.50464384977, 6.6407575427),
+    ss  = 1503600.11771)
+})
+
+test_that("eeg_notch IIR (50 and 100 Hz, forward, 512 Hz) matches MNE called once per frequency", {
+  notch_vs_mne(512L, 3000L, c(50, 100), "forward",
+    idx = c(1, 2, 40, 500, 1500, 2500, 2999, 3000),
+    ref = c(16.0713599667, 17.2789661396, 3.27627342168, 11.5095147793,
+            20.2234036595, 8.27853103926, 6.89347251272, 5.85165487299),
+    ss  = 1503496.26592)
+})
+
+test_that("eeg_notch IIR (20 and 50 Hz with their own widths, 512 Hz) matches MNE", {
+  notch_vs_mne(512L, 3000L, c(20, 50), "zero",
+    idx = c(1, 2, 40, 500, 1500, 2500, 2999, 3000),
+    ref = c(16.714338946, 17.3669902761, 3.69897779541, 12.0413968918,
+            20.2348143174, 8.36856863286, 7.50873077144, 6.60594278812),
+    ss  = 1503393.35878,
+    notch_widths = c(0.5, 1))
+})
+
+test_that("eeg_notch IIR matches MNE for a signal shorter than the padding", {
+  # 300 samples, padding length 581: the padding is cut down to 299
+  notch_vs_mne(256L, 300L, 50, "zero",
+    idx = c(1, 2, 40, 150, 250, 299, 300),
+    ref = c(16.8329104801, 16.6004600404, 8.26894195782, 12.0659886803,
+            9.89601674037, 0.253007030494, -2.17020060288),
+    ss  = 114900.338531)
+})
+
+# ─── eeg_notch(method = "iir") — behaviour ───────────────────────────────────
+
+test_that("several IIR notches equal one call per frequency, in any order", {
+  eeg <- new_eeg(data          = matrix(iir_test_signal(3000L, 512), nrow = 1L),
+                 channels      = "CH1",
+                 sampling_rate = 512L)
+  both <- eeg_notch(eeg, freqs = c(50, 100), method = "iir", verbose = FALSE)
+  once <- eeg_notch(eeg_notch(eeg, freqs = 50, method = "iir", verbose = FALSE),
+                    freqs = 100, method = "iir", verbose = FALSE)
+  expect_equal(both$data, once$data, tolerance = 1e-12)
+
+  # typed in the other order: same result
+  rev_order <- eeg_notch(eeg, freqs = c(100, 50), method = "iir", verbose = FALSE)
+  expect_identical(rev_order$data, both$data)
+
+  # each width stays with its own frequency
+  sorted   <- eeg_notch(eeg, freqs = c(20, 50, 100), notch_widths = c(0.5, 1, 2),
+                        method = "iir", verbose = FALSE)
+  shuffled <- eeg_notch(eeg, freqs = c(100, 20, 50), notch_widths = c(2, 0.5, 1),
+                        method = "iir", verbose = FALSE)
+  expect_identical(shuffled$data, sorted$data)
+})
+
+test_that("phase = 'forward' notch is causal: nothing before a spike; 'zero' is not", {
+  spike <- new_eeg(data          = matrix(c(rep(0, 999), 1, rep(0, 1000)), nrow = 1L),
+                   channels      = "CH1",
+                   sampling_rate = 256L)
+  fwd  <- eeg_notch(spike, freqs = 50, method = "iir", phase = "forward",
+                    verbose = FALSE)$data[1, ]
+  zero <- eeg_notch(spike, freqs = 50, method = "iir", phase = "zero",
+                    verbose = FALSE)$data[1, ]
+  expect_true(all(fwd[1:999] == 0))            # exactly nothing before the spike
+  expect_gt(max(abs(fwd[1001:2000])), 1e-3)    # but it does ring afterwards
+  expect_gt(max(abs(zero[1:999])), 1e-3)       # forward-backward rings before it
+})
+
+test_that("a flat line stays flat through a zero-phase IIR notch (no switch-on jolt)", {
+  flat <- new_eeg(data          = matrix(100, nrow = 1L, ncol = 3000L),
+                  channels      = "CH1",
+                  sampling_rate = 256L)
+  out  <- eeg_notch(flat, freqs = 50, method = "iir", verbose = FALSE)$data
+  expect_lt(max(abs(out - 100)), 1e-8)         # the notch passes 0 Hz untouched
+})
+
+test_that("the IIR notch removes its frequency and is 6 dB down (3 dB if forward) at the cutoffs", {
+  amplitude <- function(f, phase = "zero", ...) {
+    tt <- (0:11999) / 512
+    s  <- new_eeg(data          = matrix(sin(2 * pi * f * tt), nrow = 1L),
+                  channels      = "CH1",
+                  sampling_rate = 512L)
+    y  <- eeg_notch(s, method = "iir", phase = phase, verbose = FALSE,
+                    ...)$data[1, 4001:8000]
+    sqrt(2) * sd(y)
+  }
+  # default: cutoffs 50 - 0.125 - 0.5 = 49.375 and 50.625 Hz
+  expect_equal(amplitude(10, freqs = 50),     1,   tolerance = 0.01)   # passed
+  expect_lt(amplitude(50, freqs = 50), 1e-4)                           # removed
+  expect_equal(amplitude(49.375, freqs = 50), 0.5, tolerance = 0.01)   # 6 dB down
+  expect_equal(amplitude(50.625, freqs = 50), 0.5, tolerance = 0.01)
+  expect_equal(amplitude(49.375, "forward", freqs = 50), 1 / sqrt(2),
+               tolerance = 0.01)                                       # 3 dB down
+  # other width and transition width: cutoffs 50 -/+ (1 + 0.5) Hz
+  expect_equal(amplitude(48.5, freqs = 50, notch_widths = 2, trans_bandwidth = 1),
+               0.5, tolerance = 0.01)
+  expect_equal(amplitude(51.5, freqs = 50, notch_widths = 2, trans_bandwidth = 1),
+               0.5, tolerance = 0.01)
+  # the transition width alone moves the cutoffs outwards by half of it
+  expect_equal(amplitude(48.5, freqs = 50, notch_widths = 0, trans_bandwidth = 3),
+               0.5, tolerance = 0.01)
+})
+
 # ─── filter chaining ─────────────────────────────────────────────────────────
 
 test_that("bandpass then notch accumulates two history entries", {

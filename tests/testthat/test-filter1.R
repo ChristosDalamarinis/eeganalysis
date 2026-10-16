@@ -281,6 +281,28 @@ test_that(".firwin_kernel BP5 (hann window) matches MNE reference kernel", {
   expect_lt(max(abs(h_r - h_mne)), 1e-14)
 })
 
+test_that(".firwin_kernel stops with a clear message when N is too short for a transition", {
+  # at 256 Hz a transition from 0 to 1 Hz (1/128 of the Nyquist frequency) needs
+  # a kernel of 845 samples
+  freq <- c(0, 1 / 128, 40 / 128, 50 / 128, 1)
+  gain <- c(0, 1, 1, 0, 0)
+  expect_error(.firwin_kernel(401L, freq, gain),
+               paste0("The filter length of 401 samples is too short for the ",
+                      "transition band, which needs at least 845 samples"))
+  expect_error(.firwin_kernel(401L, freq, gain, sfreq = 256),
+               "too short for the 1\\.00 Hz transition band, which needs at least 845 samples")
+  expect_error(.firwin_kernel(843L, freq, gain, sfreq = 256),
+               "needs at least 845 samples")
+  expect_error(.firwin_kernel(401L, freq, gain, sfreq = 256),
+               "longer 'filter_length' or a wider transition band")
+  # exactly enough, and more than enough, both work
+  expect_length(.firwin_kernel(845L,  freq, gain, sfreq = 256), 845L)
+  expect_length(.firwin_kernel(2001L, freq, gain, sfreq = 256), 2001L)
+  # a wider transition needs fewer samples: 401 are plenty for a 3 Hz one
+  expect_length(.firwin_kernel(401L, c(0, 3 / 128, 40 / 128, 50 / 128, 1), gain,
+                               sfreq = 256), 401L)
+})
+
 # ─── .minimum_phase() ────────────────────────────────────────────────────────
 
 # The low-pass kernel that eeg_bandpass(h_freq = 40) builds at 256 Hz (85 taps)
@@ -1134,6 +1156,66 @@ test_that("a slow high-order high-pass at 2048 Hz stays finite and removes the d
   expect_lt(max(abs(out)), 100)
 })
 
+# ─── a NaN in a channel: the IIR filters carry it on, they do not stop ───────
+
+test_that("a NaN in a channel does not stop the IIR filters: it spreads the way it does with FIR", {
+  x           <- iir_test_signal(3000L, 256)
+  x_nan       <- x
+  x_nan[1500] <- NaN
+  one <- function(v) new_eeg(data = matrix(v, nrow = 1L), channels = "CH1",
+                             sampling_rate = 256L)
+
+  # zero phase (forward, then backward): the whole channel is lost
+  z <- eeg_bandpass(one(x_nan), l_freq = 1, h_freq = 40, method = "iir",
+                    verbose = FALSE)$data[1, ]
+  expect_length(z, 3000L)
+  expect_true(all(is.na(z)))
+
+  # causal: what comes before the NaN is exactly what the clean recording gives;
+  # from the NaN on, everything is lost
+  f  <- eeg_bandpass(one(x_nan), l_freq = 1, h_freq = 40, method = "iir",
+                     phase = "forward", verbose = FALSE)$data[1, ]
+  f0 <- eeg_bandpass(one(x), l_freq = 1, h_freq = 40, method = "iir",
+                     phase = "forward", verbose = FALSE)$data[1, ]
+  expect_length(f, 3000L)
+  expect_identical(f[1:1499], f0[1:1499])
+  expect_true(all(is.na(f[1500:3000])))
+
+  # the same for the IIR notch (two frequencies, one after the other)
+  zn <- eeg_notch(one(x_nan), freqs = c(50, 100), method = "iir",
+                  verbose = FALSE)$data[1, ]
+  expect_length(zn, 3000L)
+  expect_true(all(is.na(zn)))
+  fn  <- eeg_notch(one(x_nan), freqs = c(50, 100), method = "iir",
+                   phase = "forward", verbose = FALSE)$data[1, ]
+  fn0 <- eeg_notch(one(x), freqs = c(50, 100), method = "iir",
+                   phase = "forward", verbose = FALSE)$data[1, ]
+  expect_identical(fn[1:1499], fn0[1:1499])
+  expect_true(all(is.na(fn[1500:3000])))
+
+  # a NaN in the very first sample
+  x_first    <- x
+  x_first[1] <- NaN
+  expect_true(all(is.na(eeg_bandpass(one(x_first), l_freq = 1, h_freq = 40,
+                                     method = "iir", verbose = FALSE)$data[1, ])))
+})
+
+test_that("a NaN in one channel leaves the other channels of an IIR filter alone", {
+  x     <- iir_test_signal(3000L, 256)
+  x_nan <- x
+  x_nan[1500] <- NaN
+  eeg3 <- new_eeg(data = rbind(x, x_nan, x), channels = c("A", "B", "C"),
+                  sampling_rate = 256L)
+  for (out in list(
+    eeg_bandpass(eeg3, l_freq = 1, h_freq = 40, method = "iir", verbose = FALSE)$data,
+    eeg_notch(eeg3, freqs = 50, method = "iir", verbose = FALSE)$data
+  )) {
+    expect_false(anyNA(out[1, ]))
+    expect_true(all(is.na(out[2, ])))
+    expect_identical(out[1, ], out[3, ])
+  }
+})
+
 # ─── eeg_bandpass(phase = "minimum") — the causal FIR filter ─────────────────
 
 test_that("FIR phase = 'minimum' returns an eeg object and logs the phase", {
@@ -1249,6 +1331,69 @@ test_that("eeg_notch rejects a phase word that is not implemented", {
 test_that("eeg_notch rejects a padding that is not implemented", {
   expect_error(eeg_notch(eeg1ch, pad = "reflect", verbose = FALSE),
                "'pad' must be \"reflect_limited\"")
+})
+
+# ─── a filter_length that is too short, and notch_widths that make no sense ──
+
+test_that("a filter_length that is too short for the transition band gives a clear message", {
+  # the number of samples needed is the one the reference implementation reports
+  expect_error(eeg_bandpass(eeg1ch, l_freq = 1, h_freq = 40, filter_length = 401,
+                            verbose = FALSE),
+               "too short for the 1\\.00 Hz transition band, which needs at least 845 samples")
+  expect_error(eeg_bandpass(eeg1ch, l_freq = 1, filter_length = 301, verbose = FALSE),
+               "needs at least 845 samples")
+  expect_error(eeg_notch(eeg1ch, freqs = 50, filter_length = 401, verbose = FALSE),
+               "too short for the 0\\.50 Hz transition band, which needs at least 1691 samples")
+  # the length is made odd first, so 844 is 845: exactly enough
+  expect_no_error(eeg_bandpass(eeg1ch, l_freq = 1, h_freq = 40, filter_length = 844,
+                               verbose = FALSE))
+  # a 40 Hz low-pass needs only 85 samples
+  expect_no_error(eeg_bandpass(eeg1ch, h_freq = 40, filter_length = 101,
+                               verbose = FALSE))
+  # an explicit length that is exactly the automatic one gives the automatic result
+  auto  <- eeg_bandpass(eeg1ch, l_freq = 1, h_freq = 40, verbose = FALSE)
+  exact <- eeg_bandpass(eeg1ch, l_freq = 1, h_freq = 40, filter_length = 845,
+                        verbose = FALSE)
+  expect_identical(auto$data, exact$data)
+})
+
+test_that("eeg_notch checks notch_widths for FIR and IIR: not negative, one number or one per frequency", {
+  for (m in c("fir", "iir")) {
+    expect_error(eeg_notch(eeg1ch, freqs = 50, notch_widths = -1, method = m,
+                           verbose = FALSE), "non-negative", info = m)
+    expect_error(eeg_notch(eeg1ch, freqs = c(20, 50), notch_widths = c(1, NA),
+                           method = m, verbose = FALSE), "non-negative", info = m)
+    expect_error(eeg_notch(eeg1ch, freqs = 50, notch_widths = "wide", method = m,
+                           verbose = FALSE), "non-negative", info = m)
+    expect_error(eeg_notch(eeg1ch, freqs = 50, notch_widths = c(1, 2), method = m,
+                           verbose = FALSE), "one number per frequency", info = m)
+    expect_error(eeg_notch(eeg1ch, freqs = c(20, 50), notch_widths = c(1, 2, 3),
+                           method = m, verbose = FALSE), "one number per frequency",
+                 info = m)
+    expect_error(eeg_notch(eeg1ch, freqs = 50, notch_widths = numeric(0), method = m,
+                           verbose = FALSE), "one number per frequency", info = m)
+  }
+  # these are fine: NULL, one number for all frequencies, one per frequency, zero
+  expect_no_error(eeg_notch(eeg1ch, freqs = c(20, 50), notch_widths = NULL, verbose = FALSE))
+  expect_no_error(eeg_notch(eeg1ch, freqs = c(20, 50), notch_widths = c(0.5, 1), verbose = FALSE))
+  expect_no_error(eeg_notch(eeg1ch, freqs = 50, notch_widths = 0, verbose = FALSE))
+  expect_no_error(eeg_notch(eeg1ch, freqs = 50, notch_widths = 0, method = "iir",
+                            verbose = FALSE))
+  # one number for all frequencies is the same as that number written out for each
+  for (m in c("fir", "iir")) {
+    one_for_all <- eeg_notch(eeg1ch, freqs = c(20, 50), notch_widths = 1,
+                             method = m, verbose = FALSE)
+    written_out <- eeg_notch(eeg1ch, freqs = c(20, 50), notch_widths = c(1, 1),
+                             method = m, verbose = FALSE)
+    expect_identical(one_for_all$data, written_out$data, info = m)
+    expect_identical(one_for_all$preprocessing_history,
+                     written_out$preprocessing_history, info = m)
+  }
+})
+
+test_that("a bad notch_widths is refused before anything is printed", {
+  expect_silent(try(eeg_notch(eeg1ch, freqs = 50, notch_widths = -1, verbose = TRUE),
+                    silent = TRUE))
 })
 
 # ─── eeg_notch() — return structure ──────────────────────────────────────────

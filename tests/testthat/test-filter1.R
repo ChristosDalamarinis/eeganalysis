@@ -530,6 +530,7 @@ trim_zeros <- function(v) {
 }
 
 test_that(".design_iir_sos multiplies back to the filter signal::butter() designs", {
+  skip_if_not_installed("signal")
   # gentle settings, where the long recipe is still accurate
   cases <- list(
     list(l = 1,    h = 40,   order = 4, type = "pass", W = c(1, 40) / 128),
@@ -549,6 +550,7 @@ test_that(".design_iir_sos multiplies back to the filter signal::butter() design
 })
 
 test_that(".butter_zpk band-stop multiplies back to the filter signal::butter() designs", {
+  skip_if_not_installed("signal")
   W   <- c(48, 52) / 128
   zpk <- .butter_zpk(4L, W, "stop")
   ba  <- sos_to_ba(.zpk_to_sos(zpk$z, zpk$p, zpk$k))

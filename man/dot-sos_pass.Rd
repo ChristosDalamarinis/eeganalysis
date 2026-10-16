@@ -17,7 +17,9 @@ starts as if the signal had been flat, equal to its first sample, for ever
 before; this removes the switch-on jolt of the forward-backward method.}
 }
 \value{
-Numeric vector, same length as \code{x}.
+Numeric vector, same length as \code{x}. A missing value (NA or NaN)
+in \code{x} makes every value from there on missing, because the filter
+feeds its own output back.
 }
 \description{
 Each section looks at the last two inputs and the last two outputs:

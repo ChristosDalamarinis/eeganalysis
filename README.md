@@ -51,7 +51,6 @@ Version 0.0.0.9000 — under active development. Currently reads BioSemi `.bdf` 
 
 ## Dependencies
 
-- **signal** — filtering and downsampling
 - **dbscan** — Local Outlier Factor bad-channel detection
 - **akima** — spherical-spline interpolation for bad-channel repair and topography maps
 - **fastICA** — ICA decomposition for artifact removal

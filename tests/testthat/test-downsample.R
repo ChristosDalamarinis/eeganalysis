@@ -11,7 +11,6 @@
 # Dependencies:
 #   - testthat
 #   - eeganalysis
-#   - signal (for the "decimate" method)
 #
 # Author: Christos Dalamarinis
 # Date: February 2026
@@ -722,11 +721,8 @@ test_that("downsample() with method = 'simple' selects correct data samples", {
 
 test_that("downsample() with method = 'decimate' returns an eeg object", {
   # WHAT THIS TESTS:
-  # The 'decimate' method invokes the signal package's Butterworth filter and
-  # filtfilt.  If all dependencies are available, the function must complete
-  # successfully and return a proper eeg object.
-  
-  skip_if_not_installed("signal")
+  # The 'decimate' method runs the anti-aliasing Butterworth filter.  The
+  # function must complete successfully and return a proper eeg object.
   
   eeg    <- make_eeg(sampling_rate = 512, n_timepoints = 1024)
   result <- downsample(eeg, target_rate = 256, method = "decimate", verbose = FALSE)
@@ -739,8 +735,6 @@ test_that("downsample() with method = 'decimate' returns correct sampling rate",
   # After anti-aliasing filtering and decimation, the sampling_rate field of
   # the returned object must reflect the new rate (256 Hz).
   
-  skip_if_not_installed("signal")
-  
   eeg    <- make_eeg(sampling_rate = 512, n_timepoints = 1024)
   result <- downsample(eeg, target_rate = 256, method = "decimate", verbose = FALSE)
   
@@ -751,8 +745,6 @@ test_that("downsample() with method = 'decimate' returns correct number of sampl
   # WHAT THIS TESTS:
   # After filtering, the decimation step still selects every nth sample.
   # The number of output samples must match seq(1, n, by=factor).
-  
-  skip_if_not_installed("signal")
   
   eeg    <- make_eeg(sampling_rate = 512, n_timepoints = 1024)
   result <- downsample(eeg, target_rate = 256, method = "decimate", verbose = FALSE)
@@ -767,8 +759,6 @@ test_that("downsample() 'decimate' preserves low-frequency signals better than '
   # below the cutoff.  We create a pure sine wave at 5 Hz (well below the
   # 115 Hz cutoff when going 512->256 Hz) and verify the RMS energy is nearly
   # identical between filtered and unfiltered methods for low-frequency content.
-  
-  skip_if_not_installed("signal")
   
   sr  <- 512
   n   <- 2048
@@ -1035,9 +1025,7 @@ test_that("downsample() produces identical results on repeated calls with same s
   # WHAT THIS TESTS:
   # The function is deterministic given the same input data.  Calling it twice
   # on the same eeg object must produce bit-for-bit identical output.
-  # (The signal package's filtfilt is deterministic for fixed inputs.)
-  
-  skip_if_not_installed("signal")
+  # (The anti-aliasing filter is deterministic for fixed inputs.)
   
   eeg <- make_eeg(sampling_rate = 512, n_timepoints = 1024)
   
@@ -1118,4 +1106,160 @@ test_that("downsample() works correctly with multiple events at different onsets
   # All retained events must have valid indices
   expect_true(all(result$events$onset >= 1))
   expect_true(all(result$events$onset <= ncol(result$data)))
+})
+
+
+# ============================================================================
+# TEST SUITE 21: Method = "decimate" - the ends of the recording, and MNE
+# ============================================================================
+#
+# The anti-aliasing filter is the zero-phase IIR filter of eeg_bandpass(): the
+# recording is padded at both ends, and the filter starts as if the signal had
+# been flat for ever before the first sample. So the very first and very last
+# samples come out right, also with a large offset, as raw BioSemi data often
+# have. (The filter used before started from zero: on a flat line at 30000 uV
+# the first output sample was off by 11600 uV, and the first and last 30 ms or
+# so were off by more than 1 uV.)
+
+# A deterministic test signal: sines of 0.3, 3, 10 and 50 Hz plus a slow drift
+# (the same one that test-filter1.R uses for its MNE numbers).
+ds_test_signal <- function(n, sfreq) {
+  i <- seq_len(n) - 1
+  t <- i / sfreq
+  20 * sin(2 * pi * 0.3 * t + 0.5) + 10 * sin(2 * pi * 10 * t) +
+    5 * sin(2 * pi * 50 * t + 1) + 3 * cos(2 * pi * 3 * t) + 0.01 * i
+}
+
+test_that("downsample() 'decimate' keeps a flat line at a large offset flat, ends included", {
+  # WHAT THIS TESTS:
+  # A flat line has nothing to filter: every output sample, the first and the
+  # last included, must equal the offset.
+
+  flat <- new_eeg(data          = matrix(30000, nrow = 2, ncol = 8192),
+                  channels      = c("A", "B"),
+                  sampling_rate = 2048)
+  out <- downsample(flat, target_rate = 512, verbose = FALSE)$data
+
+  expect_equal(dim(out), c(2L, 2048L))
+  expect_lt(max(abs(out - 30000)), 1e-6)
+})
+
+test_that("downsample() 'decimate' gets a slow sine on a large offset right at every sample", {
+  # WHAT THIS TESTS:
+  # A 2 Hz sine is far below the cutoff, so the output must be the input at
+  # every 4th sample - including the first and the last ones, where a filter
+  # that starts from zero would be thousands of microvolts off.
+
+  tt  <- (0:8191) / 2048
+  x   <- 30000 + 50 * sin(2 * pi * 2 * tt)
+  eeg <- new_eeg(data          = rbind(x, x + 1000),
+                 channels      = c("A", "B"),
+                 sampling_rate = 2048)
+
+  out   <- downsample(eeg, target_rate = 512, verbose = FALSE)$data
+  truth <- x[seq(1, 8192, by = 4)]
+
+  expect_lt(max(abs(out[1, ] - truth)), 1e-3)
+  expect_lt(max(abs(out[2, ] - (truth + 1000))), 1e-3)
+})
+
+test_that("downsample() 'decimate' keeps a sine below the cutoff and removes one above the new Nyquist", {
+  # WHAT THIS TESTS:
+  # 2048 -> 512 Hz: the new Nyquist frequency is 256 Hz, the cutoff 230.4 Hz.
+  # A 100 Hz sine is far inside the pass-band and must stay. An 800 Hz sine is
+  # far above the new Nyquist: without a filter it folds down to 224 Hz
+  # ('simple'), with the filter it must be gone. Only the middle of the
+  # recording is compared: right at the ends, the padding is a guess of what
+  # lies outside, and a fast sine cannot be guessed exactly.
+
+  tt   <- (0:8191) / 2048
+  low  <- 100 * sin(2 * pi * 100 * tt)
+  high <- 100 * sin(2 * pi * 800 * tt)
+  eeg  <- new_eeg(data          = rbind(low, high),
+                  channels      = c("Low", "High"),
+                  sampling_rate = 2048)
+  mid  <- 101:1948
+
+  out <- downsample(eeg, target_rate = 512, verbose = FALSE)$data
+  expect_lt(max(abs(out[1, mid] - low[seq(1, 8192, by = 4)][mid])), 1e-3)
+  expect_lt(max(abs(out[2, mid])), 1e-3)
+
+  folded <- suppressWarnings(
+    downsample(eeg, target_rate = 512, method = "simple", verbose = FALSE)
+  )$data
+  expect_gt(max(abs(folded[2, mid])), 90)
+})
+
+test_that("downsample() 'decimate' matches MNE's filter plus every nth sample, ends included", {
+  # WHAT THIS TESTS:
+  # The reference numbers were made with MNE's own IIR filter (Butterworth,
+  # second-order sections, zero phase), then keeping every 4th (or 8th) sample,
+  # on 30000 uV + ds_test_signal(8192, 2048). Each setting lists sample values
+  # at positions `idx` (the first and the last included) and the sum of
+  # squares of the whole output.
+
+  x   <- 30000 + ds_test_signal(8192L, 2048)
+  eeg <- new_eeg(data = matrix(x, nrow = 1L), channels = "Cz", sampling_rate = 2048)
+
+  # defaults: order 8, cutoff 0.9 x 256 = 230.4 Hz, 2048 -> 512 Hz
+  out <- downsample(eeg, target_rate = 512, verbose = FALSE)$data[1, ]
+  idx <- c(1, 2, 3, 50, 1024, 1536, 2047, 2048)
+  ref <- c(30016.7958678, 30018.9252235, 30019.1744748, 30009.4676843,
+           30026.5359573, 30062.4258356, 30100.9650923, 30105.1972184)
+  expect_length(out, 2048L)
+  expect_lt(max(abs(out[idx] - ref)), 1e-6)
+  expect_equal(sum(out^2), 1.84858204187e+12, tolerance = 1e-10)
+
+  # order 4, cutoff_ratio 0.8 (cutoff 102.4 Hz), 2048 -> 256 Hz
+  out <- downsample(eeg, target_rate = 256, filter_order = 4, cutoff_ratio = 0.8,
+                    verbose = FALSE)$data[1, ]
+  idx <- c(1, 2, 3, 50, 512, 768, 1023, 1024)
+  ref <- c(30016.7957678, 30019.1162796, 30016.2250395, 30006.3232221,
+           30022.309016, 30058.0940275, 30094.8513755, 30100.8538638)
+  expect_length(out, 1024L)
+  expect_lt(max(abs(out[idx] - ref)), 1e-6)
+  expect_equal(sum(out^2), 924289634786, tolerance = 1e-10)
+})
+
+test_that("downsample() 'decimate' filters every channel on its own with the filter of eeg_bandpass()", {
+  # WHAT THIS TESTS:
+  # (1) A channel gives the same result alone as inside a bigger recording,
+  #     whatever the offsets of the other channels are.
+  # (2) filter_order is used.
+  # (3) The filter is the low-pass IIR filter of eeg_bandpass() at the cutoff,
+  #     and then every 4th sample is kept.
+
+  x   <- 30000 + ds_test_signal(4096L, 2048)
+  eeg <- new_eeg(data          = rbind(x, 0.5 * x, x - 20000),
+                 channels      = c("A", "B", "C"),
+                 sampling_rate = 2048)
+
+  all3 <- downsample(eeg, target_rate = 512, verbose = FALSE)$data
+  for (i in 1:3) {
+    one <- new_eeg(data = eeg$data[i, , drop = FALSE], channels = "X",
+                   sampling_rate = 2048)
+    alone <- downsample(one, target_rate = 512, verbose = FALSE)$data[1, ]
+    expect_equal(all3[i, ], alone)
+  }
+
+  order2 <- downsample(eeg, target_rate = 512, filter_order = 2, verbose = FALSE)$data
+  expect_gt(max(abs(order2 - all3)), 1e-3)
+
+  direct <- eeg_bandpass(eeg, h_freq = 230.4, method = "iir",
+                         iir_params = list(order = 8), verbose = FALSE)$data
+  expect_equal(unname(all3), unname(direct[, seq(1, 4096, by = 4)]), tolerance = 1e-12)
+})
+
+test_that("downsample() 'decimate' works on a very short recording", {
+  # WHAT THIS TESTS:
+  # 30 samples are fewer than the padding the filter would like to add; the
+  # padding is cut down to what the recording can give, and the function warns
+  # that the result may be unreliable but still returns finite numbers.
+
+  eeg <- make_eeg(n_channels = 2, n_timepoints = 30, sampling_rate = 512)
+
+  expect_warning(out <- downsample(eeg, target_rate = 128, verbose = FALSE),
+                 "Very short recording")
+  expect_equal(ncol(out$data), length(seq(1, 30, by = 4)))
+  expect_true(all(is.finite(out$data)))
 })

@@ -271,6 +271,10 @@
 #'   - When gain changes 1->0: SUBTRACT a lowpass kernel at the transition midpoint
 #'   - No change: skip
 #'
+#' Every transition needs a kernel of a certain length (longer for a narrower
+#' transition band); if that is more than \code{N} samples the function stops
+#' with a message that says how many samples are needed.
+#'
 #' @param N      Integer. Total kernel length (must be odd).
 #' @param freq   Numeric vector. Normalized frequencies in \{0, 1\} starting at 0
 #'               and ending at 1 (Nyquist). E.g. c(0, 0.1, 0.2, 0.9, 1).
@@ -278,10 +282,13 @@
 #'               same length as freq.
 #' @param window Character. Window function. One of "hamming", "hann",
 #'               or "blackman". Default: "hamming".
+#' @param sfreq  Numeric or NULL. Sampling rate in Hz. Only used to write the
+#'               width of the transition band in Hz into the message when
+#'               \code{N} is too short; with NULL the width is left out.
 #'
 #' @return Numeric vector of length N - the FIR kernel coefficients.
 #' @keywords internal
-.firwin_kernel <- function(N, freq, gain, window = "hamming") {
+.firwin_kernel <- function(N, freq, gain, window = "hamming", sfreq = NULL) {
   
   stopifnot(freq[1] == 0)
   stopifnot(length(freq) == length(gain))
@@ -319,6 +326,22 @@
       this_N <- as.integer(round(length_factor / transition))
       this_N <- this_N + 1L - this_N %% 2L  # force odd
       
+      # The kernel of this transition has to fit into N samples. If it does
+      # not, the width asked for cannot be had: say so (before, a negative
+      # position further down gave a message that pointed nowhere).
+      if (this_N > N) {
+        width <- if (is.null(sfreq)) {
+          ""
+        } else {
+          paste0(formatC((prev_freq - this_freq) * sfreq / 2, format = "f",
+                         digits = 2), " Hz ")
+        }
+        stop("The filter length of ", N, " samples is too short for the ",
+             width, "transition band, which needs at least ", this_N,
+             " samples. Use a longer 'filter_length' or a wider transition ",
+             "band.", call. = FALSE)
+      }
+
       # Cutoff at midpoint of transition band 
       cutoff <- (prev_freq + this_freq) / 2.0
       
@@ -813,7 +836,9 @@
 #'   a causal filter does at the start of a recording). TRUE: every section
 #'   starts as if the signal had been flat, equal to its first sample, for ever
 #'   before; this removes the switch-on jolt of the forward-backward method.
-#' @return Numeric vector, same length as \code{x}.
+#' @return Numeric vector, same length as \code{x}. A missing value (NA or NaN)
+#'   in \code{x} makes every value from there on missing, because the filter
+#'   feeds its own output back.
 #' @keywords internal
 .sos_pass <- function(sos, x, steady = FALSE) {
 
@@ -835,8 +860,11 @@
     }
 
     # input part: b0*x[n] + b1*x[n-1] + b2*x[n-2]  (two remembered inputs first)
+    # The first two places have no full window yet: cut off those two and only
+    # those, so that a missing value in the signal stays in the result (and is
+    # carried on by the feedback part) instead of shortening it.
     fir <- stats::filter(c(rep(mem_in, 2L), y), b, sides = 1)
-    fir <- as.numeric(fir[!is.na(fir)])
+    fir <- as.numeric(fir)[-(1:2)]
 
     # feedback part: minus a1*y[n-1] minus a2*y[n-2]  (two remembered outputs)
     y <- as.numeric(stats::filter(fir, -a[2:3], method = "recursive",
@@ -849,9 +877,9 @@
 #'
 #' Sends one spike through the filter and looks at the response in blocks of
 #' 1000 samples. The ringing ends at the last sample of the last block that
-#' still holds a value larger than 0.1 \% of the largest value seen so far. The
+#' still holds a value larger than 0.1% of the largest value seen so far. The
 #' result is used as the length of the padding for zero-phase filtering. A slow
-#' high-pass whose response after the first sample stays below 0.1 \% of its
+#' high-pass whose response after the first sample stays below 0.1% of its
 #' peak gets 0 (no padding).
 #'
 #' @param sos      Matrix of second-order sections.
@@ -1053,11 +1081,6 @@
   sfreq      <- eeg_obj$sampling_rate
   nyquist    <- sfreq / 2
   n_channels <- nrow(eeg_obj$data)
-
-  if (!is.numeric(notch_widths) || anyNA(notch_widths) ||
-      any(notch_widths < 0)) {
-    stop("'notch_widths' must be NULL or non-negative numbers.", call. = FALSE)
-  }
 
   # Go through the frequencies from low to high, whatever order they were typed
   # in (each width stays with its frequency). The filters could be applied in
@@ -1437,7 +1460,7 @@ eeg_bandpass <- function(eeg_obj,
   
   # ========== DESIGN KERNEL ==========
   
-  h <- .firwin_kernel(N, freq, gain, window = fir_window)
+  h <- .firwin_kernel(N, freq, gain, window = fir_window, sfreq = sfreq)
 
   # "minimum": the same filter shape, rebuilt so that all of its action is on
   # the past side of every sample (causal). No delay correction is made later,
@@ -1575,7 +1598,9 @@ eeg_bandpass <- function(eeg_obj,
 #'                         Default: 50.
 #' @param notch_widths     Numeric or NULL. Width of the stop band in Hz
 #'                         centred at each freq. NULL uses:
-#'                         freq / 200. Default: NULL.
+#'                         freq / 200. Give one number for all frequencies or
+#'                         one per frequency; each must be 0 or more (anything
+#'                         else is an error). Default: NULL.
 #' @param trans_bandwidth  Numeric. Width of each transition band in Hz.
 #'                         Default: 1. With method = "iir" it only moves the
 #'                         two cutoffs of each notch outwards, by half of it.
@@ -1666,6 +1691,14 @@ eeg_notch <- function(eeg_obj,
   if (is.null(notch_widths)) {
     notch_widths <- freqs / 200.0
   } else {
+    if (!is.numeric(notch_widths) || anyNA(notch_widths) ||
+        any(notch_widths < 0)) {
+      stop("'notch_widths' must be NULL or non-negative numbers.", call. = FALSE)
+    }
+    if (!(length(notch_widths) %in% c(1L, length(freqs)))) {
+      stop("'notch_widths' must be NULL, one number, or one number per ",
+           "frequency in 'freqs'.", call. = FALSE)
+    }
     notch_widths <- rep(as.numeric(notch_widths), length.out = length(freqs))
   }
   
@@ -1782,7 +1815,7 @@ eeg_notch <- function(eeg_obj,
   }
 
   # --- Design one kernel for all notch bands ---
-  h <- .firwin_kernel(N, freq_arr, gain_arr, window = fir_window)
+  h <- .firwin_kernel(N, freq_arr, gain_arr, window = fir_window, sfreq = sfreq)
 
   # "minimum": same as in eeg_bandpass(): a causal kernel, no delay correction
   if (phase == "minimum") h <- .minimum_phase(h)

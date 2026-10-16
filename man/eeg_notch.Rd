@@ -2,13 +2,15 @@
 % Please edit documentation in R/filter1.R
 \name{eeg_notch}
 \alias{eeg_notch}
-\title{EEG Notch (Band-Stop) FIR Filter}
+\title{EEG Notch (Band-Stop) Filter (FIR or IIR)}
 \usage{
 eeg_notch(
   eeg_obj,
   freqs = 50,
   notch_widths = NULL,
   trans_bandwidth = 1,
+  method = c("fir", "iir"),
+  iir_params = NULL,
   filter_length = "auto",
   fir_window = "hamming",
   phase = "zero",
@@ -29,17 +31,30 @@ centred at each freq. NULL uses:
 freq / 200. Default: NULL.}
 
 \item{trans_bandwidth}{Numeric. Width of each transition band in Hz.
-Default: 1.}
+Default: 1. With method = "iir" it only moves the
+two cutoffs of each notch outwards, by half of it.}
+
+\item{method}{Character. "fir" (default) or "iir".}
+
+\item{iir_params}{NULL or a named list, used only with
+\code{method = "iir"}: \code{order} (default 4; a
+band-stop has twice as many poles) and \code{ftype}
+(only "butter" so far).}
 
 \item{filter_length}{Integer or "auto". Kernel length in samples.
-"auto" uses MNE's formula. Default: "auto".}
+"auto" uses MNE's formula. Default: "auto".
+Used only with method = "fir".}
 
-\item{fir_window}{Character. Window function. Default: "hamming".}
+\item{fir_window}{Character. Window function. Default: "hamming".
+Used only with method = "fir".}
 
-\item{phase}{Character. "zero" (default) for zero-phase
-single-pass, or "minimum" for a causal filter that
-only looks at the past (nothing appears before an
-event). Any other word is an error.}
+\item{phase}{Character. The allowed words depend on
+\code{method}. "fir": "zero" (default), one pass
+with the group delay corrected; or "minimum", one
+pass with a filter that only looks at the past
+(causal). "iir": "zero" (default), forward then
+backward, no delay; or "forward", one pass, causal.
+Any other word is an error.}
 
 \item{pad}{Character. Padding mode. Default: "reflect_limited".}
 
@@ -55,8 +70,10 @@ preprocessing_history.
 }
 \description{
 Removes narrow frequency bands from EEG data to eliminate electrical line
-noise (method='fir', phase='zero', fir_window='hamming', fir_design='firwin',
-pad='reflect_limited').
+noise, with a zero-phase FIR filter (the default) or an IIR Butterworth
+band-stop filter. With the defaults, (method='fir', phase='zero',
+fir_window='hamming', fir_design='firwin', pad='reflect_limited'), it is a
+zero-phase FIR filter.
 }
 \details{
 Internally implements notch as a bandstop FIR filter, exactly as MNE does:
@@ -66,4 +83,29 @@ Then builds a bandstop kernel (gain=0 in the notch, gain=1 elsewhere).
 
 Multiple frequencies (e.g. harmonics) are combined into a single multi-band
 FIR kernel and applied in one pass.
+
+\strong{IIR filters} (\code{method = "iir"}) are Butterworth band-stop
+filters, built from their poles and zeros and run as a chain of
+second-order sections, so they stay accurate at high sampling rates (see
+\code{\link{eeg_bandpass}}). The two cutoffs of a notch are the \code{lows}
+and \code{highs} given above: the points where ONE pass of the filter is
+3 dB down. So \code{trans_bandwidth} only moves the cutoffs outwards (by
+half of it on each side); unlike for the FIR filter it is not the width of
+a transition band. With \code{phase = "zero"} the filter is run forward and
+then backward: there is no delay, the response is 6 dB down at the cutoffs,
+and, because the backward pass looks at the signal before an event as well,
+an event can leave a trace before it happened. With \code{phase = "forward"}
+the filter is run once: nothing can appear before an event (the filter is
+causal), but different frequencies are delayed by different amounts. Every
+frequency in \code{freqs} gets its own band-stop filter, and the filters are
+applied one after the other, from the lowest frequency to the highest: the
+result is the same as calling \code{eeg_notch()} once for each frequency.
+Only the Butterworth family is implemented so far.
+}
+\references{
+Butterworth, S. (1930). On the theory of filter amplifiers. Wireless
+Engineer, 7, 536-541.
+
+Oppenheim, A. V., & Schafer, R. W. (2010). Discrete-Time Signal Processing
+(3rd ed.). Pearson.
 }

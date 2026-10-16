@@ -28,7 +28,9 @@ Default: 50.}
 
 \item{notch_widths}{Numeric or NULL. Width of the stop band in Hz
 centred at each freq. NULL uses:
-freq / 200. Default: NULL.}
+freq / 200. Give one number for all frequencies or
+one per frequency; each must be 0 or more (anything
+else is an error). Default: NULL.}
 
 \item{trans_bandwidth}{Numeric. Width of each transition band in Hz.
 Default: 1. With method = "iir" it only moves the

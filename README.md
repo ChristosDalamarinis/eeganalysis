@@ -33,7 +33,7 @@ Version 0.0.0.9000 — under active development. Currently reads BioSemi `.bdf` 
 |------------------------|------------------------|------------------------|
 | Import BioSemi `.bdf` | `read_bdf_native()` | ✅ |
 | Channel inspection & type assignment | `inspect_biosemi_file()`, `detect_external_channels()`, `set_channel_types()` | ✅ |
-| Downsampling / Filtering (FIR or Butterworth IIR bandpass, highpass and lowpass; FIR notch; zero-phase or causal) | `downsample()`, `eeg_bandpass()`, `eeg_notch()` | ✅ |
+| Downsampling / Filtering (FIR or Butterworth IIR bandpass, highpass, lowpass and notch; zero-phase or causal) | `downsample()`, `eeg_bandpass()`, `eeg_notch()` | ✅ |
 | Bad-channel detection & repair | `find_bad_channels()`, `interpolate_bads()` | ✅ |
 | Electrode bridging (detect and repair neighbouring electrodes shorted together by gel) | `find_bridged_electrodes()`, `interpolate_bridged_electrodes()` | ✅ |
 | Time-range annotations (bad stretches) | `annotate_amplitude()`, `annotate_muscle()`, `annotate_nan()`, `annotate_break()` | ✅ |
@@ -157,7 +157,7 @@ eeganalysis
 │   │
 │   ├── filter1.R                            ← FIR and IIR filtering
 │   │   ├── eeg_bandpass()                   ← Bandpass/highpass/lowpass: Hamming-window FIR or Butterworth IIR, zero-phase or causal
-│   │   └── eeg_notch()                      ← Multi-band FIR notch filter for line noise (zero-phase or causal)
+│   │   └── eeg_notch()                      ← Notch filter for line noise: multi-band FIR or Butterworth IIR, zero-phase or causal
 │   │
 │   ├── bad_channels.R                       ← Bad-channel detection
 │   │   └── find_bad_channels()              ← Flat/amplitude/outlier + spatial + LOF checks
@@ -247,7 +247,7 @@ eeganalysis
 │   │
 │   └── imports.R                            ← Centralized @importFrom declarations
 │
-├── man/                                     ← Auto-generated help files (161, one per exported/internal function)
+├── man/                                     ← Auto-generated help files (162, one per exported/internal function)
 │   ├── new_eeg.Rd
 │   ├── read_bdf_native.Rd
 │   ├── find_bad_channels.Rd

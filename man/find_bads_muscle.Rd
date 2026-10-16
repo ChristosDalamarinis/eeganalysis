@@ -51,7 +51,7 @@ frequency (slope near \code{+0.15}); genuine neural/artifact
 components typically fall off. Logistic centered at \code{-0.5}.
 \item \strong{Peripherality} (needs electrode positions): how far the
 component's topography is weighted toward the edge of the montage
-(jaw/neck/temple), vs. the vertex. Logistic centered at 65\\% of the
+(jaw/neck/temple), vs. the vertex. Logistic centered at 65\% of the
 maximum electrode distance from the fitted channels' own centroid.
 \item \strong{Spatial smoothness} (needs electrode positions): how
 focal/spiky (vs. smooth) the topography is. Logistic, inverted,

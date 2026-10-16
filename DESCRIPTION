@@ -13,7 +13,6 @@ RoxygenNote: 7.3.3
 Depends: 
     R (>= 3.5.0)
 Imports:
-    signal,
     ggplot2,
     dplyr,
     plotly,
@@ -22,5 +21,6 @@ Imports:
     akima,
     dbscan
 Suggests:
+    signal,
     testthat (>= 3.0.0)
 Config/testthat/edition: 3

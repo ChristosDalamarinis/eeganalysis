@@ -4,7 +4,7 @@
 \alias{.firwin_kernel}
 \title{Build FIR kernel from freq/gain arrays}
 \usage{
-.firwin_kernel(N, freq, gain, window = "hamming")
+.firwin_kernel(N, freq, gain, window = "hamming", sfreq = NULL)
 }
 \arguments{
 \item{N}{Integer. Total kernel length (must be odd).}
@@ -17,6 +17,10 @@ same length as freq.}
 
 \item{window}{Character. Window function. One of "hamming", "hann",
 or "blackman". Default: "hamming".}
+
+\item{sfreq}{Numeric or NULL. Sampling rate in Hz. Only used to write the
+width of the transition band in Hz into the message when
+\code{N} is too short; with NULL the width is left out.}
 }
 \value{
 Numeric vector of length N - the FIR kernel coefficients.
@@ -32,5 +36,9 @@ Algorithm (right-to-left sweep):
 \item When gain changes 1->0: SUBTRACT a lowpass kernel at the transition midpoint
 \item No change: skip
 }
+
+Every transition needs a kernel of a certain length (longer for a narrower
+transition band); if that is more than \code{N} samples the function stops
+with a message that says how many samples are needed.
 }
 \keyword{internal}

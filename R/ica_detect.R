@@ -148,9 +148,9 @@
 #' Restricted to Pearson correlation against a fixed target (a more general
 #' score-function/no-target-skewness path is not needed by any detector in
 #' this file). Band-pass filters every IC time-course and the
-#' target signal to \code{[l_freq, h_freq]} via the existing
-#' \code{\link{.fir_filter_vector}} (R/annotations.R - already used by
-#' \code{\link{annotate_muscle}} for the same kind of per-vector bandpass),
+#' target signal to \code{[l_freq, h_freq]} with \code{\link{filter_data}}
+#' (also used by \code{\link{annotate_muscle}} for the same kind of
+#' per-vector bandpass),
 #' then correlates each filtered IC against the filtered target.
 #'
 #' @param ica A fitted \code{eeg_ica} object.
@@ -167,10 +167,14 @@
   sources <- get_sources(ica, eeg)
   sfreq   <- eeg$sampling_rate
 
-  target_filt <- .fir_filter_vector(target_data, sfreq, l_freq = l_freq, h_freq = h_freq)
+  # The reference signal (target_data) and every IC time course (a row of 'sources')
+  # are plain rows of numbers; neither is a channel of an eeg object, so they go
+  # through filter_data(). Both are filtered to the same band, so that the
+  # correlation below compares like with like.
+  target_filt <- filter_data(target_data, sfreq, l_freq = l_freq, h_freq = h_freq)
 
   scores <- vapply(seq_len(nrow(sources)), function(i) {
-    ic_filt <- .fir_filter_vector(sources[i, ], sfreq, l_freq = l_freq, h_freq = h_freq)
+    ic_filt <- filter_data(sources[i, ], sfreq, l_freq = l_freq, h_freq = h_freq)
     cor(ic_filt, target_filt)
   }, numeric(1))
 
@@ -665,8 +669,11 @@ find_bads_ecg <- function(ica, eeg, ch_name = NULL, threshold = "auto",
     ecg_ch <- ecg_chs[1]
     sfreq  <- eeg$sampling_rate
 
-    ecg_filt <- .fir_filter_vector(eeg$data[match(ecg_ch, eeg$channels), ],
-                                    sfreq, l_freq = l_freq, h_freq = h_freq)
+    # filter_data() takes the ECG channel's row of numbers and keeps the heartbeat
+    # band, only so that the beats can be found below. The filtered copy is not
+    # stored in the recording.
+    ecg_filt <- filter_data(eeg$data[match(ecg_ch, eeg$channels), ],
+                            sfreq, l_freq = l_freq, h_freq = h_freq)
     beats <- .qrs_detector(ecg_filt, sfreq)
 
     if (identical(threshold, "auto")) {

@@ -557,9 +557,13 @@ annotate_muscle <- function(eeg_obj,
   envelope <- matrix(0, nrow = n_picked, ncol = n_times)
 
   for (i in seq_len(n_picked)) {
-    x_filt <- .fir_filter_vector(eeg_obj$data[ch_idx[i], ], sfreq,
-                                  l_freq = filter_freq[1],
-                                  h_freq = filter_freq[2])
+    # filter_data() filters a plain row of numbers (here: the samples of one picked
+    # channel) with the same band-pass filter as eeg_bandpass(), without needing an
+    # eeg object. The channel in eeg_obj is not changed; only the filtered copy is
+    # used, to measure the muscle activity below.
+    x_filt <- filter_data(eeg_obj$data[ch_idx[i], ], sfreq,
+                          l_freq = filter_freq[1],
+                          h_freq = filter_freq[2])
     envelope[i, ] <- .hilbert_envelope(x_filt)
   }
 
@@ -567,7 +571,11 @@ annotate_muscle <- function(eeg_obj,
 
   z        <- .zscore_rows(envelope)
   combined <- colSums(z) / sqrt(n_picked)
-  smoothed <- .fir_filter_vector(combined, sfreq, h_freq = 4)
+  # 'combined' is a row of numbers made here from the channels, not a channel of
+  # eeg_obj, so there is no eeg object to give eeg_bandpass(). filter_data() takes
+  # the bare row: a 4 Hz low-pass smooths the trace so that it does not jump from
+  # one sample to the next.
+  smoothed <- filter_data(combined, sfreq, h_freq = 4)
 
   art_mask <- smoothed > threshold
 
@@ -596,73 +604,6 @@ annotate_muscle <- function(eeg_obj,
   }
 
   eeg_obj
-}
-
-#' Design-and-Apply a Bandpass or Lowpass FIR Filter to One Vector (internal)
-#'
-#' A single-vector counterpart to \code{\link{eeg_bandpass}} (see
-#' R/filter1.R): builds the same freq/gain kernel specification
-#' \code{eeg_bandpass()} does (bandpass when both \code{l_freq}/\code{h_freq}
-#' are given, lowpass when only \code{h_freq} is given), then applies it with
-#' the same \code{.firwin_kernel()} / \code{.overlap_add_filter()} primitives
-#' - without constructing a full \code{eeg} object, which is all
-#' \code{\link{annotate_muscle}} needs for its two internal filtering steps
-#' (110-140 Hz bandpass on each channel, 4 Hz lowpass on the combined
-#' z-score trace). Highpass-only is intentionally not implemented - no
-#' caller in this file needs it.
-#'
-#' @param x Numeric vector. The signal to filter.
-#' @param sfreq Numeric. Sampling rate in Hz.
-#' @param l_freq Numeric or \code{NULL}. Lower passband edge in Hz.
-#' @param h_freq Numeric or \code{NULL}. Upper passband edge in Hz.
-#' @param fir_window,phase,pad Passed through to \code{.firwin_kernel()} /
-#'   \code{.overlap_add_filter()}. Defaults match \code{eeg_bandpass()}.
-#'
-#' @return Numeric vector, same length as \code{x}.
-#' @keywords internal
-.fir_filter_vector <- function(x, sfreq, l_freq = NULL, h_freq = NULL,
-                                fir_window = "hamming", phase = "zero",
-                                pad = "reflect_limited") {
-
-  nyquist <- sfreq / 2.0
-
-  if (is.null(l_freq) && is.null(h_freq)) {
-    stop(".fir_filter_vector(): at least one of 'l_freq' or 'h_freq' must ",
-         "be supplied.", call. = FALSE)
-  }
-  if (!is.null(l_freq) && is.null(h_freq)) {
-    stop(".fir_filter_vector(): highpass-only is not implemented - this ",
-         "file only needs bandpass (both freqs) or lowpass (h_freq only).",
-         call. = FALSE)
-  }
-
-  l_trans_bw <- if (is.null(l_freq)) NULL else min(max(0.25 * l_freq, 2.0), l_freq)
-  h_trans_bw <- min(max(0.25 * h_freq, 2.0), nyquist - h_freq)
-
-  N <- .auto_filter_length(l_trans_bw, h_trans_bw, sfreq, window = fir_window)
-
-  if (!is.null(l_freq)) {
-    # Bandpass
-    f_s1 <- (l_freq - l_trans_bw) / nyquist
-    f_p1 <- l_freq / nyquist
-    f_p2 <- h_freq / nyquist
-    f_s2 <- (h_freq + h_trans_bw) / nyquist
-    freq <- c(f_s1, f_p1, f_p2, f_s2)
-    gain <- c(   0,    1,    1,    0)
-    if (f_s1 != 0) { freq <- c(0, freq); gain <- c(0, gain) }
-    if (f_s2 != 1) { freq <- c(freq, 1); gain <- c(gain, 0) }
-  } else {
-    # Lowpass only
-    f_p  <- h_freq / nyquist
-    f_s  <- (h_freq + h_trans_bw) / nyquist
-    freq <- c(0, f_p, f_s)
-    gain <- c(1,   1,   0)
-    if (f_s != 1) { freq <- c(freq, 1); gain <- c(gain, 0) }
-  }
-
-  freq <- pmax(pmin(freq, 1.0), 0.0)
-  h <- .firwin_kernel(N, freq, gain, window = fir_window)
-  .overlap_add_filter(x, h, phase = phase, pad = pad)
 }
 
 #' Hilbert Envelope via FFT (internal)

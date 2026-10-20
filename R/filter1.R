@@ -681,6 +681,105 @@
   out
 }
 
+#' Check the cutoff frequencies of a band-pass, high-pass or low-pass filter
+#'
+#' The checks that \code{eeg_bandpass()} and \code{filter_data()} have in
+#' common. They need only the cutoffs and the sampling rate, nothing from an
+#' eeg object, which is why both functions can call this one function instead
+#' of each carrying its own copy. It is the first thing either of them checks
+#' about the filter itself (see the overview before
+#' \code{.make_bandpass_filter()}).
+#'
+#' @param l_freq,h_freq Cutoffs in Hz as given by the user (NULL = not used).
+#' @param sfreq Numeric. Sampling rate in Hz.
+#' @return NULL, invisibly. Stops with a message if a cutoff is not allowed.
+#' @keywords internal
+.check_band_edges <- function(l_freq, h_freq, sfreq) {
+
+  # The Nyquist frequency is half the sampling rate: the highest frequency a
+  # signal sampled at 'sfreq' can contain. A low-pass cutoff has to lie below it.
+  nyquist <- sfreq / 2.0
+
+  # Which kind of filter is wanted depends on which cutoffs are given:
+  #   l_freq only -> high-pass,  h_freq only -> low-pass,  both -> band-pass.
+  # So at least one of the two is needed.
+  if (is.null(l_freq) && is.null(h_freq)) {
+    stop("At least one of 'l_freq' or 'h_freq' must be specified.", call. = FALSE)
+  }
+
+  # High-pass cutoff: a positive number of Hz.
+  if (!is.null(l_freq) && (!is.numeric(l_freq) || l_freq <= 0)) {
+    stop("'l_freq' must be a positive numeric value.", call. = FALSE)
+  }
+
+  # Low-pass cutoff: a positive number of Hz, strictly below Nyquist.
+  if (!is.null(h_freq) && (!is.numeric(h_freq) || h_freq <= 0 || h_freq >= nyquist)) {
+    stop("'h_freq' must be a positive numeric value less than the Nyquist frequency (",
+         nyquist, " Hz).", call. = FALSE)
+  }
+
+  # In a band-pass the high-pass edge has to lie below the low-pass edge,
+  # otherwise nothing would be let through.
+  if (!is.null(l_freq) && !is.null(h_freq) && l_freq >= h_freq) {
+    stop("'l_freq' (", l_freq, ") must be less than 'h_freq' (", h_freq, ").",
+         call. = FALSE)
+  }
+
+  # Nothing to hand back: the function either stops with a message or lets the
+  # caller carry on.
+  invisible(NULL)
+}
+
+#' Check the method-related settings of a band-pass filter call
+#'
+#' Checks 'phase', 'pad' and 'iir_params' for the chosen method and warns about
+#' settings that the method does not use. The warning about FIR-only settings
+#' has to know which of them the user typed on purpose; only the calling
+#' function can see that (with \code{missing()}), so it is passed in.
+#' \code{eeg_bandpass()} and \code{filter_data()} both call this function right
+#' after \code{.check_band_edges()} and use the values it returns from there on.
+#'
+#' @param method Character. "fir" or "iir" (already matched).
+#' @param phase,pad,iir_params The values given by the user.
+#' @param fir_only_given Named logical vector with one element for each
+#'   FIR-only setting (l_trans_bandwidth, h_trans_bandwidth, filter_length,
+#'   fir_window): TRUE if the user set it.
+#' @return A list with the checked \code{phase}, \code{pad} and
+#'   \code{iir_params} (filled in for "iir", as given for "fir").
+#' @keywords internal
+.check_filter_settings <- function(method, phase, pad, iir_params, fir_only_given) {
+
+  # 'phase' and 'pad' must be words that are really implemented for this
+  # method (see .check_phase() and .check_pad()). Anything else stops here
+  # instead of silently giving a result that is shifted in time.
+  phase <- .check_phase(phase, method)
+  pad   <- .check_pad(pad)
+
+  if (method == "iir") {
+    # Fill in the IIR settings that were not given (order 4, Butterworth) and
+    # check the ones that were.
+    iir_params <- .resolve_iir_params(iir_params)
+
+    # The four FIR-only settings describe an FIR kernel and mean nothing for an
+    # IIR filter. Only a setting the user typed on purpose deserves a warning (a
+    # default does not). Telling the two apart needs missing(), which only the
+    # function that owns the argument can ask: that function does it and passes
+    # the answer in as 'fir_only_given'.
+    if (any(fir_only_given)) {
+      warning("Not used with method = \"iir\": ",
+              paste(names(fir_only_given)[fir_only_given], collapse = ", "), ".",
+              call. = FALSE)
+    }
+  } else if (!is.null(iir_params)) {
+    # The other way round: 'iir_params' only means something for method = "iir".
+    warning("'iir_params' is not used with method = \"fir\".", call. = FALSE)
+  }
+
+  # Hand the checked values back; the caller uses these from here on. For FIR,
+  # 'iir_params' is returned as it was given (normally NULL).
+  list(phase = phase, pad = pad, iir_params = iir_params)
+}
+
 # ----------------------------------------------------------------------------
 # .butter_zpk() / .zpk_to_sos() / .design_iir_sos() - the design
 # ----------------------------------------------------------------------------
@@ -943,29 +1042,112 @@
 }
 
 # ----------------------------------------------------------------------------
-# .bandpass_iir() - the IIR half of eeg_bandpass()
+# THE BAND-PASS RECIPE, SHARED BY eeg_bandpass() AND filter_data()
 # ----------------------------------------------------------------------------
+#
+# WHAT THIS SECTION DOES
+#   Everything that turns "a band-pass, high-pass or low-pass filter with these
+#   settings" into filtered numbers is here, once, for FIR and for IIR filters.
+#   Two public functions use it:
+#
+#     filter_data(x, sfreq, ...)    numbers in, numbers out. No eeg object.
+#     eeg_bandpass(eeg_obj, ...)    a whole eeg object in, a whole one out.
+#
+#   Through filter_data(), the places in the package that have to filter a loose
+#   row of numbers (one that is not a channel of a recording) use it as well:
+#   annotate_muscle() in annotations.R, and find_bads_eog() / find_bads_ecg() in
+#   ica_detect.R (they filter the ICA components and the reference signal).
+#
+# THE TWO STEPS: DESIGN, THEN RUN
+#   1. DESIGN  .make_bandpass_filter()   settings -> a description of the filter
+#   2. RUN     .apply_bandpass_filter()  description + ONE row of numbers
+#                                          -> that row, filtered
+#
+#   They are two functions, not one, because eeg_bandpass() needs the design
+#   BEFORE it filters anything: it prints the filter's details in its header and
+#   writes them in the history entry. filter_data() just does both steps, one
+#   after the other.
+#
+# WHO CALLS WHOM
+#   filter_data()  --> .check_band_edges()          are the cutoffs allowed?
+#                  --> .check_filter_settings()     are phase / pad / iir_params ok?
+#                  --> .make_bandpass_filter()      design, once
+#                  --> .apply_bandpass_filter()     run, once per row of x
+#
+#   eeg_bandpass() --> the same four, in the same order, plus the work that
+#                      belongs to an eeg object: the channel choice, the header
+#                      and progress bar, the history entry, the new eeg object.
+#
+#   .make_bandpass_filter()  --> FIR: .auto_filter_length(), .firwin_kernel(),
+#                                     .minimum_phase() (only for phase = "minimum")
+#                            --> IIR: .design_iir_sos(), .iir_ringing_samples()
+#   .apply_bandpass_filter() --> FIR: .overlap_add_filter()
+#                            --> IIR: .iir_filter()
+#
+#   The functions on the right are older and were not changed. Only the two
+#   engines, .overlap_add_filter() and .iir_filter() (with the small helpers
+#   they call), ever see the signal values; everything above them works on
+#   settings and decides what to run.
+#
+# THE "spec" LIST
+#   .make_bandpass_filter() returns a plain list that describes the designed
+#   filter. .apply_bandpass_filter() reads it, and eeg_bandpass() reads it for
+#   its header and history entry.
+#     always:  method ("fir"/"iir"), filter_type (label for display), phase, pad
+#     FIR:     kernel (the filter coefficients), N (their number), l_trans_bw and
+#              h_trans_bw (transition widths in Hz, NULL where not used), window
+#     IIR:     order, sos (the chain of second-order sections), padlen (samples
+#              of padding at each end), pad_text (the padding as a sentence)
+#
+# WHAT IS NOT HERE
+#   eeg_notch() designs a band-STOP filter with its own cutoffs and its own code;
+#   it shares only the engines and the phase / pad / iir_params checks.
+#   downsample() calls .design_iir_sos(), .iir_ringing_samples() and
+#   .iir_filter() directly for its anti-aliasing filter.
 
-#' IIR half of eeg_bandpass()
+#' Design a band-pass, high-pass or low-pass filter
 #'
-#' Called by \code{\link{eeg_bandpass}} when \code{method = "iir"}, after all
-#' arguments have been checked. Designs the filter, applies it to the chosen
-#' channels and returns the new eeg object.
+#' Works out the filter from its settings, without touching any data. For an
+#' FIR filter that means the transition widths, the length, the wanted gain at
+#' each frequency and the kernel (the symmetric one, or the minimum-phase one
+#' for \code{phase = "minimum"}); for an IIR filter it means the chain of
+#' second-order sections and the padding length. The result goes to
+#' \code{.apply_bandpass_filter()}.
 #'
-#' @param eeg_obj    An object of class 'eeg'.
+#' All arguments must have been checked before (see
+#' \code{.check_band_edges()} and \code{.check_filter_settings()}). This is the
+#' first of the two steps (design, then run) explained in the overview above.
+#'
+#' @param sfreq Numeric. Sampling rate in Hz.
 #' @param l_freq,h_freq Cutoffs in Hz (NULL = not used).
-#' @param iir_params List with \code{order} (see \code{.resolve_iir_params()}).
-#' @param phase      "zero" or "forward".
-#' @param ch_idx     Integer vector. Rows of the data to filter.
-#' @param verbose    Logical. Print parameters and progress.
-#' @return An object of class 'eeg'.
+#' @param method Character. "fir" or "iir".
+#' @param iir_params List with \code{order}, as returned by
+#'   \code{.resolve_iir_params()}. Used only for "iir".
+#' @param l_trans_bandwidth,h_trans_bandwidth,filter_length,fir_window See
+#'   \code{\link{eeg_bandpass}}. Used only for "fir".
+#' @param phase Character. "zero" or "minimum" (FIR), "zero" or "forward" (IIR).
+#' @param pad Character. "reflect_limited".
+#' @return A list that describes the filter. Always: \code{method},
+#'   \code{filter_type} (text such as "Bandpass (1 - 40 Hz)"), \code{phase} and
+#'   \code{pad}. For FIR also \code{kernel}, \code{N} (its length),
+#'   \code{l_trans_bw} and \code{h_trans_bw} (NULL where not used) and
+#'   \code{window}. For IIR also \code{order}, \code{sos}, \code{padlen} and
+#'   \code{pad_text}.
 #' @keywords internal
-.bandpass_iir <- function(eeg_obj, l_freq, h_freq, iir_params, phase,
-                          ch_idx, verbose) {
+.make_bandpass_filter <- function(sfreq, l_freq, h_freq, method, iir_params,
+                                  l_trans_bandwidth, h_trans_bandwidth,
+                                  filter_length, fir_window, phase, pad) {
 
-  sfreq      <- eeg_obj$sampling_rate
-  n_channels <- nrow(eeg_obj$data)
+  # ========== SETUP, THE SAME FOR FIR AND IIR ==========
 
+  # The Nyquist frequency (half the sampling rate). Cutoffs and transition
+  # widths are given in Hz; the FIR design below works with frequencies as a
+  # fraction of this one (1 = Nyquist).
+  nyquist <- sfreq / 2.0
+
+  # A short label of the filter, such as "Bandpass (1 - 40 Hz)". It is the same
+  # for FIR and IIR and is only for display: eeg_bandpass() prints it in its
+  # header and writes it in the history entry.
   filter_type <- if (!is.null(l_freq) && !is.null(h_freq)) {
     paste0("Bandpass (", l_freq, " - ", h_freq, " Hz)")
   } else if (!is.null(l_freq)) {
@@ -974,80 +1156,159 @@
     paste0("Lowpass (", h_freq, " Hz)")
   }
 
-  # ========== DESIGN: SECTIONS, AND THE PADDING LENGTH ==========
+  # ========== IIR: SECTIONS, AND THE PADDING LENGTH ==========
+  # An IIR (Butterworth) filter is designed as a chain of small second-order
+  # sections, which stays accurate even for slow filters. Nothing else has to be
+  # prepared, so the IIR design is finished here and the function returns; the
+  # FIR code further down only runs for method = "fir".
 
-  sos    <- .design_iir_sos(l_freq, h_freq, sfreq, order = iir_params$order)
-  padlen <- if (phase == "zero") .iir_ringing_samples(sos) else 0L
-  pad_text <- if (padlen > 0L) {
-    paste0("reflect_limited, ", padlen, " samples at each end")
+  if (method == "iir") {
+    # The chain of second-order sections. The cutoffs are the points where ONE
+    # pass of the filter is 3 dB down; a band-pass has twice as many poles as
+    # 'order' says.
+    sos    <- .design_iir_sos(l_freq, h_freq, sfreq, order = iir_params$order)
+
+    # Padding. With phase = "zero" the signal is run forward and then backward,
+    # and both ends are padded first so that the first and last moments of the
+    # recording are not distorted. The padding has to be as long as the filter
+    # keeps ringing, which .iir_ringing_samples() works out from the sections.
+    # With phase = "forward" (causal, one pass) nothing is padded.
+    padlen <- if (phase == "zero") .iir_ringing_samples(sos) else 0L
+
+    # The padding as a sentence, for the header and the history entry.
+    pad_text <- if (padlen > 0L) {
+      paste0("reflect_limited, ", padlen, " samples at each end")
+    } else {
+      "none"
+    }
+
+    return(list(method = "iir", filter_type = filter_type, phase = phase,
+                pad = pad, order = iir_params$order, sos = sos,
+                padlen = padlen, pad_text = pad_text))
+  }
+
+  # ========== FIR: TRANSITION BANDWIDTHS ==========
+  # An FIR filter cannot jump from "blocked" to "let through" at the cutoff; it
+  # needs a slope. The transition bandwidth is the width of that slope in Hz.
+  # Typed values are used as they are. With "auto" (the default):
+  #   high-pass slope: a quarter of the cutoff, at least 2 Hz, but never wider
+  #                    than the cutoff itself;
+  #   low-pass slope:  a quarter of the cutoff, at least 2 Hz, but never wider
+  #                    than the room left between the cutoff and Nyquist.
+  # (.auto_trans_bandwidth() holds the same rule; this code has always written
+  # it out here, and it is used unchanged.)
+
+  l_trans_bw <- if (is.null(l_freq)) {
+    NULL
+  } else if (identical(l_trans_bandwidth, "auto")) {
+    min(max(0.25 * l_freq, 2.0), l_freq)
   } else {
-    "none"
+    as.numeric(l_trans_bandwidth)
   }
 
-  # ========== VERBOSE HEADER ==========
-
-  if (verbose) {
-    cat("\n", strrep("=", 70), "\n", sep = "")
-    cat("EEG IIR Filtering\n")
-    cat(strrep("=", 70), "\n")
-    cat("  Filter type:          ", filter_type, "\n")
-    cat("  Sampling rate:        ", sfreq, " Hz\n")
-    cat("  Nyquist:              ", sfreq / 2, " Hz\n")
-    cat("  Family / order:        Butterworth /", iir_params$order, "\n")
-    cat("  Sections:             ", nrow(sos), "\n")
-    cat("  Phase:                ", phase, "\n")
-    cat("  Padding:              ", pad_text, "\n")
-    cat("  Channels:             ", length(ch_idx), "/", n_channels, "\n")
-    cat(strrep("-", 70), "\n")
+  h_trans_bw <- if (is.null(h_freq)) {
+    NULL
+  } else if (identical(h_trans_bandwidth, "auto")) {
+    min(max(0.25 * h_freq, 2.0), nyquist - h_freq)
+  } else {
+    as.numeric(h_trans_bandwidth)
   }
 
-  # ========== APPLY FILTER CHANNEL BY CHANNEL ==========
+  # ========== FIR: FILTER LENGTH ==========
+  # The kernel is the list of N coefficients that makes the filter. The narrower
+  # the slope, the longer it has to be. "auto" works N out from the narrowest
+  # slope (.auto_filter_length()). A typed length is made odd as well, because a
+  # symmetric kernel needs a centre sample. (.firwin_kernel() stops with a clear
+  # message if the length is too short for the slope.)
 
-  filtered_data <- eeg_obj$data
-
-  if (verbose) {
-    pb <- txtProgressBar(min = 0, max = length(ch_idx),
-                         style = 3, width = 50, char = "=")
+  if (identical(filter_length, "auto")) {
+    N <- .auto_filter_length(l_trans_bw, h_trans_bw, sfreq, window = fir_window)
+  } else {
+    N <- as.integer(filter_length)
+    if (N %% 2L == 0L) N <- N + 1L  # force odd
   }
 
-  for (idx in seq_along(ch_idx)) {
-    i <- ch_idx[idx]
-    filtered_data[i, ] <- .iir_filter(filtered_data[i, ], sos, phase, padlen)
-    if (verbose) setTxtProgressBar(pb, idx)
+  # ========== FIR: FREQ / GAIN ARRAYS ==========
+  # The wanted shape of the filter as a list of points: 'freq' are frequencies
+  # as a fraction of Nyquist (0 to 1), 'gain' is what should get through there
+  # (0 = blocked, 1 = untouched). Between the points the gain changes along a
+  # straight line, which is the slope of the transition band. The list must
+  # start at frequency 0 and end at 1.
+
+  if (!is.null(l_freq) && !is.null(h_freq)) {
+    # Band-pass: blocked up to (l_freq - slope), rising to 1 at l_freq, 1 up to
+    # h_freq, falling to 0 at (h_freq + slope).
+    f_s1 <- (l_freq - l_trans_bw) / nyquist
+    f_p1 <- l_freq / nyquist
+    f_p2 <- h_freq / nyquist
+    f_s2 <- (h_freq + h_trans_bw) / nyquist
+    freq  <- c(f_s1, f_p1, f_p2, f_s2)
+    gain  <- c(   0,    1,    1,    0)
+    # Add the two end points (0 Hz and Nyquist) when the slopes do not already
+    # reach them; blocked at both.
+    if (f_s1 != 0) { freq <- c(0, freq); gain <- c(0, gain) }
+    if (f_s2 != 1) { freq <- c(freq, 1); gain <- c(gain, 0) }
+  } else if (!is.null(l_freq)) {
+    # High-pass only: blocked up to (l_freq - slope), rising to 1 at l_freq,
+    # and 1 all the way to Nyquist.
+    f_s1 <- (l_freq - l_trans_bw) / nyquist
+    f_p1 <- l_freq / nyquist
+    freq  <- c(f_s1, f_p1, 1)
+    gain  <- c(   0,    1, 1)
+    if (f_s1 != 0) { freq <- c(0, freq); gain <- c(0, gain) }
+  } else {
+    # Low-pass only: 1 from 0 Hz up to h_freq, falling to 0 at (h_freq + slope).
+    f_p  <- h_freq / nyquist
+    f_s  <- (h_freq + h_trans_bw) / nyquist
+    freq <- c(0, f_p, f_s)
+    gain <- c(1,   1,   0)
+    if (f_s != 1) { freq <- c(freq, 1); gain <- c(gain, 0) }
   }
 
-  if (verbose) {
-    close(pb)
-    cat("\n", strrep("=", 70), "\n")
+  # Rounding can push an edge a hair outside [0, 1] (for example 1.0000000000000002),
+  # which the kernel design refuses. Clamp to the allowed range.
+  freq <- pmax(pmin(freq, 1.0), 0.0)
+
+  # ========== FIR: KERNEL ==========
+
+  # The kernel: N symmetric coefficients with the wanted shape. 'sfreq' is only
+  # used to put widths in Hz into the error message when N is too short.
+  h <- .firwin_kernel(N, freq, gain, window = fir_window, sfreq = sfreq)
+
+  # "minimum": the same filter shape, rebuilt so that all of its action is on
+  # the past side of every sample (causal). No delay correction is made later,
+  # because .overlap_add_filter() only does that for words starting with "zero".
+  if (phase == "minimum") h <- .minimum_phase(h)
+
+  list(method = "fir", filter_type = filter_type, phase = phase, pad = pad,
+       kernel = h, N = N, l_trans_bw = l_trans_bw, h_trans_bw = h_trans_bw,
+       window = fir_window)
+}
+
+#' Run a designed band-pass filter over one row of numbers
+#'
+#' The second of the two steps (design, then run). It does no filtering
+#' itself: it reads the method from the description made by
+#' \code{.make_bandpass_filter()} and hands the row to the engine that does
+#' the work, \code{.overlap_add_filter()} for FIR or \code{.iir_filter()} for
+#' IIR. Both engines were there before and are unchanged.
+#'
+#' @param x Numeric vector. One signal.
+#' @param spec The list made by \code{.make_bandpass_filter()}.
+#' @return Numeric vector, same length as \code{x}.
+#' @keywords internal
+.apply_bandpass_filter <- function(x, spec) {
+  if (spec$method == "iir") {
+    # IIR engine: runs the row through the chain of second-order sections.
+    # phase "zero": padded at both ends by spec$padlen samples, forward then
+    # backward (no delay). phase "forward": one pass, no padding (causal).
+    .iir_filter(x, spec$sos, spec$phase, spec$padlen)
+  } else {
+    # FIR engine: convolves the row with the kernel (overlap-add FFT), pads
+    # both ends, and for phase "zero" shifts the result back by the kernel's
+    # delay so that nothing is moved in time.
+    .overlap_add_filter(x = x, h = spec$kernel, phase = spec$phase, pad = spec$pad)
   }
-
-  # ========== BUILD PREPROCESSING HISTORY ENTRY ==========
-
-  history_entry <- paste0(
-    "IIR bandpass: ", filter_type,
-    " | Butterworth order: ", iir_params$order,
-    " | phase: ", phase,
-    " | pad: ", pad_text,
-    " | channels: ", length(ch_idx), "/", n_channels
-  )
-
-  # ========== RETURN UPDATED EEG OBJECT ==========
-
-  new_eeg(
-    data                  = filtered_data,
-    channels              = eeg_obj$channels,
-    sampling_rate         = eeg_obj$sampling_rate,
-    times                 = eeg_obj$times,
-    events                = eeg_obj$events,
-    metadata              = eeg_obj$metadata,
-    reference             = eeg_obj$reference,
-    preprocessing_history = c(eeg_obj$preprocessing_history,
-                              list(history_entry)),
-    montage               = eeg_obj$montage,
-    bads                  = eeg_obj$bads,
-    annotations           = eeg_obj$annotations,
-    channel_types         = eeg_obj$channel_types
-  )
 }
 
 # ----------------------------------------------------------------------------
@@ -1299,6 +1560,9 @@
 #' @return An object of class 'eeg' with filtered data and updated
 #'   preprocessing_history.
 #'
+#' @seealso \code{\link{filter_data}} to run the same filter on numbers that are
+#'   not in an \code{eeg} object.
+#'
 #' @export
 eeg_bandpass <- function(eeg_obj,
                          l_freq              = NULL,
@@ -1313,61 +1577,61 @@ eeg_bandpass <- function(eeg_obj,
                          pad                 = "reflect_limited",
                          channels            = NULL,
                          verbose             = TRUE) {
-  
+
+  # HOW THIS FUNCTION IS BUILT
+  # eeg_bandpass() looks after everything that belongs to an eeg object: the
+  # channel choice, the printed header and progress bar, the history entry and
+  # the new eeg object. The filtering itself (FIR and IIR) is done by the
+  # band-pass recipe that is shared with filter_data(); see the overview above
+  # .make_bandpass_filter(). In order:
+  #   1. check the input          .check_band_edges(), .check_filter_settings()
+  #   2. choose the channels      (here)
+  #   3. design the filter        .make_bandpass_filter()
+  #   4. print the header         (here)
+  #   5. filter each channel      .apply_bandpass_filter()
+  #   6. write the history entry  (here)
+  #   7. build the new object     (here)
+
   # ========== INPUT VALIDATION ==========
-  
+
   if (!inherits(eeg_obj, "eeg")) {
     stop("'eeg_obj' must be an object of class 'eeg'.", call. = FALSE)
   }
-  if (is.null(l_freq) && is.null(h_freq)) {
-    stop("At least one of 'l_freq' or 'h_freq' must be specified.", call. = FALSE)
-  }
-  if (!is.null(l_freq) && (!is.numeric(l_freq) || l_freq <= 0)) {
-    stop("'l_freq' must be a positive numeric value.", call. = FALSE)
-  }
-  
+
+  # The sampling rate comes from the object; filter_data() gets it as an argument.
   sfreq   <- eeg_obj$sampling_rate
   nyquist <- sfreq / 2.0
-  
-  if (!is.null(h_freq) && (!is.numeric(h_freq) || h_freq <= 0 || h_freq >= nyquist)) {
-    stop("'h_freq' must be a positive numeric value less than the Nyquist frequency (",
-         nyquist, " Hz).", call. = FALSE)
-  }
-  if (!is.null(l_freq) && !is.null(h_freq) && l_freq >= h_freq) {
-    stop("'l_freq' (", l_freq, ") must be less than 'h_freq' (", h_freq, ").",
-         call. = FALSE)
-  }
+
+  # Are the cutoffs allowed? (shared with filter_data())
+  .check_band_edges(l_freq, h_freq, sfreq)
 
   # ========== CHECK METHOD, PHASE, PAD AND IIR SETTINGS ==========
 
   method <- match.arg(method)       # "fir" unless the user asks for "iir"
-  phase  <- .check_phase(phase, method)
-  pad    <- .check_pad(pad)
 
-  if (method == "iir") {
-    iir_params <- .resolve_iir_params(iir_params)
+  # missing() is TRUE when an argument was left at its default, so the check
+  # can warn about FIR-only settings that the user set on purpose. Only this
+  # function can ask that about its own arguments, so it does it here and passes
+  # the answer on.
+  chk <- .check_filter_settings(
+    method, phase, pad, iir_params,
+    fir_only_given = c(l_trans_bandwidth = !missing(l_trans_bandwidth),
+                       h_trans_bandwidth = !missing(h_trans_bandwidth),
+                       filter_length     = !missing(filter_length),
+                       fir_window        = !missing(fir_window)))
+  # From here on the checked values are used.
+  phase      <- chk$phase
+  pad        <- chk$pad
+  iir_params <- chk$iir_params
 
-    # These four only describe an FIR kernel. If the user set one of them on
-    # purpose, say that it is not used (missing() is TRUE when an argument was
-    # left at its default).
-    fir_only <- c(l_trans_bandwidth = !missing(l_trans_bandwidth),
-                  h_trans_bandwidth = !missing(h_trans_bandwidth),
-                  filter_length     = !missing(filter_length),
-                  fir_window        = !missing(fir_window))
-    if (any(fir_only)) {
-      warning("Not used with method = \"iir\": ",
-              paste(names(fir_only)[fir_only], collapse = ", "), ".",
-              call. = FALSE)
-    }
-  } else if (!is.null(iir_params)) {
-    warning("'iir_params' is not used with method = \"fir\".", call. = FALSE)
-  }
-  
   # ========== RESOLVE CHANNEL INDICES ==========
-  
+  # Which rows of the data table to filter: all of them (NULL), the ones with
+  # these names, or the ones at these positions. This is eeg-object work, so it
+  # stays here; filter_data() has no channels.
+
   n_channels <- nrow(eeg_obj$data)
   chan_names <- eeg_obj$channels
-  
+
   if (is.null(channels)) {
     ch_idx <- seq_len(n_channels)
   } else if (is.character(channels)) {
@@ -1385,162 +1649,251 @@ eeg_bandpass <- function(eeg_obj,
     stop("'channels' must be NULL, a character vector, or an integer vector.",
          call. = FALSE)
   }
-  
-  # ========== IIR: HAND OVER TO ITS OWN FUNCTION ==========
-  # Everything below this block is the FIR path, unchanged.
 
-  if (method == "iir") {
-    return(.bandpass_iir(eeg_obj, l_freq, h_freq, iir_params, phase,
-                         ch_idx, verbose))
-  }
+  # ========== DESIGN THE FILTER ==========
+  # Step 1 of the shared recipe, done once for all channels. 'spec' describes
+  # the finished filter (FIR kernel or IIR sections, lengths, padding, ...); it
+  # is used below for the header and the history entry and, in the loop, to run
+  # the filter. For method = "iir" the same call designs the IIR filter.
 
-  # ========== COMPUTE TRANSITION BANDWIDTHS ==========
-  
-  l_trans_bw <- if (is.null(l_freq)) {
-    NULL
-  } else if (identical(l_trans_bandwidth, "auto")) {
-    min(max(0.25 * l_freq, 2.0), l_freq)
-  } else {
-    as.numeric(l_trans_bandwidth)
-  }
-
-  h_trans_bw <- if (is.null(h_freq)) {
-    NULL
-  } else if (identical(h_trans_bandwidth, "auto")) {
-    min(max(0.25 * h_freq, 2.0), nyquist - h_freq)
-  } else {
-    as.numeric(h_trans_bandwidth)
-  }
-  
-  # ========== COMPUTE FILTER LENGTH ==========
-  
-  if (identical(filter_length, "auto")) {
-    N <- .auto_filter_length(l_trans_bw, h_trans_bw, sfreq, window = fir_window)
-  } else {
-    N <- as.integer(filter_length)
-    if (N %% 2L == 0L) N <- N + 1L  # force odd
-  }
-  
-  # ========== BUILD FREQ / GAIN ARRAYS ==========
-  # MNE constructs these from the passband and stopband edges.
-  # All frequencies normalised to [0, 1] where 1 = Nyquist.
-  
-  if (!is.null(l_freq) && !is.null(h_freq)) {
-    # Bandpass
-    f_s1 <- (l_freq - l_trans_bw) / nyquist
-    f_p1 <- l_freq / nyquist
-    f_p2 <- h_freq / nyquist
-    f_s2 <- (h_freq + h_trans_bw) / nyquist
-    freq  <- c(f_s1, f_p1, f_p2, f_s2)
-    gain  <- c(   0,    1,    1,    0)
-    # Conditionally add endpoints 
-    if (f_s1 != 0) { freq <- c(0, freq); gain <- c(0, gain) }
-    if (f_s2 != 1) { freq <- c(freq, 1); gain <- c(gain, 0) }
-    filter_type <- paste0("Bandpass (", l_freq, " - ", h_freq, " Hz)")
-  } else if (!is.null(l_freq)) {
-    # Highpass only
-    f_s1 <- (l_freq - l_trans_bw) / nyquist
-    f_p1 <- l_freq / nyquist
-    freq  <- c(f_s1, f_p1, 1)
-    gain  <- c(   0,    1, 1)
-    if (f_s1 != 0) { freq <- c(0, freq); gain <- c(0, gain) }
-    filter_type <- paste0("Highpass (", l_freq, " Hz)")
-  } else {
-    # Lowpass only
-    f_p  <- h_freq / nyquist
-    f_s  <- (h_freq + h_trans_bw) / nyquist
-    freq <- c(0, f_p, f_s)
-    gain <- c(1,   1,   0)
-    if (f_s != 1) { freq <- c(freq, 1); gain <- c(gain, 0) }
-    filter_type <- paste0("Lowpass (", h_freq, " Hz)")
-  }
-
-  # Clamp to [0, 1] to avoid floating point edge violations
-  freq <- pmax(pmin(freq, 1.0), 0.0)
-  
-  # ========== DESIGN KERNEL ==========
-  
-  h <- .firwin_kernel(N, freq, gain, window = fir_window, sfreq = sfreq)
-
-  # "minimum": the same filter shape, rebuilt so that all of its action is on
-  # the past side of every sample (causal). No delay correction is made later,
-  # because .overlap_add_filter() only does that for words starting with "zero".
-  if (phase == "minimum") h <- .minimum_phase(h)
+  spec <- .make_bandpass_filter(sfreq, l_freq, h_freq, method, iir_params,
+                                l_trans_bandwidth, h_trans_bandwidth,
+                                filter_length, fir_window, phase, pad)
 
   # ========== VERBOSE HEADER ==========
-  
+  # What the filter is, printed before the work starts. The first lines are the
+  # same for FIR and IIR; the details differ (a kernel length and window for
+  # FIR, the order and number of sections for IIR).
+
   if (verbose) {
     cat("\n", strrep("=", 70), "\n", sep = "")
-    cat("EEG FIR Filtering\n")
+    if (method == "fir") {
+      cat("EEG FIR Filtering\n")
+    } else {
+      cat("EEG IIR Filtering\n")
+    }
     cat(strrep("=", 70), "\n")
-    cat("  Filter type:          ", filter_type, "\n")
+    cat("  Filter type:          ", spec$filter_type, "\n")
     cat("  Sampling rate:        ", sfreq, " Hz\n")
     cat("  Nyquist:              ", nyquist, " Hz\n")
-    if (!is.null(l_trans_bw))
-      cat("  HP transition BW:     ", round(l_trans_bw, 4), " Hz\n")
-    if (!is.null(h_trans_bw))
-      cat("  LP transition BW:     ", round(h_trans_bw, 4), " Hz\n")
-    cat("  Filter length:        ", N, " samples (", round(N/sfreq, 3), " s)\n")
-    cat("  Window:               ", fir_window, "\n")
-    cat("  Phase:                ", phase, "\n")
-    cat("  Padding:              ", pad, "\n")
+    if (method == "fir") {
+      if (!is.null(spec$l_trans_bw))
+        cat("  HP transition BW:     ", round(spec$l_trans_bw, 4), " Hz\n")
+      if (!is.null(spec$h_trans_bw))
+        cat("  LP transition BW:     ", round(spec$h_trans_bw, 4), " Hz\n")
+      cat("  Filter length:        ", spec$N, " samples (", round(spec$N/sfreq, 3), " s)\n")
+      cat("  Window:               ", spec$window, "\n")
+      cat("  Phase:                ", phase, "\n")
+      cat("  Padding:              ", pad, "\n")
+    } else {
+      cat("  Family / order:        Butterworth /", spec$order, "\n")
+      cat("  Sections:             ", nrow(spec$sos), "\n")
+      cat("  Phase:                ", phase, "\n")
+      cat("  Padding:              ", spec$pad_text, "\n")
+    }
     cat("  Channels:             ", length(ch_idx), "/", n_channels, "\n")
     cat(strrep("-", 70), "\n")
   }
-  
+
   # ========== APPLY FILTER CHANNEL BY CHANNEL ==========
-  
+  # Step 2 of the shared recipe: every chosen row of the data table goes through
+  # .apply_bandpass_filter() on its own. The rows that were not chosen are left
+  # exactly as they are. filtered_data starts as a copy of the data table.
+
   filtered_data <- eeg_obj$data
-  
+
   if (verbose) {
     pb <- txtProgressBar(min = 0, max = length(ch_idx),
                          style = 3, width = 50, char = "=")
   }
-  
+
   for (idx in seq_along(ch_idx)) {
     i <- ch_idx[idx]
-    filtered_data[i, ] <- .overlap_add_filter(
-      x     = filtered_data[i, ],
-      h     = h,
-      phase = phase,
-      pad   = pad
-    )
+    filtered_data[i, ] <- .apply_bandpass_filter(filtered_data[i, ], spec)
     if (verbose) setTxtProgressBar(pb, idx)
   }
-  
+
   if (verbose) {
     close(pb)
     cat("\n", strrep("=", 70), "\n")
   }
-  
+
   # ========== BUILD PREPROCESSING HISTORY ENTRY ==========
-  
-  history_entry <- paste0(
-    "FIR bandpass: ", filter_type,
-    " | window: ", fir_window,
-    " | length: ", N, " samples",
-    " | phase: ", phase,
-    " | pad: ", pad,
-    " | channels: ", length(ch_idx), "/", n_channels
-  )
-  
+  # One line that records what was done to the data, taken from the description
+  # of the filter. It is added to the object's preprocessing history below.
+
+  history_entry <- if (method == "fir") {
+    paste0(
+      "FIR bandpass: ", spec$filter_type,
+      " | window: ", spec$window,
+      " | length: ", spec$N, " samples",
+      " | phase: ", phase,
+      " | pad: ", pad,
+      " | channels: ", length(ch_idx), "/", n_channels
+    )
+  } else {
+    paste0(
+      "IIR bandpass: ", spec$filter_type,
+      " | Butterworth order: ", spec$order,
+      " | phase: ", phase,
+      " | pad: ", spec$pad_text,
+      " | channels: ", length(ch_idx), "/", n_channels
+    )
+  }
+
   # ========== RETURN UPDATED EEG OBJECT ==========
-  
-  out <- new_eeg(
-    data                 = filtered_data,
-    channels             = eeg_obj$channels,
-    sampling_rate        = eeg_obj$sampling_rate,
-    times                = eeg_obj$times,
-    events               = eeg_obj$events,
-    metadata             = eeg_obj$metadata,
-    reference            = eeg_obj$reference,
+  # A new eeg object: the filtered data table and the history entry added;
+  # everything else (channels, times, events, bad channels, montage,
+  # annotations, channel types, ...) is carried over as it was.
+
+  new_eeg(
+    data                  = filtered_data,
+    channels              = eeg_obj$channels,
+    sampling_rate         = eeg_obj$sampling_rate,
+    times                 = eeg_obj$times,
+    events                = eeg_obj$events,
+    metadata              = eeg_obj$metadata,
+    reference             = eeg_obj$reference,
     preprocessing_history = c(eeg_obj$preprocessing_history,
                               list(history_entry)),
-    montage              = eeg_obj$montage,
-    bads                 = eeg_obj$bads,
-    annotations          = eeg_obj$annotations,
-    channel_types        = eeg_obj$channel_types
+    montage               = eeg_obj$montage,
+    bads                  = eeg_obj$bads,
+    annotations           = eeg_obj$annotations,
+    channel_types         = eeg_obj$channel_types
   )
+}
+
+
+# ----------------------------------------------------------------------------
+# filter_data()
+# ----------------------------------------------------------------------------
+
+#' Filter Plain Numbers (Band-pass, High-pass or Low-pass)
+#'
+#' Filters numbers that are not inside an \code{eeg} object and gives them back
+#' filtered: one row of numbers (a vector), or several (a matrix with one row
+#' per signal, like the data table of an \code{eeg} object). It runs exactly
+#' the same filter as \code{\link{eeg_bandpass}} (FIR or IIR, zero-phase or
+#' causal), with the same arguments and the same numbers, but it needs no
+#' \code{eeg} object: there are no channels, events or history to look after,
+#' and nothing is printed.
+#'
+#' Use \code{\link{eeg_bandpass}} for the channels of a recording. This function
+#' is for other rows of numbers: a trace you computed from channels (for
+#' example the strength of a signal over time), the time course of an ICA
+#' component, a signal recorded by another device, or numbers made up to test a
+#' method. \code{eeg_bandpass()} and \code{filter_data()} build and run the
+#' filter with the same inner functions, so the two always agree.
+#'
+#' A missing value (NA or NaN) spoils the row: the filter cannot run past it,
+#' so most or all of the row comes back missing. Find and deal with gaps first
+#' (see \code{\link{annotate_nan}}).
+#'
+#' @param x Numeric vector (one signal) or numeric matrix with one row per
+#'   signal and one column per time point.
+#' @param sfreq Numeric. Sampling rate of the numbers, in Hz.
+#' @inheritParams eeg_bandpass
+#'
+#' @return Numbers of the same shape as \code{x} (a vector, or a matrix with the
+#'   same dimension names), filtered.
+#'
+#' @seealso \code{\link{eeg_bandpass}} for the channels of an \code{eeg} object.
+#'
+#' @examples
+#' # 10 seconds of a 10 Hz wave with 50 Hz hum, sampled at 256 Hz
+#' fs <- 256
+#' t  <- (0:2559) / fs
+#' x  <- sin(2 * pi * 10 * t) + sin(2 * pi * 50 * t)
+#'
+#' # band-pass 1-40 Hz: the wave stays, the hum goes
+#' y <- filter_data(x, sfreq = fs, l_freq = 1, h_freq = 40)
+#'
+#' # a causal IIR low-pass instead (nothing appears before it happened)
+#' y2 <- filter_data(x, sfreq = fs, h_freq = 40, method = "iir", phase = "forward")
+#'
+#' # several signals at once: one row each
+#' m  <- rbind(x, 0.5 * x)
+#' ym <- filter_data(m, sfreq = fs, l_freq = 1, h_freq = 40)
+#'
+#' @export
+filter_data <- function(x,
+                        sfreq,
+                        l_freq              = NULL,
+                        h_freq              = NULL,
+                        method              = c("fir", "iir"),
+                        iir_params          = NULL,
+                        l_trans_bandwidth   = "auto",
+                        h_trans_bandwidth   = "auto",
+                        filter_length       = "auto",
+                        fir_window          = "hamming",
+                        phase               = "zero",
+                        pad                 = "reflect_limited") {
+
+  # HOW THIS FUNCTION WORKS
+  # filter_data() is the front door of the shared band-pass recipe (see the
+  # overview above .make_bandpass_filter()) for numbers that are not in an eeg
+  # object. It does the same steps as eeg_bandpass(), without the eeg-object
+  # work (no channels, no header, no history, no new object):
+  #   1. check x and sfreq                   (here)
+  #   2. check the cutoffs and the settings  .check_band_edges(),
+  #                                          .check_filter_settings()
+  #   3. design the filter, once             .make_bandpass_filter()
+  #   4. run it over every row of x          .apply_bandpass_filter()
+  # The other places in the package that filter a loose row of numbers
+  # (annotate_muscle(), find_bads_eog(), find_bads_ecg()) call this function.
+
+  # ========== INPUT VALIDATION ==========
+
+  # x: a vector, or a matrix with one row per signal; numbers only, and not empty
+  # (a 3-dimensional array has no meaning here).
+  if (!is.numeric(x) || length(x) == 0L || length(dim(x)) > 2L) {
+    stop("'x' must be a non-empty numeric vector, or a numeric matrix with one ",
+         "row per signal.", call. = FALSE)
+  }
+  # eeg_bandpass() takes the sampling rate from its eeg object; here it has to
+  # be given, and it must be a single positive number.
+  if (!is.numeric(sfreq) || length(sfreq) != 1L || is.na(sfreq) || sfreq <= 0) {
+    stop("'sfreq' must be a single positive number (the sampling rate in Hz).",
+         call. = FALSE)
+  }
+
+  # Are the cutoffs allowed? (shared with eeg_bandpass())
+  .check_band_edges(l_freq, h_freq, sfreq)
+
+  # ========== CHECK METHOD, PHASE, PAD AND IIR SETTINGS ==========
+
+  method <- match.arg(method)       # "fir" unless the user asks for "iir"
+
+  # Same check as in eeg_bandpass(); the missing() answers have to come from
+  # here because these are this function's own arguments.
+  chk <- .check_filter_settings(
+    method, phase, pad, iir_params,
+    fir_only_given = c(l_trans_bandwidth = !missing(l_trans_bandwidth),
+                       h_trans_bandwidth = !missing(h_trans_bandwidth),
+                       filter_length     = !missing(filter_length),
+                       fir_window        = !missing(fir_window)))
+
+  # ========== DESIGN THE FILTER ONCE, RUN IT OVER EVERY ROW ==========
+
+  # Step 3: design. One design is enough for any number of rows; it uses the
+  # checked values in 'chk'. 'spec' describes the finished filter.
+  spec <- .make_bandpass_filter(sfreq, l_freq, h_freq, method, chk$iir_params,
+                                l_trans_bandwidth, h_trans_bandwidth,
+                                filter_length, fir_window, chk$phase, chk$pad)
+
+  # Step 4: run. 'out' starts as a copy of x, so a vector stays a vector, a
+  # matrix keeps its shape, and names / dimension names are kept. Whole numbers
+  # (integers) become ordinary numbers when the filtered values are written in.
+  out <- x
+  if (length(dim(x)) == 2L) {
+    # a matrix: every row is a signal of its own and is filtered on its own
+    for (i in seq_len(nrow(x))) {
+      out[i, ] <- .apply_bandpass_filter(out[i, ], spec)
+    }
+  } else {
+    # a vector: a single signal
+    out[] <- .apply_bandpass_filter(as.vector(x), spec)
+  }
 
   out
 }

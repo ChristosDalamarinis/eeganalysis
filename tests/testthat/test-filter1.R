@@ -1901,3 +1901,262 @@ test_that("bandpass then notch keeps the type of a derived channel through the c
   expect_equal(out$channel_types, eeg_veog$channel_types)
   expect_equal(out$channel_types[out$channels == "VEOG"], "eog")
 })
+
+# ─── filter_data() — the same filter on plain numbers ────────────────────────
+#
+# filter_data() and eeg_bandpass() build and run the filter with the same inner
+# functions (.make_bandpass_filter() and .apply_bandpass_filter()), so on the
+# rows of an eeg object they must give exactly the same numbers.
+
+# size of one frequency in a row of numbers (a sine of size 1 gives 1)
+fd_amp <- function(v, f, fs) {
+  2 * Mod(sum(v * exp(-2i * pi * f * (seq_along(v) - 1) / fs))) / length(v)
+}
+
+test_that("filter_data gives exactly the numbers of eeg_bandpass on the rows of an eeg object", {
+  set.seed(11)
+  m   <- matrix(rnorm(3 * 2048, sd = 10), nrow = 3) + c(0, 50, 5000)
+  eeg <- new_eeg(data = m, channels = c("A", "B", "C"), sampling_rate = 256L)
+
+  settings <- list(
+    list(l_freq = 1,    h_freq = 40),
+    list(l_freq = NULL, h_freq = 40),
+    list(l_freq = 1,    h_freq = NULL),
+    list(l_freq = 1,    h_freq = 40, phase = "minimum"),
+    list(l_freq = 1,    h_freq = 40, fir_window = "hann"),
+    list(l_freq = 8,    h_freq = 12, l_trans_bandwidth = 1, h_trans_bandwidth = 2),
+    list(l_freq = NULL, h_freq = 40, filter_length = 501),
+    list(l_freq = 1,    h_freq = 40, filter_length = 1501),
+    list(l_freq = 1,    h_freq = 40, method = "iir"),
+    list(l_freq = NULL, h_freq = 40, method = "iir", phase = "forward",
+         iir_params = list(order = 6)),
+    list(l_freq = 0.5,  h_freq = NULL, method = "iir", iir_params = list(order = 3))
+  )
+  for (st in settings) {
+    via_eeg <- do.call(eeg_bandpass, c(list(eeg), st, list(verbose = FALSE)))$data
+    via_num <- do.call(filter_data,  c(list(m, sfreq = 256), st))
+    expect_identical(unname(via_num), unname(via_eeg))
+  }
+})
+
+test_that("filter_data keeps the shape, the names and the input of what it is given", {
+  set.seed(12)
+  v <- rnorm(1500, sd = 5)
+  m <- matrix(rnorm(2 * 1500, sd = 5), nrow = 2,
+              dimnames = list(c("left", "right"), NULL))
+
+  yv <- filter_data(v, 256, l_freq = 1, h_freq = 40)
+  expect_true(is.null(dim(yv)))
+  expect_length(yv, 1500L)
+
+  ym <- filter_data(m, 256, l_freq = 1, h_freq = 40)
+  expect_equal(dim(ym), c(2L, 1500L))
+  expect_equal(dimnames(ym), dimnames(m))
+
+  # a vector gives the numbers of the same row inside a matrix
+  expect_identical(filter_data(m[2, ], 256, l_freq = 1, h_freq = 40), unname(ym[2, ]))
+
+  # names of a vector stay, and whole numbers (integers) work too
+  named <- setNames(v, paste0("t", seq_along(v)))
+  expect_equal(names(filter_data(named, 256, l_freq = 1, h_freq = 40)), names(named))
+  ints <- as.integer(round(v * 100))
+  expect_type(filter_data(ints, 256, l_freq = 1, h_freq = 40), "double")
+
+  # the input itself is not changed
+  m_copy <- m
+  invisible(filter_data(m, 256, l_freq = 1, h_freq = 40))
+  expect_identical(m, m_copy)
+})
+
+test_that("filter_data filters every row on its own", {
+  set.seed(13)
+  m <- rbind(rnorm(1500, sd = 5) + 5000, rnorm(1500, sd = 5), rnorm(1500, sd = 50) - 300)
+  y <- filter_data(m, 256, l_freq = 1, h_freq = 40, method = "iir")
+  for (i in 1:3) {
+    expect_identical(y[i, ], filter_data(m[i, ], 256, l_freq = 1, h_freq = 40, method = "iir"))
+  }
+})
+
+test_that("filter_data keeps a wave inside the band and removes a hum outside it", {
+  fs <- 256
+  tt <- (0:2559) / fs
+  x  <- sin(2 * pi * 10 * tt) + sin(2 * pi * 50 * tt)
+  # (an IIR Butterworth filter has gentler edges than an FIR one, so it needs a
+  # higher order to take a hum 10 Hz above the cutoff down as far)
+  for (method in c("fir", "iir")) {
+    y <- filter_data(x, fs, l_freq = 1, h_freq = 40, method = method,
+                     iir_params = if (method == "iir") list(order = 8) else NULL)
+    expect_gt(fd_amp(y, 10, fs), 0.98)
+    expect_lt(fd_amp(y, 50, fs), 0.02)
+  }
+})
+
+test_that("filter_data works for a high-pass alone and for a low-pass alone", {
+  # a high-pass takes out a constant offset; a low-pass leaves it alone
+  hp <- filter_data(rep(5, 2000), 256, l_freq = 1)
+  expect_lt(max(abs(hp)), 1e-8)
+  lp <- filter_data(rep(5, 2000), 256, h_freq = 40)
+  expect_lt(max(abs(lp - 5)), 1e-8)
+  # the same for IIR
+  expect_lt(max(abs(filter_data(rep(5, 2000), 256, l_freq = 1, method = "iir"))), 1e-8)
+  expect_lt(max(abs(filter_data(rep(5, 2000), 256, h_freq = 40, method = "iir") - 5)), 1e-8)
+})
+
+test_that("a causal filter leaves nothing before a spike, a zero-phase filter does", {
+  spike <- c(rep(0, 2999), 1, rep(0, 3000))
+  before <- 1:2999
+  expect_lt(max(abs(filter_data(spike, 256, l_freq = 1, h_freq = 40, phase = "minimum")[before])), 1e-9)
+  expect_lt(max(abs(filter_data(spike, 256, l_freq = 1, h_freq = 40, method = "iir",
+                                phase = "forward")[before])), 1e-12)
+  expect_gt(max(abs(filter_data(spike, 256, l_freq = 1, h_freq = 40)[before])), 1e-3)
+  expect_gt(max(abs(filter_data(spike, 256, l_freq = 1, h_freq = 40, method = "iir")[before])), 1e-3)
+})
+
+test_that("a missing value spoils its own row only", {
+  set.seed(14)
+  m <- matrix(rnorm(2 * 1500, sd = 5), nrow = 2)
+  m[1, 700] <- NA
+  y <- filter_data(m, 256, l_freq = 1, h_freq = 40, method = "iir")
+  expect_true(all(is.na(y[1, ])))
+  expect_identical(y[2, ], filter_data(m[2, ], 256, l_freq = 1, h_freq = 40, method = "iir"))
+  expect_false(anyNA(y[2, ]))
+})
+
+test_that("filter_data prints nothing", {
+  expect_silent(filter_data(iir_test_signal(1500L, 256), 256, l_freq = 1, h_freq = 40))
+  expect_silent(filter_data(iir_test_signal(1500L, 256), 256, l_freq = 1, h_freq = 40, method = "iir"))
+})
+
+test_that("filter_data checks 'x' and 'sfreq'", {
+  x <- iir_test_signal(1000L, 256)
+  msg_x <- "'x' must be a non-empty numeric vector, or a numeric matrix"
+  expect_error(filter_data("a", 256, l_freq = 1), msg_x)
+  expect_error(filter_data(list(x), 256, l_freq = 1), msg_x)
+  expect_error(filter_data(data.frame(a = x), 256, l_freq = 1), msg_x)
+  expect_error(filter_data(array(x[1:8], c(2, 2, 2)), 256, l_freq = 1), msg_x)
+  expect_error(filter_data(numeric(0), 256, l_freq = 1), msg_x)
+  expect_error(filter_data(NULL, 256, l_freq = 1), msg_x)
+
+  msg_s <- "'sfreq' must be a single positive number"
+  expect_error(filter_data(x, NA_real_, l_freq = 1), msg_s)
+  expect_error(filter_data(x, 0, l_freq = 1), msg_s)
+  expect_error(filter_data(x, -256, l_freq = 1), msg_s)
+  expect_error(filter_data(x, c(256, 512), l_freq = 1), msg_s)
+  expect_error(filter_data(x, "256", l_freq = 1), msg_s)
+})
+
+test_that("filter_data checks the cutoffs, the method and the settings like eeg_bandpass", {
+  x <- iir_test_signal(1000L, 256)
+  expect_error(filter_data(x, 256), "At least one of 'l_freq' or 'h_freq'")
+  expect_error(filter_data(x, 256, l_freq = -1), "'l_freq' must be a positive")
+  expect_error(filter_data(x, 256, h_freq = 128), "less than the Nyquist frequency \\(128 Hz\\)")
+  expect_error(filter_data(x, 256, l_freq = 40, h_freq = 40), "must be less than 'h_freq'")
+  expect_error(filter_data(x, 256, l_freq = 1, method = "banana"), "should be one of")
+  expect_error(filter_data(x, 256, l_freq = 1, phase = "banana"),
+               "'phase' must be one of \"zero\", \"minimum\" for an FIR filter")
+  expect_error(filter_data(x, 256, l_freq = 1, method = "iir", phase = "minimum"),
+               "'phase' must be one of \"zero\", \"forward\" for an IIR filter")
+  expect_error(filter_data(x, 256, l_freq = 1, pad = "banana"), "'pad' must be")
+  expect_error(filter_data(x, 256, l_freq = 1, method = "iir", iir_params = list(ftype = "cheby1")),
+               "must be \"butter\"")
+  expect_error(filter_data(x, 256, l_freq = 1, h_freq = 40, filter_length = 401),
+               "too short for the 1.00 Hz transition band")
+  expect_warning(filter_data(x, 256, l_freq = 1, method = "iir", fir_window = "hann"),
+                 "Not used with method = \"iir\": fir_window")
+  expect_warning(filter_data(x, 256, l_freq = 1, iir_params = list(order = 2)),
+                 "'iir_params' is not used with method = \"fir\"")
+})
+
+# ─── filter_data() — against the MNE numbers ─────────────────────────────────
+#
+# The same reference numbers as for eeg_bandpass() above (iir_test_signal(), no
+# random numbers; sample values at positions `idx` and the sum of squares).
+
+fd_vs_mne <- function(fs, n, l, h, order, phase, idx, ref, ss) {
+  y <- filter_data(iir_test_signal(n, fs), sfreq = fs, l_freq = l, h_freq = h,
+                   method = "iir", iir_params = list(order = order), phase = phase)
+  expect_lt(max(abs(y[idx] - ref)), 1e-8)
+  expect_equal(sum(y^2), ss, tolerance = 1e-8)
+}
+
+test_that("filter_data IIR BP (1-40 Hz, order 4, zero phase, 256 Hz) matches MNE", {
+  fd_vs_mne(256L, 3000L, 1, 40, 4L, "zero",
+    idx = c(1, 2, 40, 500, 1500, 2500, 2999, 3000),
+    ref = c(0.00653979260359, -0.86571459856, -7.45440384139, 1.88128890451,
+            -6.3020538824, -6.92728907952, 0.726414044944, 0.114241219425),
+    ss  = 165138.004778)
+})
+
+test_that("filter_data IIR BP (1-40 Hz, order 4, forward, 256 Hz) matches MNE", {
+  fd_vs_mne(256L, 3000L, 1, 40, 4L, "forward",
+    idx = c(1, 2, 40, 500, 1500, 2500, 2999, 3000),
+    ref = c(0.327853256445, 2.16347117068, -1.36836538073, 6.55589844577,
+            0.152681213534, -7.10602452525, 3.89583281158, 6.87818690393),
+    ss  = 168556.368698)
+})
+
+test_that("filter_data IIR BP (1-40 Hz, order 4, zero phase, 2048 Hz) matches MNE", {
+  fd_vs_mne(2048L, 6000L, 1, 40, 4L, "zero",
+    idx = c(1, 2, 40, 500, 3000, 5500, 5999, 6000),
+    ref = c(0.0449552398375, -0.0691135954815, 6.22291348605, 3.35746641838,
+            -9.56247590211, -5.95425415805, 0.492744974721, 0.0039508996732),
+    ss  = 346522.041134)
+})
+
+test_that("filter_data BP1 (1-40 Hz, hamming) matches MNE to 1e-10", {
+  skip_if_not(has_ref, "MNE reference data not available")
+  y   <- filter_data(raw_signal, sfreq = 256, l_freq = 1, h_freq = 40, fir_window = "hamming")
+  mne <- load_ref("bp1_filtered.csv")
+  expect_equal(length(y), length(mne))
+  expect_lt(max(abs(y - mne)), 1e-10)
+})
+
+# ─── the filter design shared by eeg_bandpass() and filter_data() ────────────
+#
+# Lengths below are the ones MNE's create_filter() gives at 256 Hz.
+
+test_that(".make_bandpass_filter picks the transition widths and the length like MNE", {
+  design <- function(l = NULL, h = NULL, ltb = "auto", htb = "auto",
+                     len = "auto", win = "hamming") {
+    .make_bandpass_filter(256, l, h, "fir", NULL, ltb, htb, len, win,
+                          "zero", "reflect_limited")
+  }
+
+  # the automatic rules
+  d <- design(1, 40)
+  expect_equal(c(d$l_trans_bw, d$h_trans_bw), c(1, 10))
+  expect_equal(d$N, 845)
+  expect_equal(design(NULL, 40)$N, 85)
+  # a cutoff close to the Nyquist frequency: the transition width is cut to
+  # what is left above the cutoff (128 - 120 = 8 Hz), not 0.25 * 120 = 30 Hz
+  d <- design(NULL, 120)
+  expect_null(d$l_trans_bw)
+  expect_equal(d$h_trans_bw, 8)
+  expect_equal(d$N, 107)
+  # the window changes the length
+  expect_equal(design(1, 40, win = "hann")$N, 795)
+
+  # typed values win over the automatic ones
+  d <- design(1, 40, ltb = 0.5)
+  expect_equal(c(d$l_trans_bw, d$h_trans_bw), c(0.5, 10))
+  expect_equal(d$N, 1691)
+  d <- design(8, 12, ltb = 1, htb = 3)
+  expect_equal(c(d$l_trans_bw, d$h_trans_bw), c(1, 3))
+  expect_equal(design(1, 40, len = 1501)$N, 1501)
+  expect_equal(design(1, 40, len = 1500)$N, 1501)      # an even length is made odd
+
+  # the kernel has that length, the minimum-phase one too
+  expect_length(design(1, 40)$kernel, 845L)
+  spec_min <- .make_bandpass_filter(256, 1, 40, "fir", NULL, "auto", "auto", "auto",
+                                    "hamming", "minimum", "reflect_limited")
+  expect_length(spec_min$kernel, 845L)
+})
+
+test_that("the history entry of an FIR band-pass names the settings", {
+  out <- eeg_bandpass(eeg1ch, l_freq = 1, h_freq = 40, fir_window = "hann",
+                      verbose = FALSE)
+  expect_equal(out$preprocessing_history[[1]],
+               paste0("FIR bandpass: Bandpass (1 - 40 Hz) | window: hann | ",
+                      "length: 795 samples | phase: zero | pad: reflect_limited | ",
+                      "channels: 1/1"))
+})

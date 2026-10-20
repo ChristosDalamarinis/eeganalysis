@@ -275,6 +275,23 @@ test_that("annotate_muscle detects an injected 110-140 Hz burst and stays quiet 
   expect_lt(max(result_clean$scores), 4)
 })
 
+test_that("annotate_muscle's score is smooth: the 110-140 Hz strength is low-passed at 4 Hz", {
+  sfreq <- 1024
+  n_tp  <- sfreq * 30
+
+  set.seed(44)
+  data <- t(vapply(.chans, function(ch) rnorm(n_tp, sd = 5), numeric(n_tp)))
+  eeg  <- new_eeg(data = data, channels = .chans, sampling_rate = sfreq)
+
+  scores <- annotate_muscle(eeg, return_details = TRUE)$scores
+
+  # A 4 Hz low-pass leaves almost nothing above 8 Hz (its stop band starts at
+  # 6 Hz). The strength of noise in a 30 Hz wide band has a lot between 8 and
+  # 30 Hz, so a weaker smoothing would leave a large share of the variance there.
+  fast <- filter_data(scores, sfreq, l_freq = 8, h_freq = 100)
+  expect_lt(var(fast) / var(scores), 1e-3)
+})
+
 
 # ============================================================================
 # TEST SUITE 4: annotate_nan()

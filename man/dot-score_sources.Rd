@@ -25,9 +25,9 @@ correlation per component, named \code{"IC1"}, \code{"IC2"}, ...
 Restricted to Pearson correlation against a fixed target (a more general
 score-function/no-target-skewness path is not needed by any detector in
 this file). Band-pass filters every IC time-course and the
-target signal to \code{[l_freq, h_freq]} via the existing
-\code{\link{.fir_filter_vector}} (R/annotations.R - already used by
-\code{\link{annotate_muscle}} for the same kind of per-vector bandpass),
+target signal to \code{[l_freq, h_freq]} with \code{\link{filter_data}}
+(also used by \code{\link{annotate_muscle}} for the same kind of
+per-vector bandpass),
 then correlates each filtered IC against the filtered target.
 }
 \keyword{internal}

@@ -116,3 +116,7 @@ Engineer, 7, 536-541.
 Oppenheim, A. V., & Schafer, R. W. (2010). Discrete-Time Signal Processing
 (3rd ed.). Pearson.
 }
+\seealso{
+\code{\link{filter_data}} to run the same filter on numbers that are
+not in an \code{eeg} object.
+}

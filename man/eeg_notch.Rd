@@ -2,19 +2,22 @@
 % Please edit documentation in R/filter1.R
 \name{eeg_notch}
 \alias{eeg_notch}
-\title{EEG Notch (Band-Stop) Filter (FIR or IIR)}
+\title{EEG Notch (Band-Stop) Filter (FIR, IIR or Spectrum-Fit)}
 \usage{
 eeg_notch(
   eeg_obj,
   freqs = 50,
   notch_widths = NULL,
   trans_bandwidth = 1,
-  method = c("fir", "iir"),
+  method = c("fir", "iir", "spectrum_fit"),
   iir_params = NULL,
   filter_length = "auto",
   fir_window = "hamming",
   phase = "zero",
   pad = "reflect_limited",
+  mt_bandwidth = NULL,
+  p_value = 0.05,
+  grid_factor = 8L,
   channels = NULL,
   verbose = TRUE
 )
@@ -22,30 +25,40 @@ eeg_notch(
 \arguments{
 \item{eeg_obj}{An object of class 'eeg'.}
 
-\item{freqs}{Numeric vector. Frequencies to notch in Hz.
+\item{freqs}{Numeric vector or NULL. Frequencies to notch in Hz.
 E.g. c(50, 100, 150) for line noise + harmonics.
-Default: 50.}
+NULL, only with \code{method = "spectrum_fit"},
+searches for the lines automatically; for that
+method it is also what you get when you leave
+\code{freqs} out. Default: 50.}
 
 \item{notch_widths}{Numeric or NULL. Width of the stop band in Hz
 centred at each freq. NULL uses:
 freq / 200. Give one number for all frequencies or
 one per frequency; each must be 0 or more (anything
-else is an error). Default: NULL.}
+else is an error). With \code{method =
+                        "spectrum_fit"} it is the width of the zone that is
+removed, and it is used only when \code{freqs} is
+given. Default: NULL.}
 
 \item{trans_bandwidth}{Numeric. Width of each transition band in Hz.
 Default: 1. With method = "iir" it only moves the
 two cutoffs of each notch outwards, by half of it.}
 
-\item{method}{Character. "fir" (default) or "iir".}
+\item{method}{Character. "fir" (default), "iir" or
+"spectrum_fit".}
 
 \item{iir_params}{NULL or a named list, used only with
 \code{method = "iir"}: \code{order} (default 4; a
 band-stop has twice as many poles) and \code{ftype}
 (only "butter" so far).}
 
-\item{filter_length}{Integer or "auto". Kernel length in samples.
-"auto" uses MNE's formula. Default: "auto".
-Used only with method = "fir".}
+\item{filter_length}{Integer or "auto". With method = "fir": kernel
+length in samples; "auto" uses MNE's formula. With
+method = "spectrum_fit": the length of each piece,
+as a number of samples or as text such as "5s" or
+"500ms"; "auto" is 10 seconds. Not used with
+method = "iir". Default: "auto".}
 
 \item{fir_window}{Character. Window function. Default: "hamming".
 Used only with method = "fir".}
@@ -60,6 +73,32 @@ Any other word is an error.}
 
 \item{pad}{Character. Padding mode. Default: "reflect_limited".}
 
+\item{mt_bandwidth}{Numeric or NULL. Only for \code{method =
+                        "spectrum_fit"}. The bandwidth in Hz of the smooth
+windows: how wide a blur one steady wave is seen
+with. The number of windows is this bandwidth times
+the piece length in seconds (at least 3 are
+needed). Wider finds weaker lines and costs more
+time, but two lines closer together than the
+bandwidth cannot be told apart. NULL = 8 windows,
+which is 0.8 Hz for 10 s pieces. Default: NULL.}
+
+\item{p_value}{Numeric between 0 and 1. Only for \code{method =
+                        "spectrum_fit"} with \code{freqs = NULL}. How easily
+a frequency is called a line: roughly the chance that
+a piece of pure noise gets a false line. Lower is
+stricter (fewer false lines, weak lines are missed
+more often). With \code{freqs} given it has no effect
+(a warning says so if you set it). Default: 0.05.}
+
+\item{grid_factor}{Whole number of 1 or more. Only for \code{method =
+                        "spectrum_fit"} with \code{freqs = NULL}. How many
+times finer than the standard ruler the frequencies
+are tested (see Details). 1 is the standard ruler,
+which misses a line that lies between two marks.
+With \code{freqs} given it has no effect (a warning
+says so if you set it). Default: 8.}
+
 \item{channels}{Character or integer vector, or NULL. Channels to
 filter. NULL = all channels. Default: NULL.}
 
@@ -68,14 +107,17 @@ Default: TRUE.}
 }
 \value{
 An object of class 'eeg' with filtered data and updated
-preprocessing_history.
+preprocessing_history. With the spectrum-fit method, the lines that were
+found are also printed (with \code{verbose = TRUE}) and written into the
+preprocessing_history entry.
 }
 \description{
 Removes narrow frequency bands from EEG data to eliminate electrical line
-noise, with a zero-phase FIR filter (the default) or an IIR Butterworth
-band-stop filter. With the defaults, (method='fir', phase='zero',
-fir_window='hamming', fir_design='firwin', pad='reflect_limited'), it is a
-zero-phase FIR filter.
+noise, with a zero-phase FIR filter (the default), an IIR Butterworth
+band-stop filter, or by finding the steady sine waves of the line noise and
+subtracting exactly those (spectrum-fit). With the defaults, (method='fir',
+phase='zero', fir_window='hamming', fir_design='firwin',
+pad='reflect_limited'), it is a zero-phase FIR filter.
 }
 \details{
 Internally implements notch as a bandstop FIR filter, exactly as MNE does:
@@ -103,6 +145,46 @@ frequency in \code{freqs} gets its own band-stop filter, and the filters are
 applied one after the other, from the lowest frequency to the highest: the
 result is the same as calling \code{eeg_notch()} once for each frequency.
 Only the Butterworth family is implemented so far.
+
+\strong{Spectrum-fit} (\code{method = "spectrum_fit"}) does not cut a slot
+out of the frequencies. It looks for steady sine waves ("lines") in the
+recording, measures the height and the timing of each one, and subtracts
+exactly that wave; the rest of the recording is not touched. Every channel
+is cut into overlapping pieces (10 s by default, see \code{filter_length}).
+In each piece the data are looked at through several smooth windows
+(Slepian windows), and for every frequency of a ruler an F score says how
+much stronger a steady wave is than the noise around it. Frequencies whose
+score is above a threshold (set by \code{p_value}) are lines. The cleaned
+pieces are joined again with a smooth cross-fade. With \code{freqs = NULL},
+which is also what you get when you leave \code{freqs} out for this method,
+the lines are searched automatically, harmonics included, and the
+frequencies that were found are reported. With \code{freqs} given no test is
+made: in every piece, the frequencies of the ruler that lie inside
+\code{notch_widths} around each of them are removed.
+
+\strong{The finer ruler.} The standard ruler has one mark every 1/T Hz, T
+being the piece length (0.1 Hz for 10 s pieces), and a line that falls
+between two marks is not found at all. \code{grid_factor} (default 8) makes
+the ruler that many times finer, by zero-padding, so that a line is never
+more than 1 / (2 T \code{grid_factor}) Hz away from a mark. Example, on
+made-up noise with a 20 uV hum: a hum at 50.37 Hz, between two marks, was
+100 percent still there with the standard ruler (\code{grid_factor = 1}) and
+4 percent with the default one; the worst case over hums between two marks is
+4.2 percent. Of every run of neighbouring marks that pass the test only the
+strongest one is used, and \code{p_value} is shared over all marks, so false
+alarms stay as rare as with the standard ruler. The finer ruler is used only
+when the lines are searched (\code{freqs = NULL}); with \code{freqs} given
+\code{grid_factor} has no effect (a warning says so if you set it). It costs time: about 0.2 s per minute of
+one channel at 512 Hz (0.02 s with \code{grid_factor = 1}), plus about 0.3 s
+once for the windows, so downsample first if the sampling rate is higher.
+
+Limits of spectrum-fit: a hum whose frequency moves during a piece is only
+partly removed (use shorter pieces, for example \code{filter_length =
+"5s"}); any wave that stays steady for a whole piece counts as a line, so
+look at the frequencies that are reported; a piece that contains missing
+values is left unchanged, with a warning. A longer explanation with figures
+is in the file \code{notes/finer-ruler-spectrum-fit.pdf} of the package
+sources.
 }
 \references{
 Butterworth, S. (1930). On the theory of filter amplifiers. Wireless
@@ -110,4 +192,13 @@ Engineer, 7, 536-541.
 
 Oppenheim, A. V., & Schafer, R. W. (2010). Discrete-Time Signal Processing
 (3rd ed.). Pearson.
+
+Thomson, D. J. (1982). Spectrum estimation and harmonic analysis.
+Proceedings of the IEEE, 70, 1055-1096.
+
+Percival, D. B., & Walden, A. T. (1993). Spectral Analysis for Physical
+Applications. Cambridge University Press.
+
+Mitra, P., & Bokil, H. (2008). Observed Brain Dynamics. Oxford University
+Press.
 }

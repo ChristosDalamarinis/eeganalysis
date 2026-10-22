@@ -1471,6 +1471,699 @@
 
 
 # ============================================================================
+#            SPECTRUM-FIT LINE-NOISE REMOVAL ("THE FINER RULER")
+# ============================================================================
+#
+# This block holds everything behind eeg_notch(method = "spectrum_fit").
+# A longer write-up with the pictures is in notes/finer-ruler-spectrum-fit.pdf.
+#
+# WHAT IT DOES
+#   A notch filter cuts a slot out of the frequencies. Spectrum-fit works the
+#   other way round: it LOOKS for steady sine waves (called "lines") in the
+#   recording, measures the height and the timing of each one, and subtracts
+#   exactly that wave. Nothing else in the recording is touched.
+#
+# THE STEPS, PER CHANNEL
+#   1. Cut the recording into overlapping pieces (10 s each by default; every
+#      piece starts half a piece after the one before it).
+#   2. In every piece, look at the data through K smooth windows (Slepian
+#      windows, also called tapers; K = bandwidth in Hz x piece length in s).
+#      For every frequency on a RULER (see below) this gives two numbers:
+#        - the height and timing of a steady wave at that frequency, and
+#        - an F score: how much stronger the steady wave is than what is left
+#          over after it has been taken out. A high score means "this is a
+#          real steady wave", a low score means "this is just noise".
+#   3. Frequencies whose score is above a line (the threshold, set by p_value)
+#      are lines. Each line is subtracted from the piece as a sine wave.
+#   4. Glue the cleaned pieces back together with a smooth cross-fade (a Hann
+#      window). The fades of overlapping pieces add up to exactly 1, so data
+#      that no piece changed come back unchanged.
+#
+# THE RULER (the "finer ruler", grid_factor)
+#   The ruler is the list of frequencies that are tested. The standard ruler
+#   has one mark every 1/T Hz, T being the piece length: 0.1 Hz for 10 s
+#   pieces. A line that sits BETWEEN two marks gets a low score at both of
+#   them and is not found at all:
+#
+#      marks of the standard ruler:  |        |        |        |        |
+#                                   50.2     50.3     50.4     50.5     50.6
+#      hum at 50.30 Hz:                       ^         exactly on a mark: found
+#      hum at 50.37 Hz:                            ^    between two marks: MISSED
+#
+#   The finer ruler zero-pads every piece (it adds grid_factor - 1 times the
+#   piece length of zeros before the Fourier transform), which gives
+#   grid_factor times more marks: 0.0125 Hz apart for grid_factor = 8, so a
+#   line is never more than 0.00625 Hz away from a mark. This is the default.
+#   grid_factor = 1 is the standard ruler.
+#
+#   Measured on a made-up recording (5 uV of "brain" noise, a 20 uV hum, 60 s
+#   at 512 Hz, 10 s pieces, automatic search). The numbers are the part of the
+#   hum that is still there afterwards (rms of the error / rms of the hum):
+#
+#      hum at                     standard ruler   finer ruler (grid_factor 8)
+#      50.00 Hz  (on a mark)           0.8 %              0.8 %
+#      50.05 Hz  (between marks)     100   %              0.6 %
+#      50.30 Hz  (on a mark)           0.6 %              0.6 %
+#      50.37 Hz  (between marks)     100   %              4.0 %
+#      50.45 Hz  (between marks)     100   %              0.4 %
+#      49.8 -> 50.5 Hz, drifting      78   %              5.6 %   (5 s pieces)
+#
+#   Worst case of the finer ruler over 41 hum frequencies between two marks:
+#   4.2 % left. Ruler factor 4 / 16 / 32 gave 12.5 / 3.3 / 1.9 % and took
+#   0.08 / 1.1 / 2.5 s per minute of one channel at 512 Hz (factor 8: 0.18 s,
+#   factor 1: 0.02 s; the windows are worked out once, about 0.3 s, for all
+#   channels together). Eight is the knee of that curve. For a hum that
+#   drifts, shorter pieces (filter_length = "5s") follow it better than long
+#   ones: 22 % of the hum left with 10 s pieces, 5.6 % with 5 s, 3 % with 2 s.
+#
+#   Two things come with having more marks, and the code deals with both:
+#
+#   (a) Several neighbouring marks pass the test for the SAME line. Subtracting
+#       a wave at every one of them would subtract the line again and again
+#       (in a test, 1.9 to 2.8 times the hum was left, instead of 0.4 to 4 %).
+#       So of every run of neighbouring marks that passed, only the strongest
+#       one is used.
+#
+#   (b) More marks means more chances for noise to pass the test by luck. On
+#       hum-free noise the standard ruler gave a false alarm in 3.9 % of the
+#       pieces and the finer ruler, with nothing else changed, in 13.6 %. So
+#       p_value is shared over ALL marks (n x grid_factor of them instead of
+#       n), which keeps it meaning the same at every ruler: 2.4 % of the pieces
+#       with a false alarm at p_value = 0.05 and grid_factor = 8. With
+#       grid_factor = 1 this is exactly the standard rule. A hum of 1 uV or
+#       more is still found in 98 to 100 % of the pieces, on a mark or between
+#       two marks; only hums weaker than about 0.8 uV are found less often.
+#
+# WHEN freqs IS GIVEN (no automatic search)
+#   There is no test then. In every piece the mark nearest to each frequency,
+#   and every mark strictly inside the notch width, is removed. The finer ruler
+#   is NOT used (grid_factor is ignored): every extra mark inside the zone would
+#   subtract the same hum once more (the error was 6 to 7 times the hum).
+#   p_value is not used either. If the user typed grid_factor or p_value
+#   together with freqs, eeg_notch() warns that they have no effect.
+#
+# LIMITS
+#   * One steady wave per mark and piece. A hum whose frequency moves during a
+#     piece is smeared and only partly removed: use shorter pieces.
+#   * Any wave that is steady for a whole piece is a "line", mains or not (a
+#     very regular rhythm too). Look at the frequencies that were reported.
+#   * A piece that contains missing values (NA) is left unchanged, and the
+#     user is told how many.
+#   * It is slower than a notch filter (about 0.2 s per minute of one channel
+#     at 512 Hz, plus 0.3 s once for the windows); downsample first if the
+#     sampling rate is higher.
+#
+# HOW THE CODE IS SPLIT (the same two steps as the band-pass recipe)
+#   DESIGN  .make_spectrum_fit_plan(): piece length, cross-fade window, the
+#           Slepian windows and the score threshold, worked out ONCE for all
+#           channels.
+#   RUN     .apply_spectrum_fit_plan(): runs the plan on one channel, using
+#           .spectrum_fit_piece() for each piece.
+#   TOP     .notch_spectrum_fit(): called by eeg_notch(); loops over the
+#           channels, prints the header, reports the lines that were found
+#           and builds the returned eeg object.
+#   BELOW   .sturm_count(), .tridiag_top_eigenvalues() and .dpss_tapers(): the
+#           Slepian windows, computed with a small solver in plain R (no
+#           extra package is needed).
+#
+# NOTE ON .compute_dpss() IN fourier.R
+#   The package already has a function for Slepian windows, .compute_dpss(),
+#   used by eeg_multitaper(). It builds the whole n x n matrix and takes a
+#   dense eigen() of it, which is fine for a short epoch (its help says up to
+#   about 4096 samples) but takes minutes for a piece of 5120 samples (10 s at
+#   512 Hz) and needs 200 MB. It also cuts a symmetric window of n points, while
+#   the usual window for spectra is the periodic one (n + 1 symmetric points
+#   without the last), which is what the numbers of the reference
+#   implementation need. .dpss_tapers() below therefore does not use it: it finds
+#   the eigenvalues with a Sturm search and builds the eigenvectors with a
+#   recurrence, both in O(n) per step, so a 5120-sample window takes 0.5 s.
+
+
+#' Count the eigenvalues of a tridiagonal matrix below some values
+#'
+#' Sturm sequence count for a symmetric tridiagonal matrix: how many of its
+#' eigenvalues are smaller than each of the trial values in \code{lam}. All
+#' trial values are handled in the same loop.
+#'
+#' @param d      Numeric. The diagonal of the matrix.
+#' @param e2     Numeric, one shorter than \code{d}. The SQUARED off-diagonal.
+#' @param lam    Numeric. Trial values.
+#' @param pivmin Numeric. A pivot closer to zero than this is replaced by
+#'   \code{-pivmin}, so that the loop never divides by zero.
+#' @return An integer vector, one count per trial value.
+#' @keywords internal
+.sturm_count <- function(d, e2, lam, pivmin = 1e-150) {
+  M <- length(d)
+  q <- d[1L] - lam
+  small <- abs(q) < pivmin
+  if (any(small)) q[small] <- -pivmin
+  cnt <- as.integer(q < 0)
+  for (i in 2:M) {
+    q <- d[i] - lam - e2[i - 1L] / q
+    small <- abs(q) < pivmin
+    if (any(small)) q[small] <- -pivmin
+    cnt <- cnt + (q < 0)
+  }
+  cnt
+}
+
+#' The largest eigenvalues of a tridiagonal matrix
+#'
+#' Finds the \code{K} largest eigenvalues of a symmetric tridiagonal matrix by
+#' repeated multi-section: every pass tries \code{grid} trial values inside the
+#' search interval of each eigenvalue (see \code{.sturm_count()}) and keeps the
+#' small piece in which the count changes, so each interval shrinks by a factor
+#' of \code{grid + 1} per pass, until it is as narrow as the numbers allow.
+#'
+#' @param d    Numeric. The diagonal of the matrix.
+#' @param e    Numeric, one shorter than \code{d}. The off-diagonal.
+#' @param K    Integer. How many eigenvalues to find.
+#' @param grid Integer. Trial values per interval and pass.
+#' @return A numeric vector of \code{K} eigenvalues, the largest first.
+#' @keywords internal
+.tridiag_top_eigenvalues <- function(d, e, K, grid = 24L) {
+  M  <- length(d)
+  e2 <- e^2
+  rad <- c(0, abs(e)) + c(abs(e), 0)     # Gershgorin bounds: every eigenvalue lies inside
+  lo <- rep(min(d - rad), K)
+  hi <- rep(max(d + rad), K)
+  target <- M - seq_len(K) + 1L          # the k-th largest is the (M - k + 1)-th smallest
+  frac   <- seq_len(grid) / (grid + 1)
+  for (pass in 1:100) {
+    lam   <- rep(lo, each = grid) + rep(frac, K) * rep(hi - lo, each = grid)
+    cnt   <- matrix(.sturm_count(d, e2, lam), nrow = grid)
+    below <- cnt < rep(target, each = grid)   # trial value still at or below the wanted eigenvalue
+    j     <- colSums(below)
+    lam_m <- matrix(lam, nrow = grid)
+    new_lo <- ifelse(j == 0L, lo, lam_m[cbind(pmax(j, 1L), seq_len(K))])
+    new_hi <- ifelse(j == grid, hi, lam_m[cbind(pmin(j + 1L, grid), seq_len(K))])
+    if (all(new_lo == lo & new_hi == hi)) break
+    lo <- new_lo
+    hi <- new_hi
+    if (all(hi - lo <= 2 * .Machine$double.eps * pmax(abs(lo), abs(hi)))) break
+  }
+  (lo + hi) / 2
+}
+
+#' Slepian (multitaper) windows
+#'
+#' The \code{K} smoothest windows of length \code{N} whose energy is most
+#' concentrated in a frequency band of half-width \code{half_nbw / N}
+#' (Slepian, 1978; Percival and Walden, 1993). They are the eigenvectors of a
+#' tridiagonal matrix that commutes with the (much harder) band-concentration
+#' problem. The eigenvalues come from \code{.tridiag_top_eigenvalues()}; each
+#' eigenvector is then built by running the recurrence of the matrix from one
+#' end to the middle, where the windows are mirror-symmetric (even orders) or
+#' anti-symmetric (odd orders), and mirroring the second half. A periodic
+#' window is made the usual way: the symmetric window of \code{N + 1} points
+#' (unit length over those points) with its last point dropped. Signs follow
+#' the usual convention: even orders have a positive sum, odd orders start
+#' with a positive lobe.
+#'
+#' The package has an older function for Slepian windows,
+#' \code{.compute_dpss()} (used by \code{eeg_multitaper()}). It takes a dense
+#' eigen-decomposition of the full matrix, which is fine for short epochs
+#' (up to about 4096 samples) but far too slow for the pieces used here, and
+#' it cuts a symmetric window of \code{N} points instead of the periodic one.
+#'
+#' @param N        Integer. Window length in samples.
+#' @param half_nbw Numeric. Time-bandwidth product NW: the bandwidth in Hz times
+#'   \code{N} divided by twice the sampling rate.
+#' @param K        Integer. Number of windows (orders 0 to \code{K - 1}).
+#' @return A \code{K} by \code{N} matrix, one window per row.
+#' @references
+#' Slepian, D. (1978). Prolate spheroidal wave functions, Fourier analysis, and
+#' uncertainty V. Bell System Technical Journal, 57, 1371-1430.
+#'
+#' Percival, D. B., & Walden, A. T. (1993). Spectral Analysis for Physical
+#' Applications. Cambridge University Press.
+#' @keywords internal
+.dpss_tapers <- function(N, half_nbw, K) {
+  M <- N + 1L
+  W <- half_nbw / M
+  i <- 0:(M - 1L)
+  d <- ((M - 1 - 2 * i) / 2)^2 * cos(2 * pi * W)
+  e <- i[-1L] * (M - i[-1L]) / 2
+  lam  <- .tridiag_top_eigenvalues(d, e, K)
+  half <- (M + 1L) %/% 2L                # centre row (M odd) or last row of the left half (M even)
+  V <- matrix(0, M, K)
+  V[1L, ] <- 1
+  V[2L, ] <- -(d[1L] - lam) / e[1L]
+  for (r in 2:(half - 1L)) {
+    V[r + 1L, ] <- -((d[r] - lam) * V[r, ] + e[r - 1L] * V[r - 1L, ]) / e[r]
+  }
+  s <- rep(c(1, -1), length.out = K)     # even orders mirror-symmetric, odd orders anti-symmetric
+  for (r in seq_len(M - half)) V[M + 1L - r, ] <- s * V[r, ]
+  if (M %% 2L == 1L) V[half, s < 0] <- 0
+  if (!all(is.finite(V))) {
+    stop("The Slepian windows could not be computed (the bandwidth is too ",
+         "large for this piece length).", call. = FALSE)
+  }
+  V <- sweep(V, 2L, sqrt(colSums(V^2)), "/")
+  thr <- max(1e-7, 1 / M)
+  for (k in seq_len(K)) {
+    if (k %% 2L == 1L) {
+      if (sum(V[, k]) < 0) V[, k] <- -V[, k]
+    } else {
+      first <- V[V[, k]^2 > thr, k][1L]
+      if (first < 0) V[, k] <- -V[, k]
+    }
+  }
+  t(V[seq_len(N), , drop = FALSE])
+}
+
+#' Piece length of the spectrum-fit method, in samples
+#'
+#' @param filter_length "auto" (10 seconds), a number of samples, or text such
+#'   as "5s" or "500ms".
+#' @param sfreq         Numeric. Sampling rate in Hz.
+#' @param n_total       Integer. Length of the recording in samples; a piece is
+#'   never longer than this.
+#' @return An integer number of samples.
+#' @keywords internal
+.piece_length_samples <- function(filter_length, sfreq, n_total) {
+  one <- length(filter_length) == 1L
+  n <- if (one && is.character(filter_length) && identical(filter_length, "auto")) {
+    round(10 * sfreq)
+  } else if (one && is.character(filter_length) &&
+             grepl("^[0-9]+([.][0-9]+)? *(s|ms)$", filter_length)) {
+    value <- as.numeric(sub(" *(s|ms)$", "", filter_length))
+    round(value * sfreq * if (grepl("ms$", filter_length)) 0.001 else 1)
+  } else if (one && is.numeric(filter_length) && is.finite(filter_length) &&
+             filter_length >= 1) {
+    round(filter_length)
+  } else {
+    stop("For method = \"spectrum_fit\", 'filter_length' must be \"auto\" ",
+         "(10 seconds), a number of samples, or text like \"5s\" or \"500ms\".",
+         call. = FALSE)
+  }
+  n <- as.integer(min(n, n_total))
+  if (n < 32L) {
+    stop("The pieces would be only ", n, " samples long; the recording or ",
+         "'filter_length' is too short for method = \"spectrum_fit\".",
+         call. = FALSE)
+  }
+  n
+}
+
+#' Slepian windows and score threshold for one piece length
+#'
+#' The windows depend only on the piece length and the bandwidth, so they are
+#' worked out once and reused for every piece (and every channel). The number
+#' of windows is \code{K = floor(2 * NW)}, with \code{NW = 4} when no bandwidth
+#' is given, or \code{NW = mt_bandwidth * len / (2 * sfreq)}. The threshold is
+#' the F value that a score must exceed: the upper \code{p_value / (len * grid)}
+#' point of the F distribution with 2 and \code{2K - 2} degrees of freedom,
+#' i.e. \code{p_value} shared over all \code{len * grid} marks that are tested.
+#'
+#' @param len          Integer. Piece length in samples.
+#' @param sfreq        Numeric. Sampling rate in Hz.
+#' @param mt_bandwidth Numeric or NULL. Bandwidth in Hz.
+#' @param p_value      Numeric. See \code{eeg_notch()}.
+#' @param grid         Integer. The finer-ruler factor that is in use (1 when
+#'   the frequencies are given).
+#' @return A list with the \code{tapers} (K by len), \code{K}, \code{half_nbw}
+#'   and the \code{threshold}.
+#' @keywords internal
+.spectrum_fit_design <- function(len, sfreq, mt_bandwidth, p_value, grid) {
+  half_nbw <- if (is.null(mt_bandwidth)) 4 else mt_bandwidth * len / (2 * sfreq)
+  K <- as.integer(floor(2 * half_nbw))
+  if (K < 3L) {
+    stop("'mt_bandwidth' is too small: with pieces of ", round(len / sfreq, 3),
+         " s it gives only ", K, " window(s) and at least 3 are needed. Use at ",
+         "least ", round(3 / (len / sfreq), 3), " Hz (or longer pieces).",
+         call. = FALSE)
+  }
+  if (half_nbw >= len / 4) {
+    stop("'mt_bandwidth' is too large for pieces of ", round(len / sfreq, 3),
+         " s. Use a smaller bandwidth or longer pieces.", call. = FALSE)
+  }
+  list(tapers    = .dpss_tapers(len, half_nbw, K),
+       K         = K,
+       half_nbw  = half_nbw,
+       threshold = stats::qf(p_value / (len * grid), 2, 2 * K - 2,
+                             lower.tail = FALSE))
+}
+
+#' Cross-fade weights of one piece
+#'
+#' Every piece is multiplied by a smooth fade-in / fade-out before the pieces
+#' are added up. Overlapping fades add up to 1. The first piece has no
+#' neighbour on its left and the last piece (which may be longer than the
+#' others, because it takes the samples that are left over) has none on its
+#' right, so their weights are completed to keep the sum at 1 everywhere.
+#'
+#' @param win      Numeric. The fade of an ordinary piece (length \code{n}).
+#' @param n        Integer. Ordinary piece length.
+#' @param step     Integer. Distance between the starts of two pieces.
+#' @param len      Integer. Length of THIS piece.
+#' @param is_first Logical. Is this the first piece?
+#' @param is_last  Logical. Is this the last piece?
+#' @return A numeric vector of length \code{len}.
+#' @keywords internal
+.piece_weights <- function(win, n, step, len, is_first, is_last) {
+  w <- win
+  if (is_last) {
+    w <- c(win, numeric(len - n))
+    if (step < len) {
+      for (off in seq(step, len - 1L, by = step)) {
+        w[(off + 1L):len] <- w[(off + 1L):len] + win[seq_len(len - off)]
+      }
+    }
+  }
+  if (is_first && n - step >= 1L) {
+    for (off in seq(n - step, 1L, by = -step)) {
+      w[seq_len(off)] <- w[seq_len(off)] + win[(n - off + 1L):n]
+    }
+  }
+  w
+}
+
+#' Plan of the spectrum-fit method (the design step)
+#'
+#' Everything that does not depend on the data of a channel: where the pieces
+#' start and stop, the cross-fade, and the Slepian windows and threshold of each
+#' piece length. Worked out once and used for every channel by
+#' \code{.apply_spectrum_fit_plan()}.
+#'
+#' @param n_total       Integer. Length of the recording in samples.
+#' @param sfreq         Numeric. Sampling rate in Hz.
+#' @param filter_length See \code{.piece_length_samples()}.
+#' @param mt_bandwidth  Numeric or NULL. Bandwidth in Hz.
+#' @param p_value       Numeric. See \code{eeg_notch()}.
+#' @param grid_factor   Integer. The finer-ruler factor asked for.
+#' @param searching     Logical. TRUE for the automatic search (\code{freqs} =
+#'   NULL). Only then is the finer ruler used.
+#' @return A list: \code{n}, \code{step}, \code{win}, \code{starts},
+#'   \code{stops}, \code{designs} (one per piece length), \code{grid},
+#'   \code{searching}.
+#' @keywords internal
+.make_spectrum_fit_plan <- function(n_total, sfreq, filter_length, mt_bandwidth,
+                                    p_value, grid_factor, searching) {
+  n    <- .piece_length_samples(filter_length, sfreq, n_total)
+  grid <- if (searching) as.integer(grid_factor) else 1L
+
+  # smooth cross-fade (Hann), scaled so that overlapping copies add up to 1
+  step <- n - (n + 1L) %/% 2L
+  win <- if (n %% 2L == 0L) {
+    0.5 - 0.5 * cos(2 * pi * (0:(n - 1L)) / n)
+  } else {
+    0.5 - 0.5 * cos(2 * pi * (0:(n - 1L)) / (n - 1L))
+  }
+  nseg    <- n %/% step
+  binsums <- Reduce(`+`, lapply(0:(nseg - 1L),
+                                function(ii) win[(ii * step + 1L):((ii + 1L) * step)]))
+  rem <- n %% step
+  if (rem != 0L) binsums[seq_len(rem)] <- binsums[seq_len(rem)] + win[(n - rem + 1L):n]
+  win <- win / stats::median(binsums)
+
+  starts <- seq(0L, n_total - n, by = step)
+  stops  <- starts + n
+  stops[length(stops)] <- n_total          # the last piece takes the leftover samples
+  lens   <- stops - starts
+
+  # a very long padded transform needs a lot of memory: say so early
+  K_guess <- if (is.null(mt_bandwidth)) 8 else max(3, floor(mt_bandwidth * max(lens) / sfreq))
+  if (as.numeric(max(lens)) * grid * K_guess > 6e7) {
+    stop("The pieces are too long for this 'grid_factor' (it would need more ",
+         "than about 1 GB of memory). Use a smaller 'grid_factor', a shorter ",
+         "'filter_length', or downsample first.", call. = FALSE)
+  }
+
+  designs <- list()
+  for (len in unique(lens)) {
+    designs[[as.character(len)]] <- .spectrum_fit_design(len, sfreq, mt_bandwidth,
+                                                         p_value, grid)
+  }
+  list(n = n, step = step, win = win, starts = starts, stops = stops,
+       designs = designs, grid = grid, searching = searching)
+}
+
+#' Spectrum-fit on one piece of one channel
+#'
+#' Looks, for every mark of the ruler, for a steady wave; decides which marks
+#' are lines; and subtracts those waves. See the overview above.
+#'
+#' @param x            Numeric. The piece.
+#' @param sfreq        Numeric. Sampling rate in Hz.
+#' @param freqs        Numeric or NULL. Given frequencies (zone removal) or
+#'   NULL (automatic search).
+#' @param notch_widths Numeric, same length as \code{freqs}, or NULL.
+#' @param design       List from \code{.spectrum_fit_design()}.
+#' @param grid         Integer. Ruler factor (1 = standard ruler).
+#' @return A list: \code{x} (the cleaned piece), \code{found} (the frequencies,
+#'   in Hz, of the lines that were subtracted), \code{freq} (the marks of the
+#'   ruler, in Hz) and \code{fstat} (the F score of every mark; NULL when
+#'   frequencies are given, because nothing is tested then).
+#' @references
+#' Thomson, D. J. (1982). Spectrum estimation and harmonic analysis.
+#' Proceedings of the IEEE, 70, 1055-1096.
+#'
+#' Mitra, P., & Bokil, H. (2008). Observed Brain Dynamics. Oxford University
+#' Press.
+#' @keywords internal
+.spectrum_fit_piece <- function(x, sfreq, freqs, notch_widths, design, grid) {
+  n      <- length(x)
+  tapers <- design$tapers
+  K      <- nrow(tapers)
+  odd    <- seq(1L, K, by = 2L)          # orders 0, 2, 4, ...: they look like a hill
+  even   <- seq(2L, K, by = 2L)          # orders 1, 3, 5, ...: they have a node in the middle
+  H0     <- rowSums(tapers[odd, , drop = FALSE])
+  H0_sq  <- sum(H0^2)
+  rads   <- 2 * pi * (0:(n - 1L)) / sfreq
+
+  # tapered spectra on the ruler (zero-padded when grid > 1: finer marks)
+  nfft <- n * as.integer(grid)
+  nf   <- nfft %/% 2L + 1L
+  xt   <- t(tapers) * (x - mean(x))
+  if (nfft > n) xt <- rbind(xt, matrix(0, nfft - n, K))
+  X <- stats::mvfft(xt)[seq_len(nf), , drop = FALSE]
+  X[1L, ] <- X[1L, ] / sqrt(2)
+  if (nfft %% 2L == 0L) X[nf, ] <- X[nf, ] / sqrt(2)
+  fr <- (0:(nf - 1L)) * sfreq / nfft
+  Xo <- X[, odd, drop = FALSE]
+  Xe <- X[, even, drop = FALSE]
+
+  # complex strength (height and timing) of a steady wave at every mark
+  A <- as.vector(Xo %*% H0) / H0_sq
+
+  fstat <- NULL
+  if (is.null(freqs)) {
+    # automatic search: the F score of every mark against the threshold
+    x_hat <- outer(A, H0)
+    num   <- (K - 1) * Mod(A)^2 * H0_sq
+    den   <- rowSums(Mod(Xo - x_hat)^2) + rowSums(Mod(Xe)^2)
+    den[den == 0] <- Inf
+    fstat <- num / den
+    idx   <- which(fstat > design$threshold)
+    if (grid > 1L && length(idx) > 1L) {
+      # of every run of neighbouring marks that passed, keep the strongest one
+      run <- cumsum(c(1L, diff(idx) > 1L))
+      idx <- vapply(split(idx, run), function(g) g[which.max(fstat[g])], 1L)
+    }
+  } else {
+    # given frequencies: the mark nearest to each, plus every mark strictly
+    # inside the notch width
+    idx1 <- unique(vapply(freqs, function(lf) which.min(abs(fr - lf)), 1L))
+    zone <- Reduce(`|`, Map(function(lf, nw) fr > lf - nw / 2 & fr < lf + nw / 2,
+                            freqs, notch_widths))
+    idx  <- sort(unique(c(idx1, which(zone))))
+  }
+
+  # subtract one sine wave per chosen mark (at most 200 at a time, for memory)
+  fit <- numeric(n)
+  if (length(idx)) {
+    cc <- 2 * A[idx]
+    for (g in split(seq_along(idx), ceiling(seq_along(idx) / 200))) {
+      ph  <- outer(rads, fr[idx[g]]) + matrix(Arg(cc[g]), n, length(g), byrow = TRUE)
+      fit <- fit + as.vector(cos(ph) %*% Mod(cc[g]))
+    }
+  }
+  list(x = x - fit, found = fr[idx], freq = fr, fstat = fstat)
+}
+
+#' Run a spectrum-fit plan on one channel (the run step)
+#'
+#' Cuts the channel into the pieces of the plan, cleans each piece with
+#' \code{.spectrum_fit_piece()} and adds the cleaned pieces back together with
+#' the cross-fade weights. A piece that contains missing values cannot be
+#' analysed and is left as it is.
+#'
+#' @param x            Numeric. One channel.
+#' @param sfreq        Numeric. Sampling rate in Hz.
+#' @param plan         List from \code{.make_spectrum_fit_plan()}.
+#' @param freqs        Numeric or NULL. See \code{.spectrum_fit_piece()}.
+#' @param notch_widths Numeric or NULL. See \code{.spectrum_fit_piece()}.
+#' @return A list: \code{x} (the cleaned channel), \code{found} (a list with the
+#'   frequencies found in each piece) and \code{skipped} (how many pieces were
+#'   left unchanged because of missing values).
+#' @keywords internal
+.apply_spectrum_fit_plan <- function(x, sfreq, plan, freqs, notch_widths) {
+  n_pieces <- length(plan$starts)
+  out     <- numeric(length(x))
+  found   <- vector("list", n_pieces)
+  skipped <- 0L
+  for (ii in seq_len(n_pieces)) {
+    s   <- plan$starts[ii]
+    e   <- plan$stops[ii]
+    len <- e - s
+    xs  <- x[(s + 1L):e]
+    w   <- .piece_weights(plan$win, plan$n, plan$step, len,
+                          is_first = ii == 1L, is_last = ii == n_pieces)
+    if (anyNA(xs)) {
+      res <- list(x = xs, found = numeric(0))
+      skipped <- skipped + 1L
+    } else {
+      res <- .spectrum_fit_piece(xs, sfreq, freqs, notch_widths,
+                                 plan$designs[[as.character(len)]], plan$grid)
+    }
+    out[(s + 1L):e] <- out[(s + 1L):e] + res$x * w
+    found[[ii]] <- res$found
+  }
+  list(x = out, found = found, skipped = skipped)
+}
+
+#' Spectrum-fit half of eeg_notch()
+#'
+#' Called by \code{\link{eeg_notch}} when \code{method = "spectrum_fit"}, after
+#' the common arguments have been checked. Makes the plan once, runs it on every
+#' selected channel, tells the user which lines were found, and returns the new
+#' \code{eeg} object. The method is explained in the comment block above this
+#' function and in \code{notes/finer-ruler-spectrum-fit.pdf}.
+#'
+#' @param eeg_obj       An object of class 'eeg'.
+#' @param freqs         Numeric or NULL. Frequencies to remove (zone removal), or
+#'   NULL to search for the lines.
+#' @param notch_widths  Numeric (same length as \code{freqs}) or NULL.
+#' @param filter_length See \code{.piece_length_samples()}.
+#' @param mt_bandwidth  Numeric or NULL. Bandwidth in Hz.
+#' @param p_value       Numeric. False-alarm level of the automatic search.
+#' @param grid_factor   Integer. Finer-ruler factor of the automatic search.
+#' @param ch_idx        Integer vector. Rows of the data to clean.
+#' @param verbose       Logical. Print parameters and progress.
+#' @return An object of class 'eeg'.
+#' @keywords internal
+.notch_spectrum_fit <- function(eeg_obj, freqs, notch_widths, filter_length,
+                                mt_bandwidth, p_value, grid_factor, ch_idx,
+                                verbose) {
+
+  sfreq      <- eeg_obj$sampling_rate
+  n_channels <- nrow(eeg_obj$data)
+  searching  <- is.null(freqs)
+
+  # ========== DESIGN (ONCE FOR ALL CHANNELS) ==========
+
+  plan    <- .make_spectrum_fit_plan(ncol(eeg_obj$data), sfreq, filter_length,
+                                     mt_bandwidth, p_value, grid_factor, searching)
+  d_main  <- plan$designs[[as.character(plan$n)]]
+  piece_s <- plan$n / sfreq
+  band_hz <- 2 * d_main$half_nbw / piece_s
+  mark_hz <- sfreq / (plan$n * plan$grid)
+
+  # ========== VERBOSE HEADER ==========
+
+  if (verbose) {
+    cat("\n", strrep("=", 70), "\n", sep = "")
+    cat("EEG Spectrum-Fit Notch Filtering\n")
+    cat(strrep("=", 70), "\n")
+    if (searching) {
+      cat("  Lines:                 searched automatically (F test)\n")
+      cat("  p_value:              ", p_value, "\n")
+    } else {
+      cat("  Frequencies:          ", paste(freqs, collapse = ", "), " Hz\n")
+      cat("  Notch widths:         ", paste(round(notch_widths, 4), collapse = ", "), " Hz\n")
+    }
+    cat("  Sampling rate:        ", sfreq, " Hz\n")
+    cat("  Piece length:         ", round(piece_s, 3), " s,", length(plan$starts),
+        " overlapping pieces\n")
+    cat("  Bandwidth / windows:  ", round(band_hz, 3), " Hz /", d_main$K, "\n")
+    cat("  Ruler:                 a mark every", signif(mark_hz, 4), "Hz",
+        if (plan$grid > 1L) paste0("(", plan$grid, " times finer than the standard ruler)")
+        else "(the standard ruler)", "\n")
+    cat("  Channels:             ", length(ch_idx), "/", n_channels, "\n")
+    cat(strrep("-", 70), "\n")
+    pb <- txtProgressBar(min = 0, max = length(ch_idx),
+                         style = 3, width = 50, char = "=")
+  }
+
+  # ========== RUN, CHANNEL BY CHANNEL ==========
+
+  filtered_data <- eeg_obj$data
+  all_found     <- numeric(0)
+  skipped       <- 0L
+  for (idx in seq_along(ch_idx)) {
+    i   <- ch_idx[idx]
+    res <- .apply_spectrum_fit_plan(filtered_data[i, ], sfreq, plan, freqs, notch_widths)
+    filtered_data[i, ] <- res$x
+    all_found <- c(all_found, unlist(res$found))
+    skipped   <- skipped + res$skipped
+    if (verbose) setTxtProgressBar(pb, idx)
+  }
+
+  # ========== REPORT WHAT WAS FOUND ==========
+  # Lines are counted in 0.1 Hz groups: (channel, piece) pairs in which a line
+  # was subtracted.
+
+  counts <- sort(table(sprintf("%.1f", round(all_found, 1))), decreasing = TRUE)
+  found_text <- if (length(counts) == 0L) {
+    "none"
+  } else {
+    shown <- utils::head(counts, 6L)
+    paste0(paste0(names(shown), " Hz (x", shown, ")", collapse = ", "),
+           if (length(counts) > 6L) paste0(", ... ", length(counts) - 6L, " more") else "")
+  }
+
+  if (verbose) {
+    close(pb)
+    cat("\n")
+    cat(if (searching) "  Lines found" else "  Waves removed",
+        " (frequency, number of channel-pieces): ", found_text, "\n", sep = "")
+    cat(strrep("=", 70), "\n")
+  }
+  if (skipped > 0L) {
+    warning(skipped, " piece(s) contained missing values and were left ",
+            "unchanged (no line removal there).", call. = FALSE)
+  }
+
+  # ========== BUILD PREPROCESSING HISTORY ENTRY ==========
+
+  what <- if (searching) {
+    paste0("lines searched (p = ", p_value, ")")
+  } else {
+    paste0(paste0(freqs, " Hz (\u00B1", round(notch_widths / 2, 4), " Hz)",
+                  collapse = ", "))
+  }
+  history_entry <- paste0(
+    "Spectrum-fit notch: ", what,
+    " | pieces: ", round(piece_s, 3), " s",
+    " | bandwidth: ", round(band_hz, 3), " Hz",
+    " | ruler: ", if (plan$grid > 1L) paste0("x", plan$grid, " finer") else "standard",
+    " | found: ", found_text,
+    " | channels: ", length(ch_idx), "/", n_channels
+  )
+
+  # ========== RETURN UPDATED EEG OBJECT ==========
+
+  new_eeg(
+    data                  = filtered_data,
+    channels              = eeg_obj$channels,
+    sampling_rate         = eeg_obj$sampling_rate,
+    times                 = eeg_obj$times,
+    events                = eeg_obj$events,
+    metadata              = eeg_obj$metadata,
+    reference             = eeg_obj$reference,
+    preprocessing_history = c(eeg_obj$preprocessing_history,
+                              list(history_entry)),
+    montage               = eeg_obj$montage,
+    bads                  = eeg_obj$bads,
+    annotations           = eeg_obj$annotations,
+    channel_types         = eeg_obj$channel_types
+  )
+}
+
+
+
+# ============================================================================
 #                        MAIN EXPORTED FUNCTIONS
 # ============================================================================
 
@@ -1904,13 +2597,14 @@ filter_data <- function(x,
 # eeg_notch()
 # ----------------------------------------------------------------------------
 #
-#' EEG Notch (Band-Stop) Filter (FIR or IIR)
+#' EEG Notch (Band-Stop) Filter (FIR, IIR or Spectrum-Fit)
 #'
 #' Removes narrow frequency bands from EEG data to eliminate electrical line
-#' noise, with a zero-phase FIR filter (the default) or an IIR Butterworth
-#' band-stop filter. With the defaults, (method='fir', phase='zero',
-#' fir_window='hamming', fir_design='firwin', pad='reflect_limited'), it is a
-#' zero-phase FIR filter.
+#' noise, with a zero-phase FIR filter (the default), an IIR Butterworth
+#' band-stop filter, or by finding the steady sine waves of the line noise and
+#' subtracting exactly those (spectrum-fit). With the defaults, (method='fir',
+#' phase='zero', fir_window='hamming', fir_design='firwin',
+#' pad='reflect_limited'), it is a zero-phase FIR filter.
 #'
 #' Internally implements notch as a bandstop FIR filter, exactly as MNE does:
 #'   lows  = freq - notch_width/2 - trans_bandwidth/2
@@ -1938,6 +2632,46 @@ filter_data <- function(x,
 #' result is the same as calling \code{eeg_notch()} once for each frequency.
 #' Only the Butterworth family is implemented so far.
 #'
+#' \strong{Spectrum-fit} (\code{method = "spectrum_fit"}) does not cut a slot
+#' out of the frequencies. It looks for steady sine waves ("lines") in the
+#' recording, measures the height and the timing of each one, and subtracts
+#' exactly that wave; the rest of the recording is not touched. Every channel
+#' is cut into overlapping pieces (10 s by default, see \code{filter_length}).
+#' In each piece the data are looked at through several smooth windows
+#' (Slepian windows), and for every frequency of a ruler an F score says how
+#' much stronger a steady wave is than the noise around it. Frequencies whose
+#' score is above a threshold (set by \code{p_value}) are lines. The cleaned
+#' pieces are joined again with a smooth cross-fade. With \code{freqs = NULL},
+#' which is also what you get when you leave \code{freqs} out for this method,
+#' the lines are searched automatically, harmonics included, and the
+#' frequencies that were found are reported. With \code{freqs} given no test is
+#' made: in every piece, the frequencies of the ruler that lie inside
+#' \code{notch_widths} around each of them are removed.
+#'
+#' \strong{The finer ruler.} The standard ruler has one mark every 1/T Hz, T
+#' being the piece length (0.1 Hz for 10 s pieces), and a line that falls
+#' between two marks is not found at all. \code{grid_factor} (default 8) makes
+#' the ruler that many times finer, by zero-padding, so that a line is never
+#' more than 1 / (2 T \code{grid_factor}) Hz away from a mark. Example, on
+#' made-up noise with a 20 uV hum: a hum at 50.37 Hz, between two marks, was
+#' 100 percent still there with the standard ruler (\code{grid_factor = 1}) and
+#' 4 percent with the default one; the worst case over hums between two marks is
+#' 4.2 percent. Of every run of neighbouring marks that pass the test only the
+#' strongest one is used, and \code{p_value} is shared over all marks, so false
+#' alarms stay as rare as with the standard ruler. The finer ruler is used only
+#' when the lines are searched (\code{freqs = NULL}); with \code{freqs} given
+#' \code{grid_factor} has no effect (a warning says so if you set it). It costs time: about 0.2 s per minute of
+#' one channel at 512 Hz (0.02 s with \code{grid_factor = 1}), plus about 0.3 s
+#' once for the windows, so downsample first if the sampling rate is higher.
+#'
+#' Limits of spectrum-fit: a hum whose frequency moves during a piece is only
+#' partly removed (use shorter pieces, for example \code{filter_length =
+#' "5s"}); any wave that stays steady for a whole piece counts as a line, so
+#' look at the frequencies that are reported; a piece that contains missing
+#' values is left unchanged, with a warning. A longer explanation with figures
+#' is in the file \code{notes/finer-ruler-spectrum-fit.pdf} of the package
+#' sources.
+#'
 #' @references
 #' Butterworth, S. (1930). On the theory of filter amplifiers. Wireless
 #' Engineer, 7, 536-541.
@@ -1945,26 +2679,45 @@ filter_data <- function(x,
 #' Oppenheim, A. V., & Schafer, R. W. (2010). Discrete-Time Signal Processing
 #' (3rd ed.). Pearson.
 #'
+#' Thomson, D. J. (1982). Spectrum estimation and harmonic analysis.
+#' Proceedings of the IEEE, 70, 1055-1096.
+#'
+#' Percival, D. B., & Walden, A. T. (1993). Spectral Analysis for Physical
+#' Applications. Cambridge University Press.
+#'
+#' Mitra, P., & Bokil, H. (2008). Observed Brain Dynamics. Oxford University
+#' Press.
+#'
 #' @param eeg_obj          An object of class 'eeg'.
-#' @param freqs            Numeric vector. Frequencies to notch in Hz.
+#' @param freqs            Numeric vector or NULL. Frequencies to notch in Hz.
 #'                         E.g. c(50, 100, 150) for line noise + harmonics.
-#'                         Default: 50.
+#'                         NULL, only with \code{method = "spectrum_fit"},
+#'                         searches for the lines automatically; for that
+#'                         method it is also what you get when you leave
+#'                         \code{freqs} out. Default: 50.
 #' @param notch_widths     Numeric or NULL. Width of the stop band in Hz
 #'                         centred at each freq. NULL uses:
 #'                         freq / 200. Give one number for all frequencies or
 #'                         one per frequency; each must be 0 or more (anything
-#'                         else is an error). Default: NULL.
+#'                         else is an error). With \code{method =
+#'                         "spectrum_fit"} it is the width of the zone that is
+#'                         removed, and it is used only when \code{freqs} is
+#'                         given. Default: NULL.
 #' @param trans_bandwidth  Numeric. Width of each transition band in Hz.
 #'                         Default: 1. With method = "iir" it only moves the
 #'                         two cutoffs of each notch outwards, by half of it.
-#' @param method           Character. "fir" (default) or "iir".
+#' @param method           Character. "fir" (default), "iir" or
+#'                         "spectrum_fit".
 #' @param iir_params       NULL or a named list, used only with
 #'                         \code{method = "iir"}: \code{order} (default 4; a
 #'                         band-stop has twice as many poles) and \code{ftype}
 #'                         (only "butter" so far).
-#' @param filter_length    Integer or "auto". Kernel length in samples.
-#'                         "auto" uses MNE's formula. Default: "auto".
-#'                         Used only with method = "fir".
+#' @param filter_length    Integer or "auto". With method = "fir": kernel
+#'                         length in samples; "auto" uses MNE's formula. With
+#'                         method = "spectrum_fit": the length of each piece,
+#'                         as a number of samples or as text such as "5s" or
+#'                         "500ms"; "auto" is 10 seconds. Not used with
+#'                         method = "iir". Default: "auto".
 #' @param fir_window       Character. Window function. Default: "hamming".
 #'                         Used only with method = "fir".
 #' @param phase            Character. The allowed words depend on
@@ -1975,25 +2728,53 @@ filter_data <- function(x,
 #'                         backward, no delay; or "forward", one pass, causal.
 #'                         Any other word is an error.
 #' @param pad              Character. Padding mode. Default: "reflect_limited".
+#' @param mt_bandwidth     Numeric or NULL. Only for \code{method =
+#'                         "spectrum_fit"}. The bandwidth in Hz of the smooth
+#'                         windows: how wide a blur one steady wave is seen
+#'                         with. The number of windows is this bandwidth times
+#'                         the piece length in seconds (at least 3 are
+#'                         needed). Wider finds weaker lines and costs more
+#'                         time, but two lines closer together than the
+#'                         bandwidth cannot be told apart. NULL = 8 windows,
+#'                         which is 0.8 Hz for 10 s pieces. Default: NULL.
+#' @param p_value          Numeric between 0 and 1. Only for \code{method =
+#'                         "spectrum_fit"} with \code{freqs = NULL}. How easily
+#'                         a frequency is called a line: roughly the chance that
+#'                         a piece of pure noise gets a false line. Lower is
+#'                         stricter (fewer false lines, weak lines are missed
+#'                         more often). With \code{freqs} given it has no effect
+#'                         (a warning says so if you set it). Default: 0.05.
+#' @param grid_factor      Whole number of 1 or more. Only for \code{method =
+#'                         "spectrum_fit"} with \code{freqs = NULL}. How many
+#'                         times finer than the standard ruler the frequencies
+#'                         are tested (see Details). 1 is the standard ruler,
+#'                         which misses a line that lies between two marks.
+#'                         With \code{freqs} given it has no effect (a warning
+#'                         says so if you set it). Default: 8.
 #' @param channels         Character or integer vector, or NULL. Channels to
 #'                         filter. NULL = all channels. Default: NULL.
 #' @param verbose          Logical. Print parameters and progress.
 #'                         Default: TRUE.
 #'
 #' @return An object of class 'eeg' with filtered data and updated
-#'   preprocessing_history.
+#'   preprocessing_history. With the spectrum-fit method, the lines that were
+#'   found are also printed (with \code{verbose = TRUE}) and written into the
+#'   preprocessing_history entry.
 #'
 #' @export
 eeg_notch <- function(eeg_obj,
                       freqs            = 50,
                       notch_widths     = NULL,
                       trans_bandwidth  = 1,
-                      method           = c("fir", "iir"),
+                      method           = c("fir", "iir", "spectrum_fit"),
                       iir_params       = NULL,
                       filter_length    = "auto",
                       fir_window       = "hamming",
                       phase            = "zero",
                       pad              = "reflect_limited",
+                      mt_bandwidth     = NULL,
+                      p_value          = 0.05,
+                      grid_factor      = 8L,
                       channels         = NULL,
                       verbose          = TRUE) {
   
@@ -2002,16 +2783,84 @@ eeg_notch <- function(eeg_obj,
   if (!inherits(eeg_obj, "eeg")) {
     stop("'eeg_obj' must be an object of class 'eeg'.", call. = FALSE)
   }
-  if (!is.numeric(freqs) || length(freqs) == 0 || any(freqs <= 0)) {
+  method <- match.arg(method)       # "fir" unless the user asks for another one
+
+  # freqs = NULL means "search for the lines yourself", and only spectrum-fit
+  # can do that. For spectrum-fit, leaving freqs out gives the same (missing()
+  # is TRUE when an argument was left at its default).
+  if (method == "spectrum_fit") {
+    if (missing(freqs)) freqs <- NULL
+  } else if (is.null(freqs)) {
+    stop("'freqs' = NULL (search for the lines automatically) needs ",
+         "method = \"spectrum_fit\".", call. = FALSE)
+  }
+  if (!is.null(freqs) &&
+      (!is.numeric(freqs) || length(freqs) == 0 || any(freqs <= 0))) {
     stop("'freqs' must be a non-empty numeric vector of positive values.",
          call. = FALSE)
   }
   if (!is.numeric(trans_bandwidth) || trans_bandwidth <= 0) {
     stop("'trans_bandwidth' must be a positive numeric value.", call. = FALSE)
   }
-  method <- match.arg(method)       # "fir" unless the user asks for "iir"
-  phase  <- .check_phase(phase, method)
-  pad    <- .check_pad(pad)
+  if (method != "spectrum_fit") {
+    phase <- .check_phase(phase, method)
+    pad   <- .check_pad(pad)
+  }
+
+  if (method == "spectrum_fit") {
+    # Arguments that only describe a filter are not used here: if one was set
+    # on purpose, say so (missing() is TRUE when an argument was left at its
+    # default).
+    unused <- c(trans_bandwidth = !missing(trans_bandwidth),
+                iir_params      = !is.null(iir_params),
+                fir_window      = !missing(fir_window),
+                phase           = !missing(phase),
+                pad             = !missing(pad))
+    if (is.null(freqs)) unused <- c(unused, notch_widths = !is.null(notch_widths))
+    if (any(unused)) {
+      warning("Not used with method = \"spectrum_fit\"",
+              if (is.null(freqs)) " and freqs = NULL" else "", ": ",
+              paste(names(unused)[unused], collapse = ", "), ".",
+              call. = FALSE)
+    }
+    # The finer ruler and the p-value belong to the automatic search. With
+    # freqs given there is no search, so if the user typed one of them, say so.
+    if (!is.null(freqs)) {
+      search_only <- c(grid_factor = !missing(grid_factor),
+                       p_value     = !missing(p_value))
+      if (any(search_only)) {
+        warning("Only used when the lines are searched (freqs = NULL), not ",
+                "when 'freqs' is given: ",
+                paste(names(search_only)[search_only], collapse = ", "), ".",
+                call. = FALSE)
+      }
+    }
+    if (!is.null(mt_bandwidth) &&
+        (!is.numeric(mt_bandwidth) || length(mt_bandwidth) != 1L ||
+         !is.finite(mt_bandwidth) || mt_bandwidth <= 0)) {
+      stop("'mt_bandwidth' must be NULL or one positive number (Hz).",
+           call. = FALSE)
+    }
+    if (!is.numeric(p_value) || length(p_value) != 1L || !is.finite(p_value) ||
+        p_value <= 0 || p_value >= 1) {
+      stop("'p_value' must be one number between 0 and 1.", call. = FALSE)
+    }
+    if (!is.numeric(grid_factor) || length(grid_factor) != 1L ||
+        !is.finite(grid_factor) || grid_factor < 1 ||
+        grid_factor != round(grid_factor)) {
+      stop("'grid_factor' must be a whole number of 1 or more.", call. = FALSE)
+    }
+    grid_factor <- as.integer(grid_factor)
+  } else {
+    sf_only <- c(mt_bandwidth = !is.null(mt_bandwidth),
+                 p_value      = !missing(p_value),
+                 grid_factor  = !missing(grid_factor))
+    if (any(sf_only)) {
+      warning("Only used with method = \"spectrum_fit\": ",
+              paste(names(sf_only)[sf_only], collapse = ", "), ".",
+              call. = FALSE)
+    }
+  }
 
   if (method == "iir") {
     iir_params <- .resolve_iir_params(iir_params)
@@ -2026,14 +2875,14 @@ eeg_notch <- function(eeg_obj,
               paste(names(fir_only)[fir_only], collapse = ", "), ".",
               call. = FALSE)
     }
-  } else if (!is.null(iir_params)) {
+  } else if (method == "fir" && !is.null(iir_params)) {
     warning("'iir_params' is not used with method = \"fir\".", call. = FALSE)
   }
 
   sfreq   <- eeg_obj$sampling_rate
   nyquist <- sfreq / 2.0
 
-  if (any(freqs >= nyquist)) {
+  if (!is.null(freqs) && any(freqs >= nyquist)) {
     stop("All 'freqs' must be less than the Nyquist frequency (",
          nyquist, " Hz).", call. = FALSE)
   }
@@ -2041,7 +2890,9 @@ eeg_notch <- function(eeg_obj,
   # ========== RESOLVE NOTCH WIDTHS ==========
   # Default: freq / 200 per frequency
   
-  if (is.null(notch_widths)) {
+  if (is.null(freqs)) {
+    notch_widths <- NULL            # searching for the lines: there is no zone
+  } else if (is.null(notch_widths)) {
     notch_widths <- freqs / 200.0
   } else {
     if (!is.numeric(notch_widths) || anyNA(notch_widths) ||
@@ -2076,6 +2927,14 @@ eeg_notch <- function(eeg_obj,
   } else {
     stop("'channels' must be NULL, a character vector, or an integer vector.",
          call. = FALSE)
+  }
+
+  # ========== SPECTRUM-FIT: HAND OVER TO ITS OWN FUNCTION ==========
+
+  if (method == "spectrum_fit") {
+    return(.notch_spectrum_fit(eeg_obj, freqs, notch_widths, filter_length,
+                               mt_bandwidth, p_value, grid_factor, ch_idx,
+                               verbose))
   }
 
   # ========== IIR: HAND OVER TO ITS OWN FUNCTION ==========

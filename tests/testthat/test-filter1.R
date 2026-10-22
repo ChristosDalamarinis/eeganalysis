@@ -2160,3 +2160,677 @@ test_that("the history entry of an FIR band-pass names the settings", {
                       "length: 795 samples | phase: zero | pad: reflect_limited | ",
                       "channels: 1/1"))
 })
+
+
+# ─── spectrum-fit notch: the Slepian windows and their solver ────────────────
+#
+# eeg_notch(method = "spectrum_fit") needs smooth "multitaper" windows (Slepian
+# sequences). They are computed in plain R: .sturm_count() and
+# .tridiag_top_eigenvalues() find the eigenvalues of a tridiagonal matrix and
+# .dpss_tapers() builds the windows from them. Every piece is checked against
+# a dense eigen() of the same matrix, which is slow but needs no special
+# trick, and against the numbers of an independent implementation (SciPy).
+
+# A random symmetric tridiagonal matrix, as dense matrix, with its diagonal d
+# and off-diagonal e.
+sf_tridiag <- function(M, seed) {
+  set.seed(seed)
+  d <- rnorm(M) * 3
+  e <- runif(M - 1L, 0.5, 2)
+  Tm <- diag(d)
+  Tm[cbind(1:(M - 1L), 2:M)] <- e
+  Tm[cbind(2:M, 1:(M - 1L))] <- e
+  list(d = d, e = e, T = Tm, ev = eigen(Tm, symmetric = TRUE, only.values = TRUE)$values)
+}
+
+test_that(".sturm_count() counts the eigenvalues below a value, like eigen()", {
+  m   <- sf_tridiag(30L, 1)
+  lam <- c(-100, m$ev[10] + 1e-6, m$ev[10] - 1e-6, m$ev[1] - 1e-6, 0, 100)
+  expect_equal(.sturm_count(m$d, m$e^2, lam),
+               vapply(lam, function(l) sum(m$ev < l), 1L))
+  # one value at a time gives the same as all values at once
+  expect_equal(vapply(lam, function(l) .sturm_count(m$d, m$e^2, l), 1L),
+               .sturm_count(m$d, m$e^2, lam))
+})
+
+test_that(".tridiag_top_eigenvalues() finds the largest eigenvalues, largest first", {
+  m <- sf_tridiag(60L, 2)
+  top5 <- sort(m$ev, decreasing = TRUE)[1:5]
+  expect_equal(.tridiag_top_eigenvalues(m$d, m$e, 5L), top5, tolerance = 1e-12)
+  expect_equal(.tridiag_top_eigenvalues(m$d, m$e, 1L), top5[1], tolerance = 1e-12)
+  # ALL the eigenvalues of a small matrix, the smallest one included
+  m3 <- sf_tridiag(12L, 4)
+  expect_equal(.tridiag_top_eigenvalues(m3$d, m3$e, 12L), sort(m3$ev, decreasing = TRUE),
+               tolerance = 1e-12)
+  # a different matrix, more eigenvalues than the grid has trial values
+  m2 <- sf_tridiag(80L, 3)
+  expect_equal(.tridiag_top_eigenvalues(m2$d, m2$e, 12L, grid = 4L),
+               sort(m2$ev, decreasing = TRUE)[1:12], tolerance = 1e-12)
+})
+
+test_that(".dpss_tapers() agrees with SciPy's windows (N = 64, NW = 4, 4 windows)", {
+  w <- .dpss_tapers(64L, 4, 4L)
+  expect_equal(dim(w), c(4L, 64L))
+  # first three and last two points of every window, and the length over the
+  # 64 points (it is 1 over the 65 points the window is cut from)
+  first3 <- rbind(c(3.034936e-05, 9.649262e-05, 0.000229782397),
+                  c(0.000242038151, 0.000679254936, 0.001474426941),
+                  c(0.001322138241, 0.003241052426, 0.006365786354),
+                  c(0.005677609535, 0.012013214331, 0.02115354305))
+  last2  <- rbind(c(0.000229782397, 9.649262e-05),
+                  c(-0.001474426941, -0.000679254936),
+                  c(0.006365786354, 0.003241052426),
+                  c(-0.02115354305, -0.012013214331))
+  expect_equal(w[, 1:3], first3, tolerance = 1e-8)
+  expect_equal(w[, 63:64], last2, tolerance = 1e-8)
+  expect_equal(sqrt(rowSums(w^2)),
+               c(0.999999999539, 0.999999970709, 0.999999125975, 0.999983882245),
+               tolerance = 1e-9)
+})
+
+test_that(".dpss_tapers() windows are orthogonal and mirror-symmetric, with the usual signs", {
+  w <- .dpss_tapers(200L, 4, 8L)
+  # The windows are exactly orthonormal over the 201 points they are cut from;
+  # dropping the last point costs a little. For the well-concentrated first
+  # four it is below 1e-3, for the 8th (whose end values are large) up to 0.03.
+  expect_lt(max(abs(w[1:4, ] %*% t(w[1:4, ]) - diag(4))), 1e-3)
+  expect_lt(max(abs(w %*% t(w) - diag(8))), 0.03)
+  # the periodic window is the 201-point symmetric one without its last point,
+  # so point j equals point 200 - j; odd orders are mirrored with a minus sign
+  for (k in 1:8) {
+    sgn <- if (k %% 2L == 1L) 1 else -1
+    expect_equal(w[k, 2:200], sgn * rev(w[k, 2:200]), tolerance = 1e-9)
+  }
+  # even orders (1st, 3rd, ...) have a positive sum, odd orders start positive
+  expect_true(all(rowSums(w)[c(1, 3, 5, 7)] > 0))
+  expect_true(all(w[c(2, 4, 6, 8), 1] > 0))
+  # an odd length (N + 1 = 202 points before the last one is dropped) works too
+  w2 <- .dpss_tapers(201L, 4, 8L)
+  expect_equal(dim(w2), c(8L, 201L))
+  expect_lt(max(abs(w2 %*% t(w2) - diag(8))), 0.03)
+})
+
+test_that(".dpss_tapers() equals the eigenvectors of the dense matrix it comes from", {
+  # an independent check: build the tridiagonal matrix of N + 1 = 41 points,
+  # take its 4 eigenvectors with the largest eigenvalues with eigen(), and
+  # compare (a vector and its negative are the same direction)
+  N <- 40L; M <- N + 1L; NW <- 3
+  i <- 0:(M - 1L)
+  d <- ((M - 1 - 2 * i) / 2)^2 * cos(2 * pi * NW / M)
+  e <- i[-1L] * (M - i[-1L]) / 2
+  Tm <- diag(d); Tm[cbind(1:(M - 1L), 2:M)] <- e; Tm[cbind(2:M, 1:(M - 1L))] <- e
+  vec <- eigen(Tm, symmetric = TRUE)$vectors[, 1:4]
+  w   <- .dpss_tapers(N, NW, 4L)
+  for (k in 1:4) {
+    cosang <- abs(sum(vec[1:N, k] * w[k, ])) / sqrt(sum(vec[1:N, k]^2) * sum(w[k, ]^2))
+    expect_equal(cosang, 1, tolerance = 1e-9)
+  }
+})
+
+
+# ─── spectrum-fit notch: piece length, windows, threshold and cross-fade ─────
+
+test_that(".piece_length_samples() reads auto, seconds, milliseconds and samples", {
+  expect_equal(.piece_length_samples("auto", 512, 100000L), 5120L)
+  expect_equal(.piece_length_samples("auto", 100, 100000L), 1000L)
+  expect_equal(.piece_length_samples("5s", 512, 100000L), 2560L)
+  expect_equal(.piece_length_samples("2.5s", 100, 100000L), 250L)
+  expect_equal(.piece_length_samples("500ms", 512, 100000L), 256L)
+  expect_equal(.piece_length_samples(777, 512, 100000L), 777L)
+  # a piece is never longer than the recording
+  expect_equal(.piece_length_samples("auto", 512, 3000L), 3000L)
+  expect_equal(.piece_length_samples(10000, 512, 3000L), 3000L)
+  expect_type(.piece_length_samples("auto", 512, 100000L), "integer")
+})
+
+test_that(".piece_length_samples() refuses anything else, and pieces that are too short", {
+  for (bad in list("banana", c("1s", "2s"), 0, NA, -3, TRUE, "10", NULL, list(1))) {
+    expect_error(.piece_length_samples(bad, 512, 100000L), "filter_length")
+  }
+  expect_error(.piece_length_samples(20, 512, 100000L), "too short")
+  expect_error(.piece_length_samples("auto", 512, 31L), "too short")
+})
+
+test_that(".spectrum_fit_design() number of windows and score threshold", {
+  # standard bandwidth: 8 windows, whatever the piece length
+  d <- .spectrum_fit_design(400L, 100, NULL, 0.05, 1L)
+  expect_equal(d$K, 8L)
+  expect_equal(d$half_nbw, 4)
+  expect_equal(dim(d$tapers), c(8L, 400L))
+  # the threshold is the upper p / (length x marks) point of F(2, 2K - 2);
+  # the numbers are from SciPy: ppf(1 - 0.05 / 400, 2, 14) for the standard
+  # ruler, and the same p shared over 400 x 8 marks for the finer one
+  expect_equal(d$threshold, 18.274485513485757, tolerance = 1e-8)
+  expect_equal(.spectrum_fit_design(400L, 100, NULL, 0.05, 8L)$threshold,
+               27.01693492129712, tolerance = 1e-8)
+  # a given bandwidth: K = bandwidth x piece length in seconds
+  d15 <- .spectrum_fit_design(1000L, 100, 1.5, 0.01, 1L)
+  expect_equal(d15$K, 15L)
+  expect_equal(d15$half_nbw, 7.5)
+  expect_equal(d15$threshold, 17.861842965057395, tolerance = 1e-8)
+  # the number of windows is rounded DOWN: NW = 1.54 gives 3.08 -> 3 windows
+  expect_equal(.spectrum_fit_design(400L, 100, 0.77, 0.05, 1L)$K, 3L)
+  expect_equal(.spectrum_fit_design(400L, 100, 0.99, 0.05, 1L)$K, 3L)   # 3.96 -> 3
+  # stricter p_value, higher threshold; more windows, lower threshold
+  thr <- function(p, bw = NULL) .spectrum_fit_design(1000L, 100, bw, p, 1L)$threshold
+  expect_true(thr(0.5) < thr(0.05) && thr(0.05) < thr(0.01) && thr(0.01) < thr(0.001))
+  expect_lt(thr(0.05, 3), thr(0.05, 1))
+  # a p_value so small that 1 - p rounds to 1 still gives a finite threshold
+  expect_true(is.finite(thr(1e-20)))
+})
+
+test_that(".spectrum_fit_design() stops for a bandwidth that gives fewer than 3 or too many windows", {
+  # 4 s pieces at 100 Hz: 0.2 Hz gives 0 windows, 0.5 Hz gives 2
+  expect_error(.spectrum_fit_design(400L, 100, 0.2, 0.05, 1L), "at least 3")
+  expect_error(.spectrum_fit_design(400L, 100, 0.5, 0.05, 1L), "at least 3")
+  expect_equal(.spectrum_fit_design(400L, 100, 0.75, 0.05, 1L)$K, 3L)
+  # half the piece or more is too much (NW must stay below length / 4)
+  expect_error(.spectrum_fit_design(400L, 100, 60, 0.05, 1L), "too large")
+})
+
+# Add up the cross-fade weights of every piece of a plan: the result must be 1
+# at every sample, whatever the length of the recording.
+sf_weight_sum <- function(n_total, filter_length) {
+  plan <- .make_spectrum_fit_plan(n_total, 100, filter_length, NULL, 0.05, 1L, TRUE)
+  total <- numeric(n_total)
+  np <- length(plan$starts)
+  for (ii in seq_len(np)) {
+    s <- plan$starts[ii]; e <- plan$stops[ii]
+    w <- .piece_weights(plan$win, plan$n, plan$step, e - s,
+                        is_first = ii == 1L, is_last = ii == np)
+    expect_length(w, e - s)
+    total[(s + 1L):e] <- total[(s + 1L):e] + w
+  }
+  list(total = total, plan = plan)
+}
+
+test_that("the cross-fade weights of the pieces add up to 1 at every sample", {
+  for (case in list(list(1200L, "4s"),    # pieces fit exactly
+                    list(1250L, "4s"),    # 50 samples left over: the last piece is longer
+                    list(1399L, "4s"),    # 199 left over
+                    list(400L,  "4s"),    # one piece only: it is first and last
+                    list(599L,  "4s"),    # two pieces, the second one longer
+                    list(1203L, 401),     # an odd piece length
+                    list(1000L, "2s"),
+                    list(777L,  "auto"))) {
+    r <- sf_weight_sum(case[[1]], case[[2]])
+    expect_equal(r$total, rep(1, case[[1]]), tolerance = 1e-12,
+                 label = paste("weights, n =", case[[1]], "filter_length =", case[[2]]))
+  }
+})
+
+test_that("the plan cuts the recording into overlapping pieces that cover it", {
+  plan <- .make_spectrum_fit_plan(1250L, 100, "4s", NULL, 0.05, 8L, TRUE)
+  expect_equal(plan$n, 400L)
+  expect_equal(plan$step, 200L)                    # every piece starts half a piece later
+  expect_equal(plan$starts, c(0L, 200L, 400L, 600L, 800L))
+  expect_equal(plan$stops,  c(400L, 600L, 800L, 1000L, 1250L))   # the last takes the rest
+  expect_equal(sort(names(plan$designs)), c("400", "450"))        # two piece lengths, two designs
+  expect_equal(plan$grid, 8L)
+  # with given frequencies the finer ruler is not used
+  expect_equal(.make_spectrum_fit_plan(1250L, 100, "4s", NULL, 0.05, 8L, FALSE)$grid, 1L)
+  # a recording that is not longer than one piece is one piece
+  one <- .make_spectrum_fit_plan(300L, 100, "4s", NULL, 0.05, 1L, TRUE)
+  expect_equal(one$n, 300L); expect_equal(one$starts, 0L); expect_equal(one$stops, 300L)
+})
+
+test_that("the plan refuses a transform that would need too much memory", {
+  # pieces of 1e6 samples, 8 times as long when padded, 8 windows: above 1 GB.
+  # The check comes before any window is computed, so this is instant.
+  expect_error(.make_spectrum_fit_plan(2000000L, 2048, 1e6, NULL, 0.05, 8L, TRUE),
+               "too long for this 'grid_factor'")
+  expect_error(.make_spectrum_fit_plan(2000000L, 2048, 1e6, 3, 0.05, 20L, TRUE),
+               "too long for this 'grid_factor'")
+})
+
+
+# ─── spectrum-fit notch: MNE numerical accuracy (the standard ruler) ─────────
+#
+# With grid_factor = 1 the method is the standard multitaper line removal, and
+# it must give the numbers of the reference implementation. The signal is 12 s
+# at 100 Hz: noise (AR(1), seed 7) plus waves of 25 Hz (4 uV) and 37.5 Hz
+# (2 uV); both sit exactly on a mark of the ruler for 4 s pieces. The numbers
+# below are samples 1-3, 600-602 and 1198-1200 of the reference output, and the
+# sum, the sum of squares and the summed size of the change.
+
+sf_lit_signal <- function() {
+  fs <- 100; n <- 1200; t <- (0:(n - 1)) / fs
+  set.seed(7)
+  2 * as.numeric(stats::filter(rnorm(n), 0.9, "recursive")) +
+    4 * sin(2 * pi * 25 * t) + 2 * sin(2 * pi * 37.5 * t + 1)
+}
+sf_eeg <- function(x, fs, ...) {
+  x <- rbind(x)
+  eeganalysis::new_eeg(data = x, channels = paste0("Ch", seq_len(nrow(x))),
+                       sampling_rate = fs, ...)
+}
+sf_idx <- c(1, 2, 3, 600, 601, 602, 1198, 1199, 1200)
+
+test_that("spectrum-fit with the standard ruler gives the reference numbers (lines searched)", {
+  x   <- sf_lit_signal()
+  out <- eeg_notch(sf_eeg(x, 100), method = "spectrum_fit", filter_length = "4s",
+                   grid_factor = 1, verbose = FALSE)$data[1, ]
+  expect_equal(out[sf_idx],
+               c(4.6720792718, 1.727070665, 0.2223172811, 6.2178686811, 3.3377120336,
+                 3.4847046029, -2.816822736, -5.5606755185, -5.2231017976),
+               tolerance = 1e-8)
+  expect_equal(sum(out), -38.038834427, tolerance = 1e-8)
+  expect_equal(sum(out^2), 25813.776840737, tolerance = 1e-8)
+  expect_equal(sum(abs(out - x)), 3145.493694037, tolerance = 1e-8)
+})
+
+test_that("spectrum-fit with the standard ruler gives the reference numbers (frequency given)", {
+  x   <- sf_lit_signal()
+  out <- eeg_notch(sf_eeg(x, 100), freqs = 25, notch_widths = 1, method = "spectrum_fit",
+                   filter_length = "4s", verbose = FALSE)$data[1, ]
+  expect_equal(out[sf_idx],
+               c(6.2258978873, 1.6288118065, -0.8878760494, 4.4044423974, 4.9335859657,
+                 2.9479315197, -2.0401813827, -4.4036718555, -7.4105795912),
+               tolerance = 1e-8)
+  expect_equal(sum(out), -38.032990047, tolerance = 1e-8)
+  expect_equal(sum(out^2), 28165.168418856, tolerance = 1e-8)
+  expect_equal(sum(abs(out - x)), 2446.278859018, tolerance = 1e-8)
+})
+
+test_that("spectrum-fit with the standard ruler gives the reference numbers (own bandwidth and p_value)", {
+  x   <- sf_lit_signal()
+  out <- eeg_notch(sf_eeg(x, 100), method = "spectrum_fit", filter_length = "6s",
+                   mt_bandwidth = 2.5, p_value = 0.01, grid_factor = 1,
+                   verbose = FALSE)$data[1, ]
+  expect_equal(out[sf_idx],
+               c(4.6971719133, 1.7712472761, 0.1127800844, 6.208009899, 3.3380220808,
+                 3.4729111279, -2.7063009526, -5.5638350273, -5.2622164982),
+               tolerance = 1e-8)
+  expect_equal(sum(out), -38.01605305, tolerance = 1e-8)
+  expect_equal(sum(out^2), 25819.648091945, tolerance = 1e-8)
+  expect_equal(sum(abs(out - x)), 3142.126222268, tolerance = 1e-8)
+})
+
+test_that("the F scores of a piece are the reference ones (first 4 s piece, standard ruler)", {
+  # computed with the formulas of the reference implementation, independently:
+  # a wave of 25 Hz (4 uV) and one of 37.5 Hz (2 uV) in noise
+  x <- sf_lit_signal()[1:400]
+  d <- .spectrum_fit_design(400L, 100, NULL, 0.05, 1L)
+  r <- .spectrum_fit_piece(x, 100, NULL, NULL, d, 1L)
+  expect_length(r$freq, 201L)
+  expect_equal(r$freq[2] - r$freq[1], 0.25)                # a mark every 1 / 4 s
+  expect_length(r$fstat, 201L)
+  expect_equal(r$fstat[101], 1271.8001321547563, tolerance = 1e-6)     # 25 Hz
+  expect_equal(r$fstat[151], 312.0928373495693,  tolerance = 1e-6)     # 37.5 Hz
+  expect_equal(r$fstat[51],  0.46415124364189914, tolerance = 1e-6)    # 12.5 Hz: noise
+  expect_equal(r$fstat[2],   1.7535844688979862, tolerance = 1e-6)     # 0.25 Hz
+  expect_equal(stats::median(r$fstat), 0.4956447883165784, tolerance = 1e-6)
+  expect_equal(d$threshold, 18.274485513485757, tolerance = 1e-8)
+  expect_equal(r$found, c(25, 37.5), tolerance = 1e-9)
+  # with frequencies given nothing is tested: no scores
+  z <- .spectrum_fit_piece(x, 100, 25, 1, d, 1L)
+  expect_null(z$fstat)
+  expect_length(z$freq, 201L)
+})
+
+test_that("the lines the automatic search finds are the two waves, in every piece", {
+  x    <- sf_lit_signal()
+  plan <- .make_spectrum_fit_plan(length(x), 100, "4s", NULL, 0.05, 1L, TRUE)
+  res  <- .apply_spectrum_fit_plan(x, 100, plan, NULL, NULL)
+  expect_length(res$found, 5L)
+  for (f in res$found) expect_equal(sort(f), c(25, 37.5), tolerance = 1e-9)
+  expect_equal(res$skipped, 0L)
+})
+
+
+# ─── spectrum-fit notch: the finer ruler ─────────────────────────────────────
+#
+# A hum between two marks of the standard ruler is not found at all; the finer
+# ruler finds it. 20 s at 128 Hz, 10 s pieces (marks every 0.1 Hz), 5 uV noise.
+
+sf_hum_signal <- function(f, amp = 20, n = 2560L, fs = 128, seed = 11) {
+  set.seed(seed)
+  noise <- as.numeric(stats::filter(rnorm(n), 0.9, "recursive"))
+  noise <- noise / stats::sd(noise) * 5
+  list(noise = noise, x = noise + amp * sin(2 * pi * f * (0:(n - 1)) / fs), amp = amp)
+}
+# how much of the hum is still there: rms of (cleaned - truth) / rms of the hum
+sf_left <- function(out, h) 100 * sqrt(mean((out - h$noise)^2)) / (h$amp / sqrt(2))
+sf_run <- function(h, ...) {
+  eeg_notch(sf_eeg(h$x, 128), method = "spectrum_fit", verbose = FALSE, ...)$data[1, ]
+}
+
+test_that("a hum exactly on a mark is removed with either ruler", {
+  h <- sf_hum_signal(30.0)
+  expect_lt(sf_left(sf_run(h, grid_factor = 1), h), 3)
+  expect_lt(sf_left(sf_run(h), h), 3)                  # the default ruler
+})
+
+test_that("a hum between two marks is missed by the standard ruler and removed by the finer one", {
+  h <- sf_hum_signal(30.037)          # marks at 30.0 and 30.1
+  expect_gt(sf_left(sf_run(h, grid_factor = 1), h), 90)   # nothing found: 100 % left
+  expect_lt(sf_left(sf_run(h), h), 8)                     # the default, finer ruler
+  expect_lt(sf_left(sf_run(h, grid_factor = 16), h), 8)
+  # halfway between two marks of the standard ruler is the worst case for it
+  h2 <- sf_hum_signal(30.05)
+  expect_gt(sf_left(sf_run(h2, grid_factor = 1), h2), 90)
+  expect_lt(sf_left(sf_run(h2), h2), 8)
+})
+
+test_that("the finer ruler uses one wave per line, at the right frequency", {
+  h    <- sf_hum_signal(30.037)
+  plan <- .make_spectrum_fit_plan(length(h$x), 128, "auto", NULL, 0.05, 8L, TRUE)
+  res  <- .apply_spectrum_fit_plan(h$x, 128, plan, NULL, NULL)
+  expect_length(res$found, 3L)
+  for (f in res$found) {
+    expect_length(f, 1L)                           # not one wave for every neighbouring mark
+    expect_lt(abs(f - 30.037), 0.00625 + 1e-9)     # within half a mark of the finer ruler
+  }
+})
+
+test_that("the automatic search finds a wave and its harmonic, and reports them", {
+  n <- 2560L; fs <- 128; t <- (0:(n - 1)) / fs
+  h <- sf_hum_signal(20.0)
+  x <- h$x + 8 * sin(2 * pi * 40.0 * t + 1)
+  plan <- .make_spectrum_fit_plan(n, fs, "auto", NULL, 0.05, 8L, TRUE)
+  res  <- .apply_spectrum_fit_plan(x, fs, plan, NULL, NULL)
+  for (f in res$found) expect_equal(sort(round(f, 1)), c(20, 40))
+  expect_lt(100 * sqrt(mean((res$x - h$noise)^2)) / sqrt(mean((x - h$noise)^2)), 6)
+})
+
+test_that("data without any steady wave come back unchanged, with nothing found", {
+  set.seed(3)
+  n <- 2560L
+  x <- 5 * as.numeric(stats::filter(rnorm(n), 0.9, "recursive"))
+  plan <- .make_spectrum_fit_plan(n, 128, "auto", NULL, 1e-8, 8L, TRUE)
+  res  <- .apply_spectrum_fit_plan(x, 128, plan, NULL, NULL)
+  expect_length(unlist(res$found), 0L)
+  # nothing subtracted: the cross-fade gives back exactly the data
+  expect_equal(res$x, x, tolerance = 1e-12)
+})
+
+test_that("with given frequencies grid_factor has no effect", {
+  h <- sf_hum_signal(30.0)
+  expect_warning(
+    a <- eeg_notch(sf_eeg(h$x, 128), freqs = 30, method = "spectrum_fit",
+                   grid_factor = 1, verbose = FALSE)$data,
+    "grid_factor")
+  expect_warning(
+    b <- eeg_notch(sf_eeg(h$x, 128), freqs = 30, method = "spectrum_fit",
+                   grid_factor = 8, verbose = FALSE)$data,
+    "grid_factor")
+  expect_identical(a, b)
+  expect_lt(sf_left(a[1, ], h), 5)
+  # and it removes nothing outside the zone: a hum at 30.37 stays (width 0.15 Hz)
+  h2 <- sf_hum_signal(30.37)
+  z  <- eeg_notch(sf_eeg(h2$x, 128), freqs = 30, method = "spectrum_fit",
+                  verbose = FALSE)$data[1, ]
+  expect_gt(sf_left(z, h2), 90)
+})
+
+test_that("a wider notch_widths removes a wider zone when frequencies are given", {
+  h <- sf_hum_signal(30.1)
+  narrow <- eeg_notch(sf_eeg(h$x, 128), freqs = 30, method = "spectrum_fit",
+                      verbose = FALSE)$data[1, ]
+  wide   <- eeg_notch(sf_eeg(h$x, 128), freqs = 30, notch_widths = 0.5,
+                      method = "spectrum_fit", verbose = FALSE)$data[1, ]
+  expect_gt(sf_left(narrow, h), 90)       # 30.1 is outside +/- 0.075 Hz
+  expect_lt(sf_left(wide, h), 30)         # and inside +/- 0.25 Hz
+  # a width of 0 still removes the mark nearest to the frequency
+  h0 <- sf_hum_signal(30.0)
+  zero <- eeg_notch(sf_eeg(h0$x, 128), freqs = 30, notch_widths = 0,
+                    method = "spectrum_fit", verbose = FALSE)$data[1, ]
+  expect_lt(sf_left(zero, h0), 5)
+})
+
+
+# ─── spectrum-fit notch: eeg_notch() ─────────────────────────────────────────
+
+test_that("spectrum-fit returns an eeg object that keeps everything but the data", {
+  h  <- sf_hum_signal(30.0)
+  e0 <- eeganalysis::new_eeg(
+    data = rbind(h$x, h$noise), channels = c("Cz", "Pz"), sampling_rate = 128,
+    channel_types = c(Cz = "eeg", Pz = "eeg"), bads = "Pz",
+    montage = create_montage(), annotations = annots_2rows)
+  out <- eeg_notch(e0, method = "spectrum_fit", verbose = FALSE)
+  expect_s3_class(out, "eeg")
+  expect_equal(dim(out$data), dim(e0$data))
+  expect_equal(out$channels, e0$channels)
+  expect_equal(out$sampling_rate, e0$sampling_rate)
+  expect_equal(out$bads, e0$bads)
+  expect_equal(out$montage, e0$montage)
+  expect_equal(out$annotations, e0$annotations)
+  expect_equal(out$channel_types, e0$channel_types)
+  expect_equal(out$times, e0$times)
+  expect_equal(out$events, e0$events)
+  expect_equal(out$reference, e0$reference)
+  expect_false(isTRUE(all.equal(out$data[1, ], e0$data[1, ])))
+})
+
+test_that("spectrum-fit appends one history entry that names the settings and the lines found", {
+  h   <- sf_hum_signal(30.0)
+  out <- eeg_notch(sf_eeg(h$x, 128), method = "spectrum_fit", verbose = FALSE)
+  expect_length(out$preprocessing_history, 1L)
+  entry <- out$preprocessing_history[[1]]
+  expect_match(entry, "^Spectrum-fit notch: lines searched \\(p = 0\\.05\\)")
+  expect_match(entry, "pieces: 10 s")
+  expect_match(entry, "bandwidth: 0\\.8 Hz")
+  expect_match(entry, "ruler: x8 finer")
+  expect_match(entry, "found: 30\\.0 Hz \\(x3\\)")
+  expect_match(entry, "channels: 1/1$")
+  # the lines are named to a tenth of a Hz, not rounded to a whole one
+  h4 <- sf_hum_signal(30.4)
+  expect_match(eeg_notch(sf_eeg(h4$x, 128), method = "spectrum_fit",
+                         verbose = FALSE)$preprocessing_history[[1]], "found: 30\\.4 Hz \\(x3\\)")
+  # the standard ruler and given frequencies are named as such
+  e1 <- eeg_notch(sf_eeg(h$x, 128), method = "spectrum_fit", grid_factor = 1,
+                  verbose = FALSE)$preprocessing_history[[1]]
+  expect_match(e1, "ruler: standard")
+  e2 <- eeg_notch(sf_eeg(h$x, 128), freqs = c(30, 60), method = "spectrum_fit",
+                  verbose = FALSE)$preprocessing_history[[1]]
+  expect_match(e2, "^Spectrum-fit notch: 30 Hz .*, 60 Hz ")
+  # a recording without a line says so
+  set.seed(5)
+  e3 <- eeg_notch(sf_eeg(5 * as.numeric(stats::filter(rnorm(2560), 0.9, "recursive")), 128),
+                  method = "spectrum_fit", p_value = 1e-8,
+                  verbose = FALSE)$preprocessing_history[[1]]
+  expect_match(e3, "found: none")
+})
+
+test_that("leaving freqs out for spectrum-fit means: search for the lines", {
+  h <- sf_hum_signal(30.037)
+  a <- eeg_notch(sf_eeg(h$x, 128), method = "spectrum_fit", verbose = FALSE)$data
+  b <- eeg_notch(sf_eeg(h$x, 128), freqs = NULL, method = "spectrum_fit",
+                 verbose = FALSE)$data
+  expect_identical(a, b)
+  expect_lt(sf_left(a[1, ], h), 8)
+  # the FIR and IIR methods still use 50 Hz when freqs is left out
+  f <- eeg_notch(sf_eeg(h$x, 128), verbose = FALSE)
+  expect_match(f$preprocessing_history[[1]], "^FIR notch: 50 Hz")
+})
+
+test_that("spectrum-fit works on the selected channels only", {
+  h  <- sf_hum_signal(30.0)
+  e0 <- sf_eeg(rbind(h$x, h$x, h$x), 128)
+  out <- eeg_notch(e0, method = "spectrum_fit", channels = c("Ch1", "Ch3"), verbose = FALSE)
+  expect_identical(out$data[2, ], e0$data[2, ])           # not selected: untouched
+  expect_false(identical(out$data[1, ], e0$data[1, ]))
+  expect_equal(out$data[1, ], out$data[3, ])               # same data, same result
+  expect_match(out$preprocessing_history[[1]], "channels: 2/3")
+  out2 <- eeg_notch(e0, method = "spectrum_fit", channels = 2, verbose = FALSE)
+  expect_identical(out2$data[1, ], e0$data[1, ])
+  expect_false(identical(out2$data[2, ], e0$data[2, ]))
+})
+
+test_that("spectrum-fit prints a header and the lines it found when verbose", {
+  h <- sf_hum_signal(30.0)
+  txt <- paste(capture.output(
+    eeg_notch(sf_eeg(h$x, 128), method = "spectrum_fit", verbose = TRUE)), collapse = "\n")
+  expect_match(txt, "EEG Spectrum-Fit Notch Filtering")
+  expect_match(txt, "searched automatically")
+  expect_match(txt, "Bandwidth / windows:\\s+0\\.8\\s+Hz / 8")
+  expect_match(txt, "8 times finer than the standard ruler")
+  expect_match(txt, "a mark every 0\\.0125 Hz")           # 128 Hz / (1280 samples x 8)
+  txt1 <- paste(capture.output(
+    eeg_notch(sf_eeg(h$x, 128), method = "spectrum_fit", grid_factor = 1, verbose = TRUE)),
+    collapse = "\n")
+  expect_match(txt1, "a mark every 0\\.1 Hz \\(the standard ruler\\)")
+  expect_match(txt, "Lines found \\(frequency, number of channel-pieces\\): 30\\.0 Hz \\(x3\\)")
+  txt2 <- paste(capture.output(
+    eeg_notch(sf_eeg(h$x, 128), freqs = 30, method = "spectrum_fit", verbose = TRUE)),
+    collapse = "\n")
+  expect_match(txt2, "Frequencies:\\s+30")
+  expect_match(txt2, "Waves removed")
+  expect_match(txt2, "the standard ruler")
+})
+
+test_that("spectrum-fit stops, with a clear message, for arguments that make no sense", {
+  e <- sf_eeg(sf_hum_signal(30)$x, 128)
+  f <- function(...) eeg_notch(e, method = "spectrum_fit", verbose = FALSE, ...)
+  expect_error(f(mt_bandwidth = -1), "'mt_bandwidth'")
+  expect_error(f(mt_bandwidth = c(1, 2)), "'mt_bandwidth'")
+  expect_error(f(mt_bandwidth = "a"), "'mt_bandwidth'")
+  expect_error(f(mt_bandwidth = 0.1), "at least 3")           # 1 window with 10 s pieces
+  expect_error(f(p_value = 0), "'p_value'")
+  expect_error(f(p_value = 1), "'p_value'")
+  expect_error(f(p_value = c(0.1, 0.2)), "'p_value'")
+  expect_error(f(p_value = NA_real_), "'p_value'")
+  expect_error(f(grid_factor = 0), "'grid_factor'")
+  expect_error(f(grid_factor = 2.5), "'grid_factor'")
+  expect_error(f(grid_factor = c(2, 4)), "'grid_factor'")
+  expect_error(f(grid_factor = "8"), "'grid_factor'")
+  expect_error(f(filter_length = "banana"), "filter_length")
+  expect_error(f(filter_length = 10), "too short")
+  expect_error(f(freqs = -5), "'freqs'")
+  expect_error(f(freqs = 64), "Nyquist")
+  expect_error(f(freqs = 30, notch_widths = -1), "'notch_widths'")
+  expect_error(f(freqs = c(30, 40), notch_widths = c(1, 2, 3)), "'notch_widths'")
+  expect_error(f(channels = "Nope"), "not found")
+  # the recording is shorter than 32 samples
+  expect_error(eeg_notch(sf_eeg(rnorm(20), 128), method = "spectrum_fit", verbose = FALSE),
+               "too short")
+})
+
+test_that("freqs = NULL needs the spectrum-fit method", {
+  e <- sf_eeg(sf_hum_signal(30)$x, 128)
+  expect_error(eeg_notch(e, freqs = NULL, verbose = FALSE), "needs method")
+  expect_error(eeg_notch(e, freqs = NULL, method = "iir", verbose = FALSE), "needs method")
+})
+
+test_that("arguments that a method does not use are named in a warning", {
+  e <- sf_eeg(sf_hum_signal(30)$x, 128)
+  # set on purpose for spectrum-fit, but only meant for filters
+  expect_warning(eeg_notch(e, method = "spectrum_fit", phase = "zero", verbose = FALSE),
+                 "Not used with method = \"spectrum_fit\".*phase")
+  expect_warning(eeg_notch(e, method = "spectrum_fit", trans_bandwidth = 2,
+                           fir_window = "hann", verbose = FALSE),
+                 "trans_bandwidth, fir_window")
+  expect_warning(eeg_notch(e, method = "spectrum_fit", iir_params = list(order = 2),
+                           verbose = FALSE), "iir_params")
+  expect_warning(eeg_notch(e, method = "spectrum_fit", pad = "reflect_limited",
+                           verbose = FALSE), "pad")
+  # notch_widths without frequencies has no zone to apply to
+  expect_warning(eeg_notch(e, method = "spectrum_fit", notch_widths = 1, verbose = FALSE),
+                 "and freqs = NULL.*notch_widths")
+  # left at their defaults: no warning
+  expect_warning(eeg_notch(e, method = "spectrum_fit", verbose = FALSE), NA)
+  expect_warning(eeg_notch(e, freqs = 30, method = "spectrum_fit", notch_widths = 1,
+                           verbose = FALSE), NA)
+  # frequencies given: there is no search, so grid_factor and p_value have no
+  # effect, and a user who typed one of them is told (once)
+  expect_warning(eeg_notch(e, freqs = 30, method = "spectrum_fit", grid_factor = 4,
+                           verbose = FALSE),
+                 "Only used when the lines are searched.*not when 'freqs' is given: grid_factor\\.$")
+  expect_warning(eeg_notch(e, freqs = 30, method = "spectrum_fit", p_value = 0.01,
+                           verbose = FALSE),
+                 "not when 'freqs' is given: p_value\\.$")
+  expect_warning(eeg_notch(e, freqs = 30, method = "spectrum_fit", p_value = 0.01,
+                           grid_factor = 4, verbose = FALSE),
+                 "given: grid_factor, p_value\\.$")
+  seen2 <- character(0)
+  withCallingHandlers(
+    eeg_notch(e, freqs = 30, method = "spectrum_fit", grid_factor = 4, verbose = FALSE),
+    warning = function(w) { seen2 <<- c(seen2, conditionMessage(w)); invokeRestart("muffleWarning") })
+  expect_length(seen2, 1L)
+  # lines searched: both are used, so no warning
+  expect_warning(eeg_notch(e, method = "spectrum_fit", grid_factor = 4, p_value = 0.01,
+                           verbose = FALSE), NA)
+  expect_warning(eeg_notch(e, freqs = NULL, method = "spectrum_fit", grid_factor = 1,
+                           verbose = FALSE), NA)
+  # set on purpose for a filter, but only meant for spectrum-fit
+  expect_warning(eeg_notch(e, freqs = 30, grid_factor = 4, verbose = FALSE),
+                 "Only used with method = \"spectrum_fit\".*grid_factor")
+  expect_warning(eeg_notch(e, freqs = 30, method = "iir", p_value = 0.01, mt_bandwidth = 1,
+                           verbose = FALSE), "mt_bandwidth, p_value")
+  expect_warning(eeg_notch(e, freqs = 30, verbose = FALSE), NA)
+  # the iir_params warning of the FIR method is still only for the FIR method
+  expect_warning(eeg_notch(e, freqs = 30, iir_params = list(order = 2), verbose = FALSE),
+                 "'iir_params' is not used with method = \"fir\"")
+  # spectrum-fit gives ONE warning for it, not the FIR one as well
+  seen <- character(0)
+  withCallingHandlers(
+    eeg_notch(e, method = "spectrum_fit", iir_params = list(order = 2), verbose = FALSE),
+    warning = function(w) { seen <<- c(seen, conditionMessage(w)); invokeRestart("muffleWarning") })
+  expect_length(seen, 1L)
+  expect_match(seen, "Not used with method = \"spectrum_fit\"")
+})
+
+test_that("a piece with missing values is left alone, the others are cleaned, and the user is told", {
+  h <- sf_hum_signal(30.0)
+  x <- h$x
+  x[100] <- NA                         # only the first of the 3 pieces holds sample 100
+  expect_warning(
+    out <- eeg_notch(sf_eeg(x, 128), method = "spectrum_fit", verbose = FALSE)$data[1, ],
+    "1 piece\\(s\\) contained missing values")
+  expect_equal(which(is.na(out)), 100L)                   # the gap stays where it was
+  # samples that only the second and third pieces cover are cleaned, and the
+  # first 640 samples (first piece alone) are as they came in
+  expect_equal(out[1:99], x[1:99])
+  tail_part <- 1281:2560
+  expect_lt(100 * sqrt(mean((out[tail_part] - h$noise[tail_part])^2)) / (20 / sqrt(2)), 8)
+  # several pieces
+  x2 <- h$x; x2[c(100, 2000)] <- NA
+  expect_warning(eeg_notch(sf_eeg(x2, 128), method = "spectrum_fit", verbose = FALSE),
+                 "2 piece\\(s\\)")
+})
+
+test_that("spectrum-fit works on a recording that is one piece, and one that does not fill the last piece", {
+  h <- sf_hum_signal(30.0, n = 1280L)             # 10 s: one piece
+  expect_lt(sf_left(sf_run(h), h), 3)
+  h2 <- sf_hum_signal(30.0, n = 2900L)            # 22.66 s: the last piece is longer
+  out <- eeg_notch(sf_eeg(h2$x, 128), method = "spectrum_fit", verbose = FALSE)$data[1, ]
+  expect_length(out, 2900L)
+  # the last piece has 1620 samples, so its marks lie 0.0099 Hz apart and the
+  # 30 Hz hum falls halfway between two of them: about the 4 % worst case
+  expect_lt(sf_left(out, h2), 8)
+  # shorter pieces, given as text
+  out3 <- eeg_notch(sf_eeg(h2$x, 128), method = "spectrum_fit", filter_length = "5s",
+                    verbose = FALSE)$data[1, ]
+  expect_length(out3, 2900L)
+  expect_lt(sf_left(out3, h2), 8)
+})
+
+test_that("a hum that drifts is followed better with short pieces than with long ones", {
+  n <- 7680L; fs <- 128; t <- (0:(n - 1)) / fs
+  set.seed(21)
+  noise <- as.numeric(stats::filter(rnorm(n), 0.9, "recursive")); noise <- noise / stats::sd(noise) * 5
+  f_t  <- 29.8 + 0.7 * t / 60                      # 29.8 -> 30.5 Hz in 60 s
+  x    <- noise + 20 * sin(2 * pi * cumsum(f_t) / fs)
+  h    <- list(noise = noise, amp = 20)
+  long  <- eeg_notch(sf_eeg(x, fs), method = "spectrum_fit", verbose = FALSE)$data[1, ]
+  short <- eeg_notch(sf_eeg(x, fs), method = "spectrum_fit", filter_length = "3s",
+                     verbose = FALSE)$data[1, ]
+  std   <- eeg_notch(sf_eeg(x, fs), method = "spectrum_fit", filter_length = "3s",
+                     grid_factor = 1, verbose = FALSE)$data[1, ]
+  expect_lt(sf_left(short, h), sf_left(long, h))
+  expect_lt(sf_left(short, h), 20)
+  expect_gt(sf_left(std, h), 40)                   # the standard ruler follows it much worse
+})
+
+test_that("p_value controls how easily a weak hum is called a line", {
+  set.seed(31)
+  n <- 2560L; fs <- 128
+  noise <- as.numeric(stats::filter(rnorm(n), 0.9, "recursive")); noise <- noise / stats::sd(noise) * 5
+  x <- noise + 1.0 * sin(2 * pi * 30.0 * (0:(n - 1)) / fs)       # a 1 uV hum
+  plan_for <- function(p) .make_spectrum_fit_plan(n, fs, "auto", NULL, p, 8L, TRUE)
+  hits <- function(p) sum(vapply(.apply_spectrum_fit_plan(x, fs, plan_for(p), NULL, NULL)$found,
+                                 function(f) any(abs(f - 30) < 0.1), TRUE))
+  expect_gte(hits(0.5), hits(1e-12))              # a looser level never finds fewer
+  expect_equal(hits(0.5), 3L)                     # loose: found in all 3 pieces
+  expect_equal(hits(1e-12), 0L)                   # very strict: not found
+})

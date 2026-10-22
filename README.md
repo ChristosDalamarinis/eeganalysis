@@ -33,7 +33,7 @@ Version 0.0.0.9000 — under active development. Currently reads BioSemi `.bdf` 
 |------------------------|------------------------|------------------------|
 | Import BioSemi `.bdf` | `read_bdf_native()` | ✅ |
 | Channel inspection & type assignment | `inspect_biosemi_file()`, `detect_external_channels()`, `set_channel_types()` | ✅ |
-| Downsampling / Filtering (FIR or Butterworth IIR bandpass, highpass, lowpass and notch; zero-phase or causal) | `downsample()`, `eeg_bandpass()`, `eeg_notch()` | ✅ |
+| Downsampling / Filtering (FIR or Butterworth IIR bandpass, highpass, lowpass and notch; zero-phase or causal; spectrum-fit removal of line noise) | `downsample()`, `eeg_bandpass()`, `eeg_notch()` | ✅ |
 | Filtering plain numbers (a row or a matrix that is not in an `eeg` object; the same filters as `eeg_bandpass()`) | `filter_data()` | ✅ |
 | Looking at a filter (impulse response, magnitude in dB and group delay; FIR or IIR, zero-phase or causal) | `plot_filter()` | ✅ |
 | Bad-channel detection & repair | `find_bad_channels()`, `interpolate_bads()` | ✅ |
@@ -80,6 +80,7 @@ inspect_triggers(eeg_data)
 eeg_data <- downsample(eeg_data, target_rate = 256)
 eeg_data <- eeg_bandpass(eeg_data, l_freq = 0.1, h_freq = 40)
 eeg_data <- eeg_notch(eeg_data, freqs = 50)
+eeg_data <- eeg_notch(eeg_data, method = "spectrum_fit")   # alternative: finds the line noise itself and subtracts it
 ```
 
 ### Find and repair bad channels
@@ -158,7 +159,7 @@ eeganalysis
 │   │
 │   ├── filter1.R                            ← FIR and IIR filtering
 │   │   ├── eeg_bandpass()                   ← Bandpass/highpass/lowpass: Hamming-window FIR or Butterworth IIR, zero-phase or causal
-│   │   ├── eeg_notch()                      ← Notch filter for line noise: multi-band FIR or Butterworth IIR, zero-phase or causal
+│   │   ├── eeg_notch()                      ← Notch filter for line noise: multi-band FIR or Butterworth IIR, zero-phase or causal; or spectrum-fit (finds and subtracts the steady waves, finer frequency ruler)
 │   │   └── filter_data()                    ← Same filter as eeg_bandpass() on plain numbers (a vector or matrix), no eeg object needed
 │   │
 │   ├── plot_filter.R                        ← Looking at a filter
@@ -252,7 +253,7 @@ eeganalysis
 │   │
 │   └── imports.R                            ← Centralized @importFrom declarations
 │
-├── man/                                     ← Auto-generated help files (170, one per exported/internal function)
+├── man/                                     ← Auto-generated help files (180, one per exported/internal function)
 │   ├── new_eeg.Rd
 │   ├── read_bdf_native.Rd
 │   ├── find_bad_channels.Rd

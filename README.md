@@ -217,9 +217,11 @@ eeganalysis
 │   │
 │   ├── montage.R                            ← Electrode montage handling
 │   │   ├── new_montage()                    ← Create a montage object
-│   │   ├── create_montage()                 ← Build a montage from a template
+│   │   ├── create_montage()                 ← Build a montage from a BioSemi cap layout (16 to 256 channels)
 │   │   ├── set_montage()                    ← Attach a montage to an eeg object
 │   │   └── print.montage()                  ← Display montage object nicely
+│   │
+│   ├── montage_templates.R                  ← BioSemi cap layouts (16/32/64/128/160/256) behind create_montage()
 │   │
 │   ├── topography.R                         ← Scalp topography plotting
 │   │   └── plot_topography()                ← Interpolated scalp-map plot

@@ -427,6 +427,28 @@ test_that("zero_centered changes the drawn picture", {
 })
 
 # ============================================================================
+#            TEST SUITE 4: Other BioSemi Cap Layouts
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# Test 4.1: A 32 channel recording named by BioSemi socket
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies plot_topography() draws every electrode of the
+# 32 channel layout when the recording's channels are named A1-A32.
+test_that("plot_topography works with the 32 channel BioSemi layout", {
+  chans <- paste0("A", 1:32)
+  mat <- matrix(rnorm(length(chans) * 100), nrow = length(chans))
+  eeg <- new_eeg(data = mat, channels = chans, sampling_rate = 100)
+  eeg <- set_montage(eeg, create_montage(chans, template = "biosemi32"))
+  values <- setNames(runif(length(chans)), chans)
+
+  res <- with_null_device(plot_topography(eeg, values))
+
+  expect_equal(nrow(res$channel_positions), 32)
+  expect_equal(res$channel_positions$channel, chans)
+})
+
+# ============================================================================
 #                     SUMMARY OF TEST COVERAGE
 # ============================================================================
 # - Input validation: non-'eeg' object, missing montage, unnamed values
@@ -436,6 +458,7 @@ test_that("zero_centered changes the drawn picture", {
 #   montage argument overriding/substituting for eeg_obj$montage
 # - eeg_obj$bads exclusion: warns and drops bad channels, no-op when empty,
 #   can trigger the 3-channel minimum error
+# - Other BioSemi layouts: a 32 channel recording named by BioSemi socket
 # - Colour scale and extrapolation: the defaults keep the old behaviour
 #   (picture and zlim unchanged), zero_centered makes the colour limits
 #   symmetric around zero, extrapolate = FALSE leaves the area outside the

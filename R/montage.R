@@ -40,28 +40,41 @@ new_montage <- function(channels, positions, coord_frame = "biosemi64") {
   )
 }
 
-#' Create a Montage From the Built-in BioSemi Electrode Template
+#' Create a Montage From a Built-in BioSemi Cap Layout
 #'
 #' Builds a \code{montage} object giving scalp positions (Cartesian
-#' x/y/z and spherical theta/phi/radius) for a set of channel names, drawn
-#' from the package's built-in 64-channel BioSemi electrode database
-#' (\code{get_electrode_database}). Channel names may be given in
-#' either standard 10-20/10-10 notation (e.g. \code{"Cz"}) or BioSemi internal
-#' notation (e.g. \code{"B16"}); matching is case-insensitive.
+#' x/y/z and spherical theta/phi/radius) for a set of channel names, taken
+#' from one of the package's built-in BioSemi cap layouts. Pick the layout
+#' that matches the cap the data was recorded with.
 #'
 #' @param channels Character vector of channel names to include. If
-#'   \code{NULL} (default), all 64 standard 10-20/10-10 electrode names are
-#'   used.
-#' @param template Character string naming the coordinate template to use.
-#'   Currently only \code{"biosemi64"} (the default) is supported.
+#'   \code{NULL} (default), every electrode of the layout is used.
+#' @param template Character string naming the cap layout: one of
+#'   \code{"biosemi16"}, \code{"biosemi32"}, \code{"biosemi64"} (the
+#'   default), \code{"biosemi128"}, \code{"biosemi160"} or
+#'   \code{"biosemi256"}, the BioSemi caps with that many electrodes.
 #'
 #' @return An object of class \code{'montage'}. See \code{new_montage}.
 #'
 #' @details
-#' Requested channels that have no scalp position in the template - either
-#' because they are not in the database at all, or because they are external
-#' channels (EOG/ECG/EMG/GSR/etc., which have no coordinates) - are dropped
-#' with a warning naming exactly which channels were excluded. Use
+#' Channel names are matched case-insensitively. The 16-, 32- and
+#' 64-channel layouts use the standard 10-20/10-10 names (e.g.
+#' \code{"Cz"}) and also accept BioSemi's socket names, which number the
+#' electrodes in the order BioSemi lists them (\code{"A1"} to \code{"A16"} on
+#' the 16-channel cap, \code{"A1"} to \code{"A32"} on the 32-channel cap, and
+#' \code{"A1"} to \code{"B32"} on the 64-channel cap, where \code{"B16"} is
+#' Cz). The 128-, 160- and 256-channel layouts have no 10-20 names, only
+#' BioSemi's own: \code{"A1"} to \code{"D32"}, \code{"A1"} to \code{"E32"} and
+#' \code{"A1"} to \code{"H32"} (32 sockets per letter).
+#'
+#' Positions are the electrode coordinates BioSemi publishes for each cap
+#' (the workbook "Cap_coords_all.xls" on biosemi.com), with the head treated
+#' as a sphere of radius 87.54 mm in every layout.
+#'
+#' Requested channels that have no scalp position in the layout - either
+#' because the layout has no electrode of that name, or because they are
+#' external channels (EOG/ECG/EMG/GSR/etc., which have no coordinates) - are
+#' dropped with a warning naming exactly which channels were excluded. Use
 #' \code{detect_electrode_naming_system} first if you are unsure which
 #' naming convention a dataset uses.
 #'
@@ -73,6 +86,12 @@ new_montage <- function(channels, positions, coord_frame = "biosemi64") {
 #'
 #'   # Just a subset, mixing standard and BioSemi names
 #'   m <- create_montage(c("Cz", "Fz", "Pz", "B1"))
+#'
+#'   # Every electrode of a 128-channel cap (named A1 to D32 in the data)
+#'   m <- create_montage(template = "biosemi128")
+#'
+#'   # A 32-channel recording whose channels are named by BioSemi socket
+#'   m <- create_montage(c("A1", "A2", "A3"), template = "biosemi32")
 #' }
 #'
 #' @seealso \code{\link{set_montage}}, \code{\link{get_electrode_database}}
@@ -80,35 +99,30 @@ new_montage <- function(channels, positions, coord_frame = "biosemi64") {
 #' @export
 create_montage <- function(channels = NULL, template = "biosemi64") {
 
-  if (!identical(template, "biosemi64")) {
-    stop("ERROR: Unknown montage template '", template,
-         "'. Only 'biosemi64' is currently supported.", call. = FALSE)
+  available <- .montage_templates()
+  if (!is.character(template) || length(template) != 1 ||
+      !(template %in% available)) {
+    stop("ERROR: Unknown montage template '", paste(template, collapse = ", "),
+         "'. Available templates: ", paste(available, collapse = ", "), ".",
+         call. = FALSE)
   }
 
-  electrode_db <- get_electrode_database()
+  layout <- .montage_template_table(template)
 
   if (is.null(channels)) {
-    is_scalp <- vapply(electrode_db, function(e) {
-      isTRUE(e$standard_system %in% c("10-20", "10-10"))
-    }, logical(1))
-    channels <- unique(vapply(electrode_db[is_scalp],
-                               function(e) e$standard_name, character(1)))
+    channels <- layout$name
   }
 
   channels <- as.character(channels)
   lookup_keys <- tolower(channels)
 
-  in_db <- lookup_keys %in% names(electrode_db)
+  # A channel is found by its name or, failing that, by its alias (the BioSemi
+  # socket name on the 16, 32 and 64 channel caps). A missing name never matches.
+  row_of <- match(lookup_keys, tolower(layout$name))
+  by_alias <- is.na(row_of) & !is.na(lookup_keys)
+  row_of[by_alias] <- match(lookup_keys[by_alias], tolower(layout$alias))
 
-  has_coords <- rep(FALSE, length(channels))
-  if (any(in_db)) {
-    has_coords[in_db] <- !is.na(vapply(
-      electrode_db[lookup_keys[in_db]],
-      function(e) e$cartesian_coords$x, numeric(1)
-    ))
-  }
-
-  ok <- in_db & has_coords
+  ok <- !is.na(row_of)
   if (any(!ok)) {
     warning("create_montage(): ", sum(!ok),
             " channel(s) have no scalp position in the '", template,
@@ -122,18 +136,24 @@ create_montage <- function(channels = NULL, template = "biosemi64") {
   }
 
   channels_ok <- channels[ok]
-  entries <- electrode_db[lookup_keys[ok]]
+  entries <- layout[row_of[ok], , drop = FALSE]
 
   positions <- data.frame(
     channel = channels_ok,
-    x      = vapply(entries, function(e) e$cartesian_coords$x, numeric(1)),
-    y      = vapply(entries, function(e) e$cartesian_coords$y, numeric(1)),
-    z      = vapply(entries, function(e) e$cartesian_coords$z, numeric(1)),
-    theta  = vapply(entries, function(e) e$spherical_coords$theta, numeric(1)),
-    phi    = vapply(entries, function(e) e$spherical_coords$phi, numeric(1)),
-    radius = vapply(entries, function(e) e$spherical_coords$radius, numeric(1)),
+    x      = entries$x,
+    y      = entries$y,
+    z      = entries$z,
+    theta  = entries$theta,
+    phi    = entries$phi,
+    radius = entries$radius,
     stringsAsFactors = FALSE
   )
+
+  # The lower-case lookup keys are the row names (when they are all different),
+  # as they always were: matrices built from this table inherit them as dimnames.
+  if (!anyDuplicated(lookup_keys[ok])) {
+    rownames(positions) <- lookup_keys[ok]
+  }
 
   new_montage(channels = channels_ok, positions = positions, coord_frame = template)
 }

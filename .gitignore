@@ -15,16 +15,12 @@ test_signal_99.csv
 *.pyc
 *.pyi
 *.pdf
-*.csv
 *.md
 *.png
-*.txt
 *.jinja
 *.csd
 *.lout
 *.lay
-*.sfp
-*.elc
 *.mat
 *.fif
 *.svg

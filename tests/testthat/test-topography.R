@@ -449,6 +449,121 @@ test_that("plot_topography works with the 32 channel BioSemi layout", {
 })
 
 # ============================================================================
+#       TEST SUITE 5: Order of the Values and the Dense BioSemi Layouts
+# ============================================================================
+
+# Helper: a recording that has a full BioSemi layout (all electrodes, no data
+# that matters) with the montage already attached.
+make_layout_fixture <- function(template) {
+  m <- create_montage(template = template)
+  eeg <- new_eeg(data = matrix(0, nrow = length(m$channels), ncol = 10),
+                 channels = m$channels, sampling_rate = 100)
+  list(eeg = set_montage(eeg, m), channels = m$channels)
+}
+
+# ----------------------------------------------------------------------------
+# Test 5.1: The map does not depend on the order of the values
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies the same values given in a different order draw
+# exactly the same map, while the returned channel_positions table keeps the
+# order the values came in and every channel keeps its own value.
+test_that("plot_topography draws the same map whatever the order of the values", {
+  fx <- make_layout_fixture("biosemi64")
+  values <- setNames(sin(seq_along(fx$channels)), fx$channels)
+  reordered <- values[c(rev(seq(1, 64, by = 2)), seq(2, 64, by = 2))]
+
+  a <- with_null_device(plot_topography(fx$eeg, values))
+  b <- with_null_device(plot_topography(fx$eeg, reordered))
+
+  expect_equal(a$grid_z, b$grid_z)
+
+  expect_equal(a$channel_positions$channel, names(values))
+  expect_equal(b$channel_positions$channel, names(reordered))
+  b_back <- b$channel_positions[match(names(values), b$channel_positions$channel), ]
+  expect_equal(b_back$value, unname(values))
+  expect_equal(b_back$x2d, a$channel_positions$x2d)
+  expect_equal(b_back$y2d, a$channel_positions$y2d)
+})
+
+# ----------------------------------------------------------------------------
+# Test 5.2: The 128 and 160 channel layouts plot in their own order silently
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies the values in the layout's own order (A1, A2, A3,
+# ...) draw without any warning. The interpolation package used to print two
+# warnings about collinear points for these two layouts in this order.
+test_that("128 and 160 channel layouts plot in their own order without warnings", {
+  for (tmpl in c("biosemi128", "biosemi160")) {
+    fx <- make_layout_fixture(tmpl)
+    values <- setNames(cos(seq_along(fx$channels)), fx$channels)
+
+    expect_no_warning(res <- with_null_device(plot_topography(fx$eeg, values)))
+    expect_equal(nrow(res$channel_positions), length(fx$channels))
+  }
+})
+
+# ----------------------------------------------------------------------------
+# Test 5.3: Bad channels removed from a dense layout
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies a 128 channel layout with three channels marked bad
+# gives exactly one warning (the one naming the bad channels) and plots the
+# other 125, with no interpolation warning on top.
+test_that("a dense layout with bad channels gives only the bad-channel warning", {
+  fx <- make_layout_fixture("biosemi128")
+  fx$eeg$bads <- c("A5", "B7", "D20")
+  values <- setNames(sin(seq_along(fx$channels)), fx$channels)
+
+  warns <- character(0)
+  res <- with_null_device(
+    withCallingHandlers(
+      plot_topography(fx$eeg, values),
+      warning = function(w) {
+        warns <<- c(warns, conditionMessage(w))
+        invokeRestart("muffleWarning")
+      }
+    )
+  )
+
+  expect_length(warns, 1)
+  expect_match(warns, "marked bad")
+  expect_equal(nrow(res$channel_positions), 125)
+})
+
+# ----------------------------------------------------------------------------
+# Test 5.4: An order that used to hang R
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: This particular order of the 128 channel layout made the
+# interpolation package hang or crash R before the points were sorted. It must
+# now draw normally, and draw the same map as the layout's own order.
+# Without the sorting in plot_topography() this call hangs or crashes R, so it
+# is skipped on CI, where a hang would hold the job for hours; run it locally.
+test_that("an order of the 128 channel layout that used to hang R now plots", {
+  skip_on_ci()
+
+  hang_order <- c(
+    112, 82, 39, 3, 33, 108, 81, 121, 128, 89, 9, 40, 87,
+    51, 127, 28, 113, 104, 36, 118, 57, 125, 56, 86, 45, 31,
+    16, 24, 37, 61, 76, 120, 48, 115, 94, 49, 42, 100, 11,
+    13, 12, 10, 103, 18, 114, 122, 90, 70, 126, 116, 43, 50,
+    22, 124, 78, 19, 73, 46, 101, 4, 7, 60, 71, 32, 26,
+    68, 75, 38, 17, 106, 119, 14, 59, 98, 15, 44, 123, 85,
+    79, 23, 66, 34, 97, 99, 77, 95, 29, 109, 55, 63, 58,
+    53, 92, 80, 96, 91, 20, 83, 110, 30, 88, 47, 5, 2,
+    35, 64, 69, 65, 72, 105, 93, 102, 117, 74, 8, 84, 25,
+    21, 67, 54, 107, 27, 52, 111, 62, 6, 1, 41
+  )
+  expect_setequal(hang_order, 1:128)
+
+  fx <- make_layout_fixture("biosemi128")
+  own_order <- setNames(sin(seq_along(fx$channels)), fx$channels)
+  values <- own_order[hang_order]
+
+  expect_no_warning(res <- with_null_device(plot_topography(fx$eeg, values)))
+  own <- with_null_device(plot_topography(fx$eeg, own_order))
+
+  expect_equal(res$grid_z, own$grid_z)
+})
+
+# ============================================================================
 #                     SUMMARY OF TEST COVERAGE
 # ============================================================================
 # - Input validation: non-'eeg' object, missing montage, unnamed values
@@ -466,4 +581,8 @@ test_that("plot_topography works with the 32 channel BioSemi layout", {
 #   electrodes can invent values that extrapolate = FALSE removes, the two
 #   arguments work together, and zero_centered changes the drawn picture
 #   (not just the returned zlim)
+# - Order of the values: the same map whatever the order (the returned table
+#   keeps the input order), no warnings on the 128 and 160 layouts, only the
+#   bad-channel warning when channels are marked bad, and a channel order
+#   that used to hang R
 # ============================================================================

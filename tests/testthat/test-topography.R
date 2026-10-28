@@ -564,6 +564,28 @@ test_that("an order of the 128 channel layout that used to hang R now plots", {
 })
 
 # ============================================================================
+#            TEST SUITE 6: The Standard 10-10 Layout
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# Test 6.1: The 72 electrode 10-10 layout plots silently, in any order
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies the standard_1010 layout (72 electrodes named Fp1,
+# Fpz, ..., Iz) draws without any warning, and that the same values given in
+# reverse order draw exactly the same map.
+test_that("the standard 10-10 layout plots without warnings and in any order", {
+  fx <- make_layout_fixture("standard_1010")
+  values <- setNames(sin(seq_along(fx$channels)), fx$channels)
+
+  expect_no_warning(res <- with_null_device(plot_topography(fx$eeg, values)))
+  expect_equal(nrow(res$channel_positions), 72)
+  expect_equal(res$channel_positions$channel, fx$channels)
+
+  backwards <- with_null_device(plot_topography(fx$eeg, rev(values)))
+  expect_equal(res$grid_z, backwards$grid_z)
+})
+
+# ============================================================================
 #                     SUMMARY OF TEST COVERAGE
 # ============================================================================
 # - Input validation: non-'eeg' object, missing montage, unnamed values
@@ -585,4 +607,6 @@ test_that("an order of the 128 channel layout that used to hang R now plots", {
 #   keeps the input order), no warnings on the 128 and 160 layouts, only the
 #   bad-channel warning when channels are marked bad, and a channel order
 #   that used to hang R
+# - The standard 10-10 layout: 72 electrodes, no warnings, same map in
+#   reverse order
 # ============================================================================

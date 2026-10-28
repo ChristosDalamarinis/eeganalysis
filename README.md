@@ -217,12 +217,14 @@ eeganalysis
 │   │
 │   ├── montage.R                            ← Electrode montage handling
 │   │   ├── new_montage()                    ← Create a montage object
-│   │   ├── create_montage()                 ← Build a montage from a BioSemi cap layout (16 to 256 channels)
+│   │   ├── create_montage()                 ← Build a montage from a BioSemi cap layout (16 to 256 channels) or the standard 10-10 system
 │   │   ├── set_montage()                    ← Attach a montage to an eeg object
 │   │   ├── print.montage()                  ← Display montage object nicely
 │   │   └── read_custom_montage()            ← Read a montage from an .elc, .sfp, .csv, .tsv or .txt file
 │   │
 │   ├── montage_templates.R                  ← BioSemi cap layouts (16/32/64/128/160/256) behind create_montage()
+│   │
+│   ├── montage_standard.R                   ← Standard 10-10 layout (72 electrodes), computed from the rules that define the system
 │   │
 │   ├── topography.R                         ← Scalp topography plotting
 │   │   └── plot_topography()                ← Interpolated scalp-map plot
@@ -256,7 +258,7 @@ eeganalysis
 │   │
 │   └── imports.R                            ← Centralized @importFrom declarations
 │
-├── man/                                     ← Auto-generated help files (180, one per exported/internal function)
+├── man/                                     ← Auto-generated help files (181, one per exported/internal function)
 │   ├── new_eeg.Rd
 │   ├── read_bdf_native.Rd
 │   ├── find_bad_channels.Rd

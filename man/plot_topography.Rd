@@ -112,6 +112,11 @@ package, so a channel marked bad once stays out of the topography too. At
 least 3 channels with both a position and a value are required to
 interpolate a surface.
 
+The surface is always interpolated from the electrodes in the same
+order (by position), so the map does not depend on the order of
+\code{values}. The returned \code{channel_positions} keeps the order of
+\code{values}.
+
 Maps of signed quantities, such as current source density from
 \code{\link{compute_csd}} (positive and negative values mean different
 things), are easier to read with \code{zero_centered = TRUE} and

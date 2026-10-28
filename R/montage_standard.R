@@ -2,11 +2,12 @@
 #          Standard electrode systems, built from the rules that define them
 # ============================================================================
 #
-# The 10-10 system is defined by rules, not by a table of coordinates. The
-# rules are described in Oostenveld R, Praamstra P (2001), "The five percent
-# electrode system for high-resolution EEG and ERP measurements", Clinical
-# Neurophysiology 112:713-719 (Section 2.1). The positions below are worked
-# out from those rules; no coordinates are copied from anywhere.
+# The 10-10 and 10-05 systems are defined by rules, not by a table of
+# coordinates. The rules are described in Oostenveld R, Praamstra P (2001),
+# "The five percent electrode system for high-resolution EEG and ERP
+# measurements", Clinical Neurophysiology 112:713-719 (Sections 2.1 and 2.2).
+# The positions below are worked out from those rules; no coordinates are
+# copied from anywhere.
 #
 # They are worked out on the same sphere as the BioSemi layouts: radius
 # 87.54 mm, with the nasion, the inion and the two preauricular points 115
@@ -16,9 +17,10 @@
 # recentring, and agree with the BioSemi layouts for the electrodes they
 # share (see below).
 #
-# The rules, in the order they are applied (every arc is cut into equal parts
-# by angle, and an "arc through three points" is the part of the circle in
-# which the plane through those points cuts the sphere):
+# The rules of the 10-10 system, in the order they are applied (every arc is
+# cut into equal parts by angle, and an "arc through three points" is the
+# part of the circle in which the plane through those points cuts the
+# sphere):
 #   * Cz, the vertex, is the middle of the nasion-inion arc and of the arc
 #     between the two preauricular points.
 #   * Midline: Fpz, AFz, Fz, FCz, Cz, CPz, Pz, POz and Oz are at 10, 20, ...,
@@ -47,10 +49,47 @@
 # 1 mm) for 48 of them. The other 16 differ more: AF3, AF4, PO3 and PO4
 # (about 5.7 mm), FC5, FC6, CP5 and CP6 (about 2.1 mm), F3, F4, P3 and P4
 # (about 1.7 mm) and F5, F6, P5 and P6 (about 1.5 mm).
+#
+# The 10-05 system (standard_1005) halves every step of the 10-10 system, in
+# both directions. The same rules apply, with 5 percent instead of 10:
+#   * Midline: AFpz, AFFz, FFCz, FCCz, CCPz, CPPz, PPOz, POOz and OIz are
+#     added, so the midline is cut at 5, 10, 15, ... 95 percent.
+#   * Outer ring: the ring is cut at 5 percent steps as well. Next to the
+#     10-10 electrodes it holds Fp1h, AFp7, AFF7, FFT7, FTT7, TTP7, TPP7,
+#     PPO7, POO7 and O1h (and the right-hand ones).
+#   * Rows: the 7 rows of the 10-10 system and the 8 new ones between them
+#     (AFp, AFF, FFC, FCC, CCP, CPP, PPO, POO) are each the arc through a
+#     left ring electrode, the midline electrode and the right ring electrode,
+#     cut into 16 equal parts. Every second part is a column of the 10-10
+#     system, the others are the new "half" columns.
+#   * Inferior row: cut at 5 percent steps as well, so each of the 15 rows
+#     has a column 9 and a column 10. I1 and I2 are the 90 percent
+#     electrodes of this row, at the place where the 10-20 system would put
+#     O9 and O10.
+#
+# Names. A "half" electrode lies halfway between two neighbours of its
+# row and carries the name of the more lateral one with an "h" added: between
+# Cz and C1 is C1h, between C3 and C5 is C5h. A new row is named after the
+# two rows around it, like the points of a compass: CCP lies between C and
+# CP. From column 7 outwards the rows between F and P run along the temporal
+# electrodes, so there the names change from FFC, FC, FCC, C, CCP, CP, CPP
+# to FFT, FT, FTT, T, TTP, TP, TPP (FFT7, FT7, FTT7, T7, TTP7, TP7, TPP7).
+# The electrodes at the very front and back, which are not on a row (Fp, O,
+# OI, I), keep five places each: Fp1, Fp1h, Fpz, Fp2h, Fp2 and so on.
+#
+# Where the paper leaves the position open the choice made here is: a half
+# electrode between column 7 and column 9 (or 8 and 10) is halfway along the
+# shortest path between its two neighbours, and OI1 is halfway between O1 and
+# I1. Every other half electrode is a part of the arc it is on.
+#
+# standard_1005 has 335 electrodes: 5 + 15 * 21 + 15, front to back, with
+# every position of standard_1010 at the same place. The landmark Nz, the
+# mastoid electrodes (M1, M2) and the ear electrodes (A1, A2) have no rule and
+# are not part of it.
 
 # Names of the layouts built here.
 .standard_templates <- function() {
-  "standard_1010"
+  c("standard_1010", "standard_1005")
 }
 
 # The 72 electrodes of standard_1010, front to back and left to right.
@@ -67,6 +106,39 @@
     "PO7", "PO3", "POz", "PO4", "PO8",
     "O1", "Oz", "O2",
     "Iz")
+}
+
+# The 15 rows of the 10-05 system between Fp and O, front to back. `medial`
+# is how the row is named from column 5 inwards and on the midline, `lateral`
+# from column 7 outwards.
+.standard_row_medial <- function() {
+  c("AFp", "AF", "AFF", "F", "FFC", "FC", "FCC", "C", "CCP", "CP", "CPP", "P",
+    "PPO", "PO", "POO")
+}
+.standard_row_lateral <- function() {
+  c("AFp", "AF", "AFF", "F", "FFT", "FT", "FTT", "T", "TTP", "TP", "TPP", "P",
+    "PPO", "PO", "POO")
+}
+
+# The 21 electrodes of one row, from the far left to the far right: columns 9,
+# 9h, 7, 7h, 5, 5h, 3, 3h, 1, 1h, z, 2h, 2, 4h, 4, 6h, 6, 8h, 8, 10h, 10.
+.standard_row_names <- function(medial, lateral) {
+  c(paste0(lateral, c("9", "9h", "7", "7h")),
+    paste0(medial, c("5", "5h", "3", "3h", "1", "1h", "z", "2h", "2", "4h",
+                     "4", "6h", "6")),
+    paste0(lateral, c("8h", "8", "10h", "10")))
+}
+
+# The 335 electrodes of standard_1005, front to back and left to right.
+.standard_1005_names <- function() {
+  rows <- unlist(lapply(seq_along(.standard_row_medial()), function(i) {
+    .standard_row_names(.standard_row_medial()[i], .standard_row_lateral()[i])
+  }))
+  c("Fp1", "Fp1h", "Fpz", "Fp2h", "Fp2",
+    rows,
+    "O1", "O1h", "Oz", "O2h", "O2",
+    "OI1", "OI1h", "OIz", "OI2h", "OI2",
+    "I1", "I1h", "Iz", "I2h", "I2")
 }
 
 .standard_cross <- function(a, b) {
@@ -102,7 +174,8 @@
 }
 
 # Every position the rules above give, as a named list of points on the unit
-# sphere (x towards the right ear, y towards the nose, z towards the top).
+# sphere (x towards the right ear, y towards the nose, z towards the top):
+# the 335 electrodes of standard_1005, which include those of standard_1010.
 .standard_points <- function() {
   edge <- 115 * pi / 180
   nasion    <- c(0, sin(edge), cos(edge))
@@ -114,35 +187,50 @@
   along <- function(first, through, last, fractions) {
     lapply(fractions, function(f) .standard_arc_point(first, through, last, f))
   }
+  # halfway along the shortest path between two points
+  halfway <- function(a, b) {
+    middle <- a + b
+    middle / sqrt(sum(middle^2))
+  }
+  medial  <- .standard_row_medial()
+  lateral <- .standard_row_lateral()
   points <- list()
 
-  midline <- c("Fpz", "AFz", "Fz", "FCz", "Cz", "CPz", "Pz", "POz", "Oz")
-  points[midline] <- along(nasion, vertex, inion, (1:9) / 10)
+  # midline, at 5 percent steps from Fpz (10) to OIz (95); Iz is the inion
+  midline <- c("Fpz", paste0(medial, "z"), "Oz", "OIz")
+  points[midline] <- along(nasion, vertex, inion, (2:19) / 20)
+  points$Iz <- inion
   points$T7 <- .standard_arc_point(left_ear, vertex, right_ear, 0.1)
   points$T8 <- .standard_arc_point(left_ear, vertex, right_ear, 0.9)
 
-  left_ring  <- c("Fp1", "AF7", "F7", "FT7", "T7", "TP7", "P7", "PO7", "O1")
-  right_ring <- c("Fp2", "AF8", "F8", "FT8", "T8", "TP8", "P8", "PO8", "O2")
-  points[left_ring]  <- along(points$Fpz, points$T7, points$Oz, (1:9) / 10)
-  points[right_ring] <- along(points$Fpz, points$T8, points$Oz, (1:9) / 10)
+  # outer ring, at 5 percent steps from Fp1h (5) to O1h (95)
+  left_ring  <- c("Fp1h", "Fp1", paste0(lateral, "7"), "O1", "O1h")
+  right_ring <- c("Fp2h", "Fp2", paste0(lateral, "8"), "O2", "O2h")
+  points[left_ring]  <- along(points$Fpz, points$T7, points$Oz, (1:19) / 20)
+  points[right_ring] <- along(points$Fpz, points$T8, points$Oz, (1:19) / 20)
 
-  rows <- list(AF = c("AF7", "AFz", "AF8"), F  = c("F7", "Fz", "F8"),
-               FC = c("FT7", "FCz", "FT8"), C  = c("T7", "Cz", "T8"),
-               CP = c("TP7", "CPz", "TP8"), P  = c("P7", "Pz", "P8"),
-               PO = c("PO7", "POz", "PO8"))
-  columns <- c("5", "3", "1", "2", "4", "6")
-  parts <- c(1, 2, 3, 5, 6, 7) / 8
-  for (row in names(rows)) {
-    ends <- rows[[row]]
-    points[paste0(row, columns)] <- along(points[[ends[1]]], points[[ends[2]]],
-                                          points[[ends[3]]], parts)
+  # inferior row, at 5 percent steps from column 9 of AFp (15) to I1h (95)
+  steps <- (3:19) / 20
+  points[c(paste0(lateral, "9"), "I1", "I1h")]   <- along(nasion, left_ear, inion, steps)
+  points[c(paste0(lateral, "10"), "I2", "I2h")] <- along(nasion, right_ear, inion, steps)
+
+  # rows: columns 7 to 8 are sixteenths of the arc through the ring electrodes
+  # and the midline electrode (the ends and the middle are already there);
+  # the half columns 9h and 10h are halfway between 7 and 9, and 8 and 10
+  inner <- c(1:7, 9:15)
+  for (i in seq_along(medial)) {
+    row <- .standard_row_names(medial[i], lateral[i])
+    points[row[3 + inner]] <- along(points[[row[3]]], points[[row[11]]],
+                                    points[[row[19]]], inner / 16)
+    points[[row[2]]]  <- halfway(points[[row[1]]], points[[row[3]]])
+    points[[row[20]]] <- halfway(points[[row[19]]], points[[row[21]]])
   }
 
-  inferior <- c("F", "FT", "T", "TP", "P")
-  tenths <- (3:7) / 10
-  points[paste0(inferior, "9")]  <- along(nasion, left_ear, inion, tenths)
-  points[paste0(inferior, "10")] <- along(nasion, right_ear, inion, tenths)
-  points$Iz <- inion
+  # below O1 and O2: OI1 is halfway between O1 and I1, OI1h halfway to OIz
+  points$OI1 <- halfway(points$O1, points$I1)
+  points$OI2 <- halfway(points$O2, points$I2)
+  points[c("OI1h", "OI2h")] <- along(points$OI1, points$OIz, points$OI2,
+                                     c(0.25, 0.75))
 
   points
 }
@@ -151,7 +239,9 @@
 # tables of the BioSemi layouts (see .montage_template_table()). The alias is
 # always NA: these layouts have one name per electrode.
 .standard_template_table <- function(template) {
-  names_in_layout <- switch(template, standard_1010 = .standard_1010_names())
+  names_in_layout <- switch(template,
+                            standard_1010 = .standard_1010_names(),
+                            standard_1005 = .standard_1005_names())
   points <- .standard_points()[names_in_layout]
 
   xyz <- .BIOSEMI_RADIUS_MM * t(vapply(points, function(p) p, numeric(3)))

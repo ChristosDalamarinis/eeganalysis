@@ -46,7 +46,7 @@ Version 0.0.0.9000 — under active development. Currently reads BioSemi `.bdf` 
 | Epoching & visualization | `epoch_eeg()`, `plot_epochs()` | ✅ |
 | Spectral analysis | `eeg_fft()`, `eeg_psd_welch()`, `eeg_band_power()` | ✅ |
 | Hilbert transform (amplitude envelope or phase of each channel; continuous and epoched data) | `apply_hilbert()` | ✅ |
-| Topography & montage | `plot_topography()`, `create_montage()` | ✅ |
+| Topography & montage | `plot_topography()`, `create_montage()`, `read_custom_montage()` | ✅ |
 | Current source density (reference-free surface Laplacian; continuous and epoched data) | `compute_csd()` | ✅ |
 | ERP averaging | `average_epochs()` | ⚠️ in development |
 
@@ -219,7 +219,8 @@ eeganalysis
 │   │   ├── new_montage()                    ← Create a montage object
 │   │   ├── create_montage()                 ← Build a montage from a BioSemi cap layout (16 to 256 channels)
 │   │   ├── set_montage()                    ← Attach a montage to an eeg object
-│   │   └── print.montage()                  ← Display montage object nicely
+│   │   ├── print.montage()                  ← Display montage object nicely
+│   │   └── read_custom_montage()            ← Read a montage from an .elc, .sfp, .csv, .tsv or .txt file
 │   │
 │   ├── montage_templates.R                  ← BioSemi cap layouts (16/32/64/128/160/256) behind create_montage()
 │   │

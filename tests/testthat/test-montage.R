@@ -878,6 +878,233 @@ test_that("a montage read from a file attaches with set_montage()", {
 })
 
 # ============================================================================
+#     TEST SUITE 7: standard_1010 - the standard 10-10 electrode system
+# ============================================================================
+
+# Helper: the positions of the standard_1010 layout.
+standard_1010_positions <- function() {
+  create_montage(template = "standard_1010")$positions
+}
+
+# Helper: signed angles of the named electrodes, in the order of `names`.
+angles_of <- function(positions, names, column) {
+  positions[[column]][match(names, positions$channel)]
+}
+
+# ----------------------------------------------------------------------------
+# Test 7.1: Which electrodes the layout has
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies standard_1010 has the 72 electrodes of the 10-10
+# standard (its 74 positions without the ear electrodes A1 and A2), each name
+# once, in front-to-back order, and leaves out the ear electrodes, the nasion
+# landmark and the eight AF/PO positions the rules give but the standard does
+# not include.
+test_that("standard_1010 has the 72 electrodes of the 10-10 standard without the ears", {
+  m <- create_montage(template = "standard_1010")
+
+  expect_s3_class(m, "montage")
+  expect_equal(length(m$channels), 72)
+  expect_false(anyDuplicated(m$channels) > 0)
+  expect_equal(m$coord_frame, "standard_1010")
+  expect_equal(head(m$channels, 5), c("Fp1", "Fpz", "Fp2", "AF7", "AF3"))
+  expect_equal(tail(m$channels, 4), c("O1", "Oz", "O2", "Iz"))
+  expect_true(all(c("Cz", "Pz", "AFz", "FT9", "TP10", "P9", "F10", "T9", "T10",
+                    "PO8") %in% m$channels))
+  expect_false(any(c("A1", "A2", "Nz", "AF1", "AF2", "AF5", "AF6", "PO1", "PO2",
+                     "PO5", "PO6") %in% m$channels))
+  expect_false(anyNA(m$positions))
+})
+
+# ----------------------------------------------------------------------------
+# Test 7.2: Same shape and scale as the other layouts
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies every electrode lies on the 87.54 mm head sphere,
+# the positions table has the same columns as the BioSemi layouts, and the
+# lower-case names are the row names.
+test_that("standard_1010 is built like the other layouts and sits on the head sphere", {
+  m <- create_montage(template = "standard_1010")
+  p <- m$positions
+
+  expect_equal(sqrt(p$x^2 + p$y^2 + p$z^2), rep(87.54, 72), tolerance = 1e-6)
+  expect_true(all(p$radius == 87.54))
+  expect_identical(names(p), names(create_montage(template = "biosemi32")$positions))
+  expect_identical(rownames(p), tolower(m$channels))
+
+  # no value is a negative zero (printed and compared like 0, but not identical)
+  numbers <- unlist(p[, c("x", "y", "z", "theta", "phi")])
+  expect_false(any(numbers == 0 & 1 / numbers < 0))
+})
+
+# ----------------------------------------------------------------------------
+# Test 7.3: The midline, the ear line, the outer ring and the inferior row
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies the electrodes the 10-10 rules place at 10 percent
+# steps. The expected angles were worked out by hand from the rules, not by the
+# code: the nasion-inion arc is 230 degrees (landmarks 115 degrees from the
+# vertex), so each 10 percent step is 23 degrees; the outer ring electrodes
+# are 18 degrees apart around a circle 92 degrees from the vertex; the
+# inferior row is on the circle 115 degrees from the vertex.
+test_that("standard_1010 places the 10 percent electrodes where the rules put them", {
+  p <- standard_1010_positions()
+
+  midline <- c("Fpz", "AFz", "Fz", "FCz", "Cz", "CPz", "Pz", "POz", "Oz", "Iz")
+  expect_equal(angles_of(p, midline, "theta"), c(92, 69, 46, 23, 0, 23, 46, 69, 92, 115))
+  expect_equal(angles_of(p, midline, "phi"), c(90, 90, 90, 90, 0, -90, -90, -90, -90, -90))
+
+  ear_line <- c("T9", "T7", "C5", "C3", "C1", "C2", "C4", "C6", "T8", "T10")
+  expect_equal(angles_of(p, ear_line, "theta"),
+               c(-115, -92, -69, -46, -23, 23, 46, 69, 92, 115))
+  expect_equal(angles_of(p, ear_line, "phi"), rep(0, 10), tolerance = 1e-6)
+
+  left_ring <- c("Fp1", "AF7", "F7", "FT7", "TP7", "P7", "PO7", "O1")
+  expect_equal(angles_of(p, left_ring, "theta"), rep(-92, 8))
+  expect_equal(angles_of(p, left_ring, "phi"), c(-72, -54, -36, -18, 18, 36, 54, 72))
+  right_ring <- c("Fp2", "AF8", "F8", "FT8", "TP8", "P8", "PO8", "O2")
+  expect_equal(angles_of(p, right_ring, "theta"), rep(92, 8))
+  expect_equal(angles_of(p, right_ring, "phi"), c(72, 54, 36, 18, -18, -36, -54, -72))
+
+  inferior_left <- c("F9", "FT9", "TP9", "P9")
+  expect_equal(angles_of(p, inferior_left, "theta"), rep(-115, 4))
+  expect_equal(angles_of(p, inferior_left, "phi"), c(-36, -18, 18, 36))
+  inferior_right <- c("F10", "FT10", "TP10", "P10")
+  expect_equal(angles_of(p, inferior_right, "theta"), rep(115, 4))
+  expect_equal(angles_of(p, inferior_right, "phi"), c(36, 18, -18, -36))
+})
+
+# ----------------------------------------------------------------------------
+# Test 7.4: Rows are cut into equal parts along one circle
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies the property that defines the rows, independent of
+# how the code gets there: the electrodes of a row lie in one plane (one
+# circle on the sphere) and consecutive electrodes are the same distance
+# apart. The same holds for the outer ring and for the midline.
+test_that("standard_1010 rows are equally spaced along one circle", {
+  p <- standard_1010_positions()
+  xyz <- function(names) {
+    as.matrix(p[match(names, p$channel), c("x", "y", "z")])
+  }
+
+  rows <- list(
+    AF   = c("AF7", "AF3", "AFz", "AF4", "AF8"),
+    F    = c("F7", "F5", "F3", "F1", "Fz", "F2", "F4", "F6", "F8"),
+    FC   = c("FT7", "FC5", "FC3", "FC1", "FCz", "FC2", "FC4", "FC6", "FT8"),
+    C    = c("T7", "C5", "C3", "C1", "Cz", "C2", "C4", "C6", "T8"),
+    CP   = c("TP7", "CP5", "CP3", "CP1", "CPz", "CP2", "CP4", "CP6", "TP8"),
+    P    = c("P7", "P5", "P3", "P1", "Pz", "P2", "P4", "P6", "P8"),
+    PO   = c("PO7", "PO3", "POz", "PO4", "PO8"),
+    ring = c("Fp1", "AF7", "F7", "FT7", "T7", "TP7", "P7", "PO7", "O1"),
+    mid  = c("Fpz", "AFz", "Fz", "FCz", "Cz", "CPz", "Pz", "POz", "Oz")
+  )
+  for (row in names(rows)) {
+    pts <- xyz(rows[[row]])
+    steps <- sqrt(rowSums((pts[-1, ] - pts[-nrow(pts), ])^2))
+    expect_lt(max(steps) / min(steps), 1 + 1e-5, label = paste(row, "spacing"))
+
+    centred <- sweep(pts, 2, colMeans(pts))
+    flatness <- svd(centred)$d[3] / svd(centred)$d[1]
+    expect_lt(flatness, 1e-6, label = paste(row, "flatness"))
+  }
+})
+
+# ----------------------------------------------------------------------------
+# Test 7.5: Left and right mirror each other
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies every electrode with an odd number (1, 3, 5, 7, 9)
+# has a partner on the other side (2, 4, 6, 8, 10) at the mirrored position.
+test_that("standard_1010 is mirror symmetric", {
+  p <- standard_1010_positions()
+  left <- p$channel[grepl("[13579]$", p$channel)]
+  partner <- function(name) {
+    if (grepl("9$", name)) return(sub("9$", "10", name))
+    chartr("1357", "2468", name)
+  }
+  right <- vapply(left, partner, character(1))
+
+  expect_length(left, 31)
+  expect_true(all(right %in% p$channel))
+
+  a <- p[match(left, p$channel), c("x", "y", "z")]
+  b <- p[match(right, p$channel), c("x", "y", "z")]
+  expect_equal(a$x, -b$x, tolerance = 1e-6)
+  expect_equal(a$y, b$y, tolerance = 1e-6)
+  expect_equal(a$z, b$z, tolerance = 1e-6)
+})
+
+# ----------------------------------------------------------------------------
+# Test 7.6: Agreement with the BioSemi 64 channel layout
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies the 64 electrodes standard_1010 shares with the
+# BioSemi 64 channel layout are at the same places up to BioSemi's rounding
+# (it prints whole millimetres). Sixteen are known to differ by more than
+# 1.3 mm: AF3, AF4, PO3 and PO4 by about 5.7 mm, FC5, FC6, CP5 and CP6 by
+# about 2.1 mm, F3, F4, P3 and P4 by about 1.7 mm, F5, F6, P5 and P6 by about
+# 1.5 mm. The other 48 are within 1.3 mm. Nothing else may differ more.
+test_that("standard_1010 agrees with the BioSemi 64 layout where the rules are unambiguous", {
+  p <- standard_1010_positions()
+  b <- create_montage(template = "biosemi64")$positions
+  shared <- intersect(b$channel, p$channel)
+  expect_length(shared, 64)
+
+  a <- p[match(shared, p$channel), c("x", "y", "z")]
+  z <- b[match(shared, b$channel), c("x", "y", "z")]
+  distance <- setNames(sqrt(rowSums((as.matrix(a) - as.matrix(z))^2)), shared)
+
+  expect_lt(median(distance), 0.7)
+  expect_lt(max(distance), 6.5)
+  expect_setequal(names(distance)[distance > 1.3],
+                  c("AF3", "AF4", "PO3", "PO4", "FC5", "FC6", "CP5", "CP6",
+                    "F3", "F4", "P3", "P4", "F5", "F6", "P5", "P6"))
+})
+
+# ----------------------------------------------------------------------------
+# Test 7.7: No number of the table has been changed
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Guards the whole table. Each column is summed with the row
+# number as weight, so a changed value, a swapped pair or a shifted row alters
+# the sum. The expected sums were computed after the table had been checked
+# against the rules and the BioSemi layout (tests 7.3 to 7.6).
+test_that("the standard_1010 table is unchanged", {
+  p <- standard_1010_positions()
+  i <- seq_len(nrow(p))
+  sums <- vapply(c("x", "y", "z", "theta", "phi"),
+                 function(col) sum(p[[col]] * i), numeric(1))
+
+  expect_equal(sums, c(x = 10983.471656, y = -80079.227446, z = 53235.56376,
+                       theta = 39294.388892, phi = -23940), tolerance = 1e-8)
+})
+
+# ----------------------------------------------------------------------------
+# Test 7.8: Names that are not in the layout, and the template list
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies names the 10-10 standard does not have (the ear
+# electrodes, an AF position it leaves out) are dropped with a warning naming
+# them, names match in any letter case, and an unknown template lists
+# standard_1010 among the ones available.
+test_that("create_montage() handles names outside standard_1010 and lists it", {
+  expect_warning(m <- create_montage(c("Cz", "A1", "AF1", "pz"), template = "standard_1010"),
+                 "A1, AF1")
+  expect_equal(m$channels, c("Cz", "pz"))
+
+  expect_error(create_montage(template = "standard_1020"),
+               "Available templates: .*biosemi256, standard_1010")
+})
+
+# ----------------------------------------------------------------------------
+# Test 7.9: The layout attaches to a matching recording
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies set_montage() accepts the layout for a recording
+# whose 72 channels carry its names, without any warning.
+test_that("standard_1010 attaches to a recording with its channel names", {
+  m <- create_montage(template = "standard_1010")
+  eeg <- new_eeg(data = matrix(rnorm(72 * 20), nrow = 72),
+                 channels = m$channels, sampling_rate = 100)
+
+  expect_no_warning(eeg <- set_montage(eeg, m))
+  expect_equal(eeg$montage$channels, m$channels)
+  expect_equal(eeg$montage$coord_frame, "standard_1010")
+})
+
+# ============================================================================
 #                     SUMMARY OF TEST COVERAGE
 # ============================================================================
 # - new_montage(): basic construction, default coord_frame
@@ -898,4 +1125,10 @@ test_that("a montage read from a file attaches with set_montage()", {
 #   the BioSemi angles, the unit (stated, worked out, given, rejected), every
 #   kind of unusable file, too few electrodes, the same object shape as
 #   create_montage(), attaching with set_montage()
+# - standard_1010: the 72 electrodes, the head sphere and table shape, the
+#   10 percent electrodes (midline, ear line, outer ring, inferior row) against
+#   angles worked out by hand, equal spacing along one circle for every row,
+#   mirror symmetry, agreement with the BioSemi 64 layout (and the 16 known
+#   exceptions), a fingerprint of the whole table, names outside the layout,
+#   attaching with set_montage()
 # ============================================================================

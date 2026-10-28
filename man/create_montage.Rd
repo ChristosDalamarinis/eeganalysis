@@ -15,6 +15,7 @@ create_montage(channels = NULL, template = "biosemi64")
 default), \code{"biosemi128"}, \code{"biosemi160"} or
 \code{"biosemi256"} (the BioSemi caps with that many electrodes), or
 \code{"standard_1010"} (the standard 10-10 electrode system, 72
+electrodes), or \code{"standard_1005"} (the 10-05 system, 335
 electrodes).}
 }
 \value{
@@ -24,8 +25,8 @@ An object of class \code{'montage'}. See \code{new_montage}.
 Builds a \code{montage} object giving scalp positions (Cartesian
 x/y/z and spherical theta/phi/radius) for a set of channel names, taken
 from one of the package's built-in layouts: the BioSemi caps, or the
-standard 10-10 electrode system. Pick the layout that matches the cap the
-data was recorded with.
+standard 10-10 or 10-05 electrode system. Pick the layout that matches the
+cap the data was recorded with.
 }
 \details{
 Channel names are matched case-insensitively. The 16-, 32- and
@@ -53,6 +54,20 @@ the positions are the same up to BioSemi's rounding (within about 1 mm)
 for 48 of them. The other 16 differ more: AF3, AF4, PO3 and PO4 (about
 5.7 mm), FC5, FC6, CP5 and CP6 (about 2.1 mm), F3, F4, P3 and P4 (about
 1.7 mm) and F5, F6, P5 and P6 (about 1.5 mm).
+
+The \code{"standard_1005"} layout is the 10-05 (five percent) system with
+335 electrodes. It halves every step of the 10-10 system: the midline, the
+outer ring and the lower row are cut at 5 percent steps, and the 15 rows
+between Fp and O (the 7 of the 10-10 system and the 8 new ones, named like
+the points of a compass: AFp, AFF, FFC, FCC, CCP, CPP, PPO and POO) each
+hold 21 electrodes, with columns 9 and 10 below the ear line. An electrode
+halfway between two neighbours carries the name of the more lateral one
+with an \code{"h"} added: \code{"C1h"} lies between \code{"Cz"} and
+\code{"C1"}, \code{"C5h"} between \code{"C3"} and \code{"C5"}. The
+positions are worked out from the same paper, and every electrode of
+\code{"standard_1010"} is in this layout at exactly the same place. The
+mastoid and ear electrodes (\code{"M1"}, \code{"M2"}, \code{"A1"},
+\code{"A2"}) have no rule and are not part of it.
 
 Every layout is on a sphere of radius 87.54 mm, with the nasion, the inion
 and the preauricular points 115 degrees from the vertex, so all layouts
@@ -82,6 +97,10 @@ naming convention a dataset uses.
 
   # The standard 10-10 system, for any cap that uses its names
   m <- create_montage(template = "standard_1010")
+
+  # The denser 10-05 system, here only a few of its electrodes
+  m <- create_montage(c("Cz", "C1h", "CCP3h", "FFT7"),
+                      template = "standard_1005")
 }
 
 }

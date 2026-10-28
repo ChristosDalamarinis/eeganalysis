@@ -86,6 +86,11 @@
 #' least 3 channels with both a position and a value are required to
 #' interpolate a surface.
 #'
+#' The surface is always interpolated from the electrodes in the same
+#' order (by position), so the map does not depend on the order of
+#' \code{values}. The returned \code{channel_positions} keeps the order of
+#' \code{values}.
+#'
 #' Maps of signed quantities, such as current source density from
 #' \code{\link{compute_csd}} (positive and negative values mean different
 #' things), are easier to read with \code{zero_centered = TRUE} and
@@ -215,7 +220,17 @@ plot_topography <- function(eeg_obj,
   # that area anyway, and it can show values larger than any electrode
   # measured; with extrapolate = FALSE the area is left empty (NA) instead.
 
-  fit <- akima::interp(x2d, y2d, vals,
+  # akima::interp() builds its triangulation from the order the points arrive
+  # in. For some orders of a dense layout it warns about collinear points and
+  # nudges them, and for a few it hangs or crashes R. Handing it the points
+  # sorted by position (left to right, then front to back; rounded so that a
+  # tiny numerical difference is not taken as a real one) avoided all of that
+  # on every order tried, and gives the same map whatever the order of
+  # `values`. Only this call sees the sorted order: the plot and the returned
+  # table keep the order of `values`.
+  by_position <- order(round(x2d, 8), round(y2d, 8))
+
+  fit <- akima::interp(x2d[by_position], y2d[by_position], vals[by_position],
                         xo = seq(-head_r, head_r, length.out = interpolate_res),
                         yo = seq(-head_r, head_r, length.out = interpolate_res),
                         linear = FALSE, extrap = isTRUE(extrapolate),

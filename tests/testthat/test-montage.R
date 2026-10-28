@@ -487,6 +487,397 @@ test_that("the angle tables of the BioSemi layouts are unchanged", {
 })
 
 # ============================================================================
+#        TEST SUITE 6: read_custom_montage() - Montage From a File
+# ============================================================================
+
+# Helper: writes `lines` to a temporary file with the given extension.
+write_montage_file <- function(lines, ext) {
+  f <- tempfile(fileext = ext)
+  writeLines(lines, f)
+  f
+}
+
+# Helper: comma separated lines (name, x, y, z, with a header) for a positions
+# table, with every position moved by `shift` (mm) and then multiplied by
+# `scale` (1 for millimetres, 0.1 for centimetres, 0.001 for metres).
+positions_as_csv <- function(positions, shift = c(0, 0, 0), scale = 1) {
+  c("name,x,y,z",
+    sprintf("%s,%.10f,%.10f,%.10f", positions$channel,
+            (positions$x + shift[1]) * scale, (positions$y + shift[2]) * scale,
+            (positions$z + shift[3]) * scale))
+}
+
+# Five electrodes on a small head, plus the three head landmarks, in an old
+# style .elc file (bare "x y z" lines) that states its unit. `scale` multiplies
+# every number, to write the same head in another size.
+elc_old_style <- function(unit = "mm", scale = 1) {
+  coords <- rbind(c(-86.0, -20.0, -48.0), c(85.8, -20.0, -48.0), c(0.0, 86.8, -40.0),
+                  c(0, 0, 100), c(50, 0, 80), c(-50, 0, 80),
+                  c(0, 60, 80), c(0, -60, 80)) * scale
+  write_montage_file(c(
+    "# ASA electrode file", "ReferenceLabel\tavg", paste0("UnitPosition\t", unit),
+    "NumberPositions=\t8", "Positions",
+    sprintf("%.6f %.6f %.6f", coords[, 1], coords[, 2], coords[, 3]),
+    "Labels", "LPA", "RPA", "Nz", "Cz", "C4", "C3", "Fz", "Pz", ""
+  ), ".elc")
+}
+
+# ----------------------------------------------------------------------------
+# Test 6.1: An .elc file in the old style
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies an .elc file with bare "x y z" lines is read, the
+# three head landmarks (LPA, RPA, Nz) are left out, positions are kept as
+# written when recenter = FALSE, and the coordinate frame names the file.
+test_that("read_custom_montage reads an old style .elc file", {
+  f <- elc_old_style()
+  m <- read_custom_montage(f, recenter = FALSE)
+
+  expect_s3_class(m, "montage")
+  expect_equal(m$channels, c("Cz", "C4", "C3", "Fz", "Pz"))
+  expect_equal(m$positions$x, c(0, 50, -50, 0, 0))
+  expect_equal(m$positions$y, c(0, 0, 0, 60, -60))
+  expect_equal(m$positions$z, c(100, 80, 80, 80, 80))
+  expect_equal(m$coord_frame, paste0("file: ", basename(f)))
+})
+
+# ----------------------------------------------------------------------------
+# Test 6.2: An .elc file in the new style, in metres
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies the "E01 : x y z" style, with several labels per
+# line, and that positions given in metres come out in millimetres.
+test_that("read_custom_montage reads a new style .elc file given in metres", {
+  f <- write_montage_file(c(
+    "UnitPosition m", "Positions",
+    "E01 : 0.0 0.0 0.1", "E02 : 0.05 0.0 0.08", "E03 : -0.05 0.0 0.08",
+    "E04 : 0.0 0.06 0.08", "E05 : 0.0 -0.06 0.08",
+    "Labels", "Cz C4 C3", "Fz Pz", ""
+  ), ".elc")
+  m <- read_custom_montage(f, recenter = FALSE)
+
+  expect_equal(m$channels, c("Cz", "C4", "C3", "Fz", "Pz"))
+  expect_equal(m$positions$x, c(0, 50, -50, 0, 0))
+  expect_equal(m$positions$z, c(100, 80, 80, 80, 80))
+})
+
+# ----------------------------------------------------------------------------
+# Test 6.3: .sfp, .tsv and .txt files
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies the space and tab separated formats, with landmark
+# rows (any letter case) left out, comment lines and blank lines ignored, and
+# T9 and T10 kept because they are electrodes in the 10-10 system.
+test_that("read_custom_montage reads .sfp, .tsv and .txt files", {
+  sfp <- write_montage_file(c(
+    "FidNz 0.0 86.8 -40.0", "FidT9 -86.0 -20.0 -48.0", "FidT10 85.8 -20.0 -48.0",
+    "Cz 0.0 0.0 100.0", "C4\t50.0\t0.0\t80.0", "C3 -50.0 0.0 80.0",
+    "Fz 0.0 60.0 80.0", "Pz 0.0 -60.0 80.0"), ".sfp")
+  tsv <- write_montage_file(c(
+    "Cz\t0\t0\t100", "C4\t50\t0\t80", "C3\t-50\t0\t80",
+    "Fz\t0\t60\t80", "Pz\t0\t-60\t80"), ".tsv")
+  txt <- write_montage_file(c(
+    "# a comment", "", "Cz 0 0 100", "C4 50 0 80", "C3 -50 0 80",
+    "Fz 0 60 80", "Pz 0 -60 80"), ".txt")
+
+  for (f in c(sfp, tsv, txt)) {
+    m <- read_custom_montage(f, unit = "mm", recenter = FALSE)
+    expect_equal(m$channels, c("Cz", "C4", "C3", "Fz", "Pz"), info = f)
+    expect_equal(m$positions$x, c(0, 50, -50, 0, 0), info = f)
+    expect_equal(m$positions$y, c(0, 0, 0, 60, -60), info = f)
+  }
+
+  landmarks <- write_montage_file(c(
+    "nasion 0 86 -40", "lpa -86 -20 -48", "RPA 86 -20 -48",
+    "T9 -80 -10 -45", "T10 80 -10 -45", "Cz 0 0 100"), ".sfp")
+  m <- read_custom_montage(landmarks, unit = "mm", recenter = FALSE)
+  expect_equal(m$channels, c("T9", "T10", "Cz"))
+})
+
+# ----------------------------------------------------------------------------
+# Test 6.4: A .csv file with a header, quotes and a byte-order mark
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies columns are found by their header names even when
+# they come in another order, quotes around names are removed, and the
+# byte-order mark some programs put at the start of a text file is ignored.
+test_that("read_custom_montage reads a .csv file with a header, quotes and a BOM", {
+  f <- tempfile(fileext = ".csv")
+  rows <- c("X,Y,Z,Label", "0,0,100,\"Cz\"", "50,0,80,\"C4\"", "-50,0,80,\"C3\"",
+            "0,60,80,\"Fz\"", "0,-60,80,\"Pz\"")
+  writeBin(c(as.raw(c(0xef, 0xbb, 0xbf)),
+             charToRaw(paste0(paste(rows, collapse = "\n"), "\n"))), f)
+
+  m <- read_custom_montage(f, unit = "mm", recenter = FALSE)
+
+  expect_equal(m$channels, c("Cz", "C4", "C3", "Fz", "Pz"))
+  expect_equal(m$positions$x, c(0, 50, -50, 0, 0))
+  expect_equal(m$positions$y, c(0, 0, 0, 60, -60))
+  expect_equal(m$positions$z, c(100, 80, 80, 80, 80))
+})
+
+# ----------------------------------------------------------------------------
+# Test 6.5: A head that is not centred on the origin is recentred
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies the 32 channel BioSemi head, moved by (5, -12, 4)
+# mm and written to a file in millimetres, centimetres or metres, comes back
+# exactly as the template (positions, and the angles and radius calculated
+# from them). The template is a perfect sphere, so the answer is known in
+# advance. Writing it in all three units also checks the shift that puts the
+# centre back is converted to millimetres like the positions.
+test_that("read_custom_montage puts the centre of a shifted head back at the origin", {
+  p <- create_montage(template = "biosemi32")$positions
+
+  for (unit in c("mm", "cm", "m")) {
+    scale <- c(mm = 1, cm = 0.1, m = 0.001)[[unit]]
+    f <- write_montage_file(
+      positions_as_csv(p, shift = c(5, -12, 4), scale = scale), ".csv")
+
+    m <- read_custom_montage(f, unit = unit)
+
+    expect_equal(m$positions$x, p$x, tolerance = 1e-6, info = unit)
+    expect_equal(m$positions$y, p$y, tolerance = 1e-6, info = unit)
+    expect_equal(m$positions$z, p$z, tolerance = 1e-6, info = unit)
+    expect_equal(m$positions$theta, p$theta, tolerance = 1e-6, info = unit)
+    expect_equal(m$positions$phi, p$phi, tolerance = 1e-6, info = unit)
+    expect_equal(m$positions$radius, rep(87.54, 32), tolerance = 1e-6, info = unit)
+  }
+})
+
+# ----------------------------------------------------------------------------
+# Test 6.6: recenter = FALSE keeps the file's positions
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies the same shifted head is left exactly as written
+# when recenter = FALSE.
+test_that("read_custom_montage with recenter = FALSE keeps the positions as written", {
+  p <- create_montage(template = "biosemi32")$positions
+  f <- write_montage_file(positions_as_csv(p, shift = c(5, -12, 4)), ".csv")
+
+  m <- read_custom_montage(f, unit = "mm", recenter = FALSE)
+
+  expect_equal(m$positions$x, p$x + 5, tolerance = 1e-6)
+  expect_equal(m$positions$y, p$y - 12, tolerance = 1e-6)
+  expect_equal(m$positions$z, p$z + 4, tolerance = 1e-6)
+})
+
+# ----------------------------------------------------------------------------
+# Test 6.7: Recentring works for a head that is not a sphere
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies that, for a head whose electrodes sit at different
+# distances (alternately 10 percent nearer and farther) and are moved off the
+# origin, the best fitting sphere of the montage that comes out is centred on
+# the origin.
+test_that("read_custom_montage centres a head that is not a sphere", {
+  p <- create_montage(template = "biosemi64")$positions
+  stretch <- rep(c(0.9, 1.1), length.out = nrow(p))
+  odd <- p
+  odd$x <- p$x * stretch; odd$y <- p$y * stretch; odd$z <- p$z * stretch
+  f <- write_montage_file(positions_as_csv(odd, shift = c(6, -9, 2)), ".csv")
+
+  m <- read_custom_montage(f, unit = "mm")
+  fit <- eeganalysis:::.montage_sphere_fit(m$positions$x, m$positions$y,
+                                          m$positions$z)
+
+  expect_false(is.null(fit))
+  expect_lt(max(abs(fit$centre)), 1e-6)
+})
+
+# ----------------------------------------------------------------------------
+# Test 6.8: The angles follow BioSemi's convention
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies theta and phi, worked out from x, y and z, equal the
+# angles of the 128 channel BioSemi layout (whose positions are not rounded),
+# for all 128 electrodes, including the negative inclinations on the left side
+# and the ones below the ear line.
+test_that("read_custom_montage works out theta and phi like the built-in layouts", {
+  p <- create_montage(template = "biosemi128")$positions
+  f <- write_montage_file(positions_as_csv(p), ".csv")
+
+  m <- read_custom_montage(f, unit = "mm", recenter = FALSE)
+
+  expect_equal(m$positions$theta, p$theta, tolerance = 1e-6)
+  expect_equal(m$positions$phi, p$phi, tolerance = 1e-6)
+  expect_equal(m$positions$radius, rep(87.54, 128), tolerance = 1e-6)
+})
+
+# ----------------------------------------------------------------------------
+# Test 6.9: The unit
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies the unit is worked out from the head size when the
+# file does not state one (with a message), the function stops when the size fits
+# no unit, a unit that is given wins over the file and over the head size, and
+# a bad unit is rejected.
+test_that("read_custom_montage works out, takes or rejects the unit", {
+  p <- create_montage(template = "biosemi32")$positions
+  scaled_file <- function(scale) {
+    write_montage_file(sprintf("%s %.10f %.10f %.10f", p$channel,
+                               p$x * scale, p$y * scale, p$z * scale), ".sfp")
+  }
+
+  expect_message(m_mm <- read_custom_montage(scaled_file(1)), "taken as mm")
+  expect_message(m_cm <- read_custom_montage(scaled_file(0.1)), "taken as cm")
+  expect_message(m_m  <- read_custom_montage(scaled_file(0.001)), "taken as m\\.")
+  for (m in list(m_mm, m_cm, m_m)) {
+    expect_equal(m$positions$x, p$x, tolerance = 1e-6)
+    expect_equal(m$positions$z, p$z, tolerance = 1e-6)
+  }
+
+  expect_error(read_custom_montage(scaled_file(100)), "Cannot tell the unit")
+
+  expect_no_message(m <- read_custom_montage(scaled_file(0.1), unit = "cm"))
+  expect_equal(m$positions$x, p$x, tolerance = 1e-6)
+
+  # a unit that is given wins over the one the file states
+  m <- read_custom_montage(elc_old_style("mm"), unit = "cm", recenter = FALSE)
+  expect_equal(m$positions$x, c(0, 50, -50, 0, 0) * 10)
+
+  # a unit the file states is used as it is, even if the head size would
+  # suggest another one: no message, no guessing
+  expect_no_message(
+    m <- read_custom_montage(elc_old_style("mm", scale = 0.1), recenter = FALSE)
+  )
+  expect_equal(m$positions$x, c(0, 5, -5, 0, 0))
+
+  expect_error(read_custom_montage(elc_old_style(), unit = "km"), "'unit' must be")
+  expect_error(read_custom_montage(elc_old_style("inches")), "unknown unit")
+})
+
+# ----------------------------------------------------------------------------
+# Test 6.10: Files that cannot be read
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies each kind of unusable file stops with a message that
+# says what is wrong.
+test_that("read_custom_montage stops with a clear message for a bad file", {
+  expect_error(read_custom_montage(file.path(tempdir(), "no_such_file.elc")),
+               "existing file")
+  expect_error(read_custom_montage(write_montage_file("Cz 0 0 100", ".xyz")),
+               "Unsupported file type '.xyz'")
+
+  expect_error(
+    read_custom_montage(write_montage_file(c("Cz 0 0 100", "Cz 1 2 3", "Fz 0 60 80"), ".sfp"),
+                        unit = "mm"),
+    "more than once in the file: Cz")
+  expect_error(
+    read_custom_montage(write_montage_file(c("Cz 0 0 100", "Fz abc 60 80"), ".sfp"),
+                        unit = "mm"),
+    "position of Fz is not made of three numbers")
+  expect_error(
+    read_custom_montage(write_montage_file(c("Cz 0 0 100", "Fz 0 60"), ".sfp"),
+                        unit = "mm"),
+    "fewer than four values")
+  expect_error(
+    read_custom_montage(write_montage_file(c("Nz 0 86 -40", "LPA -86 -20 -48"), ".sfp"),
+                        unit = "mm"),
+    "only head landmarks")
+  expect_error(
+    read_custom_montage(write_montage_file(character(0), ".csv"), unit = "mm"),
+    "no electrode positions")
+
+  expect_error(
+    read_custom_montage(write_montage_file(c(
+      "UnitPosition mm", "Positions", "0 0 100", "50 0 80", "-50 0 80",
+      "Labels", "Cz", "C4", ""), ".elc")),
+    "3 positions but 2 labels")
+  expect_error(
+    read_custom_montage(write_montage_file(c("UnitPosition mm", "Positions", "0 0 100"), ".elc")),
+    "Not a valid .elc file")
+
+  expect_error(read_custom_montage(elc_old_style(), recenter = NA),
+               "'recenter' must be")
+})
+
+# ----------------------------------------------------------------------------
+# Test 6.11: Too few electrodes to find the centre
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies that when no head centre can be found (fewer than 5
+# electrodes, a flat arrangement, or electrodes nowhere near a sphere) the
+# positions are kept as written and a warning says the centre could not be found.
+test_that("read_custom_montage warns when the head centre cannot be found", {
+  f <- write_montage_file(c("Cz 0 0 100", "C4 50 0 80", "C3 -50 0 80"), ".sfp")
+
+  expect_warning(m <- read_custom_montage(f, unit = "mm"),
+                 "centre of the head could not be found")
+  expect_equal(m$positions$x, c(0, 50, -50))
+
+  # four electrodes that are not on one plane fit a sphere exactly, with nothing
+  # left over to tell whether it is a head, so five are needed
+  four <- write_montage_file(c("Cz 0 0 100", "C4 50 0 80", "Fz 0 60 80",
+                               "Pz 0 -60 80"), ".sfp")
+  expect_warning(m <- read_custom_montage(four, unit = "mm"),
+                 "centre of the head could not be found")
+  expect_equal(m$positions$y, c(0, 0, 60, -60))
+
+  # six electrodes on a flat grid do not determine a head centre either
+  flat <- write_montage_file(c("A 0 0 0", "B 10 0 0", "C 20 0 0",
+                               "D 0 10 0", "E 10 10 0", "F 20 10 0"), ".sfp")
+  expect_warning(m2 <- read_custom_montage(flat, unit = "mm"),
+                 "centre of the head could not be found")
+  expect_equal(m2$positions$x, c(0, 10, 20, 0, 10, 20))
+
+  # electrodes alternately 40 mm and 100 mm from the origin do give a sphere,
+  # but one that is nowhere near them, so it is not used either
+  p <- create_montage(template = "biosemi32")$positions
+  odd <- p
+  near_far <- rep(c(40, 100) / 87.54, length.out = nrow(p))
+  odd$x <- p$x * near_far; odd$y <- p$y * near_far; odd$z <- p$z * near_far
+  not_a_head <- write_montage_file(positions_as_csv(odd), ".csv")
+  expect_warning(m3 <- read_custom_montage(not_a_head, unit = "mm"),
+                 "centre of the head could not be found")
+  expect_equal(m3$positions$x, odd$x, tolerance = 1e-6)
+
+  # a nearly flat bowl (z = (x^2 + y^2) / 2000) fits a sphere of about a metre
+  # radius with almost no error; that would move every electrode by about a
+  # metre, so it is not used either
+  grid <- expand.grid(x = seq(-40, 40, by = 20), y = seq(-30, 30, by = 20))
+  bowl <- sprintf("E%02d %.6f %.6f %.6f", seq_len(nrow(grid)), grid$x, grid$y,
+                  (grid$x^2 + grid$y^2) / 2000)
+  expect_warning(m4 <- read_custom_montage(write_montage_file(bowl, ".sfp"),
+                                           unit = "mm"),
+                 "centre of the head could not be found")
+  expect_equal(m4$positions$x, grid$x)
+})
+
+# ----------------------------------------------------------------------------
+# Test 6.12: The montage is built like the one from create_montage()
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies the object has the same parts, the same position
+# columns (all numbers), the lower-case names as row names when they are all
+# different, and prints like any montage.
+test_that("read_custom_montage returns a montage built like create_montage()", {
+  ref <- create_montage(template = "biosemi32")
+  f <- write_montage_file(positions_as_csv(ref$positions), ".csv")
+
+  m <- read_custom_montage(f, unit = "mm", recenter = FALSE)
+
+  expect_s3_class(m, "montage")
+  expect_identical(names(m), names(ref))
+  expect_identical(names(m$positions), names(ref$positions))
+  expect_identical(m$channels, m$positions$channel)
+  expect_identical(rownames(m$positions), tolower(m$channels))
+  expect_true(all(vapply(m$positions[-1], is.numeric, logical(1))))
+  expect_true(any(grepl("file: ", capture.output(print(m)), fixed = TRUE)))
+
+  clash <- write_montage_file(c("Cz 0 0 100", "CZ 5 0 99", "Fz 0 60 80"), ".sfp")
+  m2 <- read_custom_montage(clash, unit = "mm", recenter = FALSE)
+  expect_equal(rownames(m2$positions), c("1", "2", "3"))
+})
+
+# ----------------------------------------------------------------------------
+# Test 6.13: A montage from a file attaches to a recording
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies set_montage() accepts a montage read from a file for
+# a recording with the same channel names, with no warning, and keeps its
+# coordinate frame.
+test_that("a montage read from a file attaches with set_montage()", {
+  ref <- create_montage(template = "biosemi32")
+  f <- write_montage_file(positions_as_csv(ref$positions, shift = c(3, -5, 2)), ".csv")
+  m <- read_custom_montage(f, unit = "mm")
+
+  eeg <- new_eeg(data = matrix(rnorm(32 * 20), nrow = 32),
+                 channels = m$channels, sampling_rate = 100)
+  expect_no_warning(eeg <- set_montage(eeg, m))
+
+  expect_equal(eeg$montage$channels, m$channels)
+  expect_equal(eeg$montage$coord_frame, m$coord_frame)
+})
+
+# ============================================================================
 #                     SUMMARY OF TEST COVERAGE
 # ============================================================================
 # - new_montage(): basic construction, default coord_frame
@@ -501,4 +892,10 @@ test_that("the angle tables of the BioSemi layouts are unchanged", {
 #   layouts with the 64 layout, NA/10-20 names in the 128 layout, bad template
 #   messages, the 64 layout unchanged, attaching to matching recordings,
 #   whole-table fingerprints of the angles
+# - read_custom_montage(): .elc (old and new style, any unit), .sfp, .tsv,
+#   .txt and .csv files (header, quotes, byte-order mark), landmarks left out,
+#   recentring (sphere and non-sphere), recenter = FALSE, theta/phi against
+#   the BioSemi angles, the unit (stated, worked out, given, rejected), every
+#   kind of unusable file, too few electrodes, the same object shape as
+#   create_montage(), attaching with set_montage()
 # ============================================================================

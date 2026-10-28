@@ -1105,6 +1105,327 @@ test_that("standard_1010 attaches to a recording with its channel names", {
 })
 
 # ============================================================================
+#     TEST SUITE 8: standard_1005 - the standard 10-05 electrode system
+# ============================================================================
+
+# Helper: the positions of the standard_1005 layout.
+standard_1005_positions <- function() {
+  create_montage(template = "standard_1005")$positions
+}
+
+# Helpers: how the 15 rows between Fp and O are named. `medial` names a row
+# from column 5 inwards and on the midline, `lateral` from column 7 outwards
+# (the rows between F and P run along the temporal electrodes there).
+row_medial  <- c("AFp", "AF", "AFF", "F", "FFC", "FC", "FCC", "C", "CCP", "CP",
+                 "CPP", "P", "PPO", "PO", "POO")
+row_lateral <- c("AFp", "AF", "AFF", "F", "FFT", "FT", "FTT", "T", "TTP", "TP",
+                 "TPP", "P", "PPO", "PO", "POO")
+
+# The 21 electrodes of row i, from the far left to the far right.
+row_of_21 <- function(i) {
+  c(paste0(row_lateral[i], c("9", "9h", "7", "7h")),
+    paste0(row_medial[i], c("5", "5h", "3", "3h", "1", "1h", "z", "2h", "2",
+                            "4h", "4", "6h", "6")),
+    paste0(row_lateral[i], c("8h", "8", "10h", "10")))
+}
+
+# ----------------------------------------------------------------------------
+# Test 8.1: Which electrodes the layout has
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies standard_1005 has exactly the 335 electrodes of the
+# 10-05 system, written out here row by row: 15 rows of 21 electrodes between
+# the five Fp and the five O, OI and I electrodes, front to back and left to
+# right. The list was also compared with an independent list of the system's
+# names. Every electrode of standard_1010 is among them; the landmarks, the
+# mastoid and ear electrodes and the old names T3 to T6 are not.
+test_that("standard_1005 has the 335 electrodes of the 10-05 system", {
+  rows <- c(
+    "Fp1 Fp1h Fpz Fp2h Fp2",
+    "AFp9 AFp9h AFp7 AFp7h AFp5 AFp5h AFp3 AFp3h AFp1 AFp1h AFpz AFp2h AFp2 AFp4h AFp4 AFp6h AFp6 AFp8h AFp8 AFp10h AFp10",
+    "AF9 AF9h AF7 AF7h AF5 AF5h AF3 AF3h AF1 AF1h AFz AF2h AF2 AF4h AF4 AF6h AF6 AF8h AF8 AF10h AF10",
+    "AFF9 AFF9h AFF7 AFF7h AFF5 AFF5h AFF3 AFF3h AFF1 AFF1h AFFz AFF2h AFF2 AFF4h AFF4 AFF6h AFF6 AFF8h AFF8 AFF10h AFF10",
+    "F9 F9h F7 F7h F5 F5h F3 F3h F1 F1h Fz F2h F2 F4h F4 F6h F6 F8h F8 F10h F10",
+    "FFT9 FFT9h FFT7 FFT7h FFC5 FFC5h FFC3 FFC3h FFC1 FFC1h FFCz FFC2h FFC2 FFC4h FFC4 FFC6h FFC6 FFT8h FFT8 FFT10h FFT10",
+    "FT9 FT9h FT7 FT7h FC5 FC5h FC3 FC3h FC1 FC1h FCz FC2h FC2 FC4h FC4 FC6h FC6 FT8h FT8 FT10h FT10",
+    "FTT9 FTT9h FTT7 FTT7h FCC5 FCC5h FCC3 FCC3h FCC1 FCC1h FCCz FCC2h FCC2 FCC4h FCC4 FCC6h FCC6 FTT8h FTT8 FTT10h FTT10",
+    "T9 T9h T7 T7h C5 C5h C3 C3h C1 C1h Cz C2h C2 C4h C4 C6h C6 T8h T8 T10h T10",
+    "TTP9 TTP9h TTP7 TTP7h CCP5 CCP5h CCP3 CCP3h CCP1 CCP1h CCPz CCP2h CCP2 CCP4h CCP4 CCP6h CCP6 TTP8h TTP8 TTP10h TTP10",
+    "TP9 TP9h TP7 TP7h CP5 CP5h CP3 CP3h CP1 CP1h CPz CP2h CP2 CP4h CP4 CP6h CP6 TP8h TP8 TP10h TP10",
+    "TPP9 TPP9h TPP7 TPP7h CPP5 CPP5h CPP3 CPP3h CPP1 CPP1h CPPz CPP2h CPP2 CPP4h CPP4 CPP6h CPP6 TPP8h TPP8 TPP10h TPP10",
+    "P9 P9h P7 P7h P5 P5h P3 P3h P1 P1h Pz P2h P2 P4h P4 P6h P6 P8h P8 P10h P10",
+    "PPO9 PPO9h PPO7 PPO7h PPO5 PPO5h PPO3 PPO3h PPO1 PPO1h PPOz PPO2h PPO2 PPO4h PPO4 PPO6h PPO6 PPO8h PPO8 PPO10h PPO10",
+    "PO9 PO9h PO7 PO7h PO5 PO5h PO3 PO3h PO1 PO1h POz PO2h PO2 PO4h PO4 PO6h PO6 PO8h PO8 PO10h PO10",
+    "POO9 POO9h POO7 POO7h POO5 POO5h POO3 POO3h POO1 POO1h POOz POO2h POO2 POO4h POO4 POO6h POO6 POO8h POO8 POO10h POO10",
+    "O1 O1h Oz O2h O2",
+    "OI1 OI1h OIz OI2h OI2",
+    "I1 I1h Iz I2h I2"
+  )
+  expected <- unlist(strsplit(rows, " ", fixed = TRUE))
+  m <- create_montage(template = "standard_1005")
+
+  expect_s3_class(m, "montage")
+  expect_equal(m$coord_frame, "standard_1005")
+  expect_length(expected, 335)
+  expect_identical(m$channels, expected)
+  expect_false(anyDuplicated(m$channels) > 0)
+  expect_true(all(create_montage(template = "standard_1010")$channels %in% m$channels))
+  expect_false(any(c("M1", "M2", "A1", "A2", "Nz", "LPA", "RPA", "T3", "T4",
+                     "T5", "T6") %in% m$channels))
+  expect_false(anyNA(m$positions))
+})
+
+# ----------------------------------------------------------------------------
+# Test 8.2: Same shape and scale as the other layouts
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies every electrode lies on the 87.54 mm head sphere,
+# the positions table has the same columns as the other layouts, the
+# lower-case names are the row names, and no value is a negative zero.
+test_that("standard_1005 is built like the other layouts and sits on the head sphere", {
+  m <- create_montage(template = "standard_1005")
+  p <- m$positions
+
+  expect_equal(sqrt(p$x^2 + p$y^2 + p$z^2), rep(87.54, 335), tolerance = 1e-6)
+  expect_true(all(p$radius == 87.54))
+  expect_identical(names(p), names(create_montage(template = "biosemi32")$positions))
+  expect_identical(rownames(p), tolower(m$channels))
+
+  numbers <- unlist(p[, c("x", "y", "z", "theta", "phi")])
+  expect_false(any(numbers == 0 & 1 / numbers < 0))
+})
+
+# ----------------------------------------------------------------------------
+# Test 8.3: The 10-10 electrodes did not move
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies the 72 electrodes of standard_1010 are in
+# standard_1005 at exactly the same place: not close, identical, in every
+# column of the positions table.
+test_that("standard_1005 holds every standard_1010 electrode at exactly the same place", {
+  a <- create_montage(template = "standard_1010")$positions
+  b <- create_montage(a$channel, template = "standard_1005")$positions
+
+  expect_identical(b, a)
+})
+
+# ----------------------------------------------------------------------------
+# Test 8.4: The 5 percent electrodes are where the rules put them
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies the angles of the electrodes cut at 5 percent
+# steps. The expected values were worked out by hand from the rules, not by
+# the code: the nasion-inion arc is 230 degrees, so 5 percent of it is 11.5
+# degrees; the outer ring is 180 degrees from Fpz to Oz at 92 degrees from the
+# vertex, so a step is 9 degrees; the lower row is the circle 115 degrees
+# from the vertex, also 9 degrees a step. The C row is a great circle with
+# the ear line, so its electrodes run in 11.5 degree steps from T9 to T10.
+test_that("standard_1005 places the 5 percent electrodes where the rules put them", {
+  p <- standard_1005_positions()
+
+  midline <- c("Fpz", "AFpz", "AFz", "AFFz", "Fz", "FFCz", "FCz", "FCCz", "Cz",
+               "CCPz", "CPz", "CPPz", "Pz", "PPOz", "POz", "POOz", "Oz", "OIz", "Iz")
+  expect_equal(angles_of(p, midline, "theta"),
+               c(92, 80.5, 69, 57.5, 46, 34.5, 23, 11.5, 0, 11.5, 23, 34.5, 46,
+                 57.5, 69, 80.5, 92, 103.5, 115))
+  expect_equal(angles_of(p, midline, "phi"), c(rep(90, 8), 0, rep(-90, 10)))
+
+  left_ring <- c("Fp1h", "Fp1", "AFp7", "AF7", "AFF7", "F7", "FFT7", "FT7", "FTT7",
+                 "T7", "TTP7", "TP7", "TPP7", "P7", "PPO7", "PO7", "POO7", "O1", "O1h")
+  right_ring <- c("Fp2h", "Fp2", "AFp8", "AF8", "AFF8", "F8", "FFT8", "FT8", "FTT8",
+                  "T8", "TTP8", "TP8", "TPP8", "P8", "PPO8", "PO8", "POO8", "O2", "O2h")
+  expect_equal(angles_of(p, left_ring, "theta"), rep(-92, 19))
+  expect_equal(angles_of(p, left_ring, "phi"), seq(-81, 81, by = 9), tolerance = 1e-6)
+  expect_equal(angles_of(p, right_ring, "theta"), rep(92, 19))
+  expect_equal(angles_of(p, right_ring, "phi"), seq(81, -81, by = -9), tolerance = 1e-6)
+
+  inferior_left <- c("AFp9", "AF9", "AFF9", "F9", "FFT9", "FT9", "FTT9", "T9", "TTP9",
+                     "TP9", "TPP9", "P9", "PPO9", "PO9", "POO9", "I1", "I1h")
+  inferior_right <- c("AFp10", "AF10", "AFF10", "F10", "FFT10", "FT10", "FTT10", "T10",
+                      "TTP10", "TP10", "TPP10", "P10", "PPO10", "PO10", "POO10", "I2", "I2h")
+  expect_equal(angles_of(p, inferior_left, "theta"), rep(-115, 17))
+  expect_equal(angles_of(p, inferior_left, "phi"), seq(-63, 81, by = 9), tolerance = 1e-6)
+  expect_equal(angles_of(p, inferior_right, "theta"), rep(115, 17))
+  expect_equal(angles_of(p, inferior_right, "phi"), seq(63, -81, by = -9), tolerance = 1e-6)
+
+  c_row <- row_of_21(8)
+  expect_equal(c_row[c(1, 11, 21)], c("T9", "Cz", "T10"))
+  expect_equal(angles_of(p, c_row, "theta"), -115 + 11.5 * (0:20))
+  expect_equal(angles_of(p, c_row, "phi"), rep(0, 21), tolerance = 1e-6)
+
+  below_o <- c("OI1", "OI1h", "OI2", "OI2h")
+  expect_equal(angles_of(p, below_o, "theta"), c(-103.5, -103.5, 103.5, 103.5))
+  expect_equal(angles_of(p, below_o, "phi"), c(72, 81, -72, -81), tolerance = 1e-6)
+})
+
+# ----------------------------------------------------------------------------
+# Test 8.5: Rows are cut into equal parts along one circle
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies the property that defines the rows, independent of
+# how the code gets there: from column 7 to column 8, the 17 electrodes of
+# each of the 15 rows lie in one plane (one circle on the sphere) and
+# consecutive electrodes are the same distance apart. The same holds for the
+# outer ring and for the midline.
+test_that("standard_1005 rows are cut into equal parts along one circle", {
+  p <- standard_1005_positions()
+  xyz <- function(names) {
+    as.matrix(p[match(names, p$channel), c("x", "y", "z")])
+  }
+  circles <- lapply(seq_along(row_medial), function(i) row_of_21(i)[3:19])
+  names(circles) <- row_medial
+  circles$ring <- c("Fp1h", "Fp1", "AFp7", "AF7", "AFF7", "F7", "FFT7", "FT7", "FTT7",
+                    "T7", "TTP7", "TP7", "TPP7", "P7", "PPO7", "PO7", "POO7", "O1", "O1h")
+  circles$mid <- c("Fpz", "AFpz", "AFz", "AFFz", "Fz", "FFCz", "FCz", "FCCz", "Cz",
+                   "CCPz", "CPz", "CPPz", "Pz", "PPOz", "POz", "POOz", "Oz", "OIz")
+
+  for (circle in names(circles)) {
+    pts <- xyz(circles[[circle]])
+    steps <- sqrt(rowSums((pts[-1, ] - pts[-nrow(pts), ])^2))
+    expect_lt(max(steps) / min(steps), 1 + 1e-5, label = paste(circle, "spacing"))
+
+    centred <- sweep(pts, 2, colMeans(pts))
+    flatness <- svd(centred)$d[3] / svd(centred)$d[1]
+    expect_lt(flatness, 1e-6, label = paste(circle, "flatness"))
+  }
+})
+
+# ----------------------------------------------------------------------------
+# Test 8.6: Half electrodes outside the ear line, and OI
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies the places the paper leaves open and the code
+# fixes: the electrode 9h (10h) is halfway along the shortest path between
+# its neighbours 7 and 9 (8 and 10), and OI1 (OI2) is halfway between O1 (O2)
+# and I1 (I2). "Halfway along the shortest path" means the direction of the
+# sum of the two neighbours' directions.
+test_that("standard_1005 puts the half electrodes outside the ear line halfway", {
+  p <- standard_1005_positions()
+  direction <- function(names) {
+    v <- unname(as.matrix(p[match(names, p$channel), c("x", "y", "z")]))
+    v / sqrt(rowSums(v^2))
+  }
+  halfway <- function(a, b) {
+    v <- direction(a) + direction(b)
+    v / sqrt(rowSums(v^2))
+  }
+
+  expect_equal(direction(paste0(row_lateral, "9h")),
+               halfway(paste0(row_lateral, "9"), paste0(row_lateral, "7")),
+               tolerance = 1e-6)
+  expect_equal(direction(paste0(row_lateral, "10h")),
+               halfway(paste0(row_lateral, "10"), paste0(row_lateral, "8")),
+               tolerance = 1e-6)
+  expect_equal(direction(c("OI1", "OI2")),
+               halfway(c("O1", "O2"), c("I1", "I2")), tolerance = 1e-6)
+})
+
+# ----------------------------------------------------------------------------
+# Test 8.7: New rows lie halfway between the rows around them
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies the paper's own example for the new rows: the
+# electrode halfway between C3h and CP3h is CCP3h. It holds for the whole
+# grid: at every column, each new row between two rows (AFF, FFC, FCC, CCP,
+# CPP and PPO) is within a fraction of a millimetre of the halfway point of
+# the two rows around it.
+test_that("standard_1005 new rows lie halfway between the rows around them", {
+  p <- standard_1005_positions()
+  direction <- function(names) {
+    v <- unname(as.matrix(p[match(names, p$channel), c("x", "y", "z")]))
+    v / sqrt(rowSums(v^2))
+  }
+  distance_mm <- function(a, b) 87.54 * sqrt(rowSums((a - b)^2))
+  halfway <- function(a, b) {
+    v <- a + b
+    v / sqrt(rowSums(v^2))
+  }
+
+  centre <- halfway(direction(c("C3h", "C4h")), direction(c("CP3h", "CP4h")))
+  expect_lt(max(distance_mm(direction(c("CCP3h", "CCP4h")), centre)), 0.3)
+
+  for (i in c(3, 5, 7, 9, 11, 13)) {          # AFF, FFC, FCC, CCP, CPP, PPO
+    between <- halfway(direction(row_of_21(i - 1)), direction(row_of_21(i + 1)))
+    gap <- distance_mm(direction(row_of_21(i)), between)
+    expect_lt(max(gap), 0.6, label = paste(row_medial[i], "row"))
+  }
+})
+
+# ----------------------------------------------------------------------------
+# Test 8.8: Left and right mirror each other
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies every electrode on the left (columns 1, 3, 5, 7, 9,
+# and the same with an h) has a partner on the right (columns 2, 4, 6, 8, 10)
+# at the mirrored position. Fp1/Fp2, O1/O2, OI1/OI2 and I1/I2 count as
+# columns 1 and 2.
+test_that("standard_1005 is mirror symmetric", {
+  p <- standard_1005_positions()
+  sides <- c("1" = "2", "2" = "1", "3" = "4", "4" = "3", "5" = "6", "6" = "5",
+             "7" = "8", "8" = "7", "9" = "10", "10" = "9")
+  partner <- function(name) {
+    part <- regmatches(name, regexec("^(.*?)(10|[1-9])(h?)$", name))[[1]]
+    paste0(part[2], sides[[part[3]]], part[4])
+  }
+  left <- p$channel[p$x < -1e-6]
+  right <- vapply(left, partner, character(1))
+
+  expect_length(left, 158)
+  expect_true(all(right %in% p$channel))
+  expect_equal(sum(abs(p$x) < 1e-6), 19)      # the midline electrodes
+
+  a <- p[match(left, p$channel), c("x", "y", "z")]
+  b <- p[match(right, p$channel), c("x", "y", "z")]
+  expect_equal(a$x, -b$x, tolerance = 1e-6)
+  expect_equal(a$y, b$y, tolerance = 1e-6)
+  expect_equal(a$z, b$z, tolerance = 1e-6)
+})
+
+# ----------------------------------------------------------------------------
+# Test 8.9: No number of the table has been changed
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Guards the whole table. Each column is summed with the row
+# number as weight, so a changed value, a swapped pair or a shifted row alters
+# the sum. The expected sums were computed after the table had been checked
+# against the rules and an independent list of the names (tests 8.1 to 8.8).
+test_that("the standard_1005 table is unchanged", {
+  p <- standard_1005_positions()
+  i <- seq_len(nrow(p))
+  sums <- vapply(c("x", "y", "z", "theta", "phi"),
+                 function(col) sum(p[[col]] * i), numeric(1))
+
+  expect_equal(sums, c(x = 97768.371484, y = -1979969.041776, z = 1017234.760881,
+                       theta = 352566.900276, phi = -195030), tolerance = 1e-8)
+})
+
+# ----------------------------------------------------------------------------
+# Test 8.10: Names that are not in the layout, and the template list
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies a few electrodes can be picked by name in any
+# letter case without a warning, names the 10-05 system does not have (the
+# mastoids, the old name T3) are dropped with a warning naming them, and an
+# unknown template lists both standard layouts among the available ones.
+test_that("create_montage() picks electrodes from standard_1005 and lists it", {
+  expect_no_warning(m <- create_montage(c("Cz", "c1h", "CCP3h", "FFT7"),
+                                        template = "standard_1005"))
+  expect_equal(m$channels, c("Cz", "c1h", "CCP3h", "FFT7"))
+
+  expect_warning(m <- create_montage(c("Cz", "M1", "T3"), template = "standard_1005"),
+                 "M1, T3")
+  expect_equal(m$channels, "Cz")
+
+  expect_error(create_montage(template = "standard_1020"),
+               "Available templates: .*standard_1010, standard_1005")
+})
+
+# ----------------------------------------------------------------------------
+# Test 8.11: The layout attaches to a matching recording
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies set_montage() accepts the layout for a recording
+# whose 335 channels carry its names, without any warning.
+test_that("standard_1005 attaches to a recording with its channel names", {
+  m <- create_montage(template = "standard_1005")
+  eeg <- new_eeg(data = matrix(rnorm(335 * 20), nrow = 335),
+                 channels = m$channels, sampling_rate = 100)
+
+  expect_no_warning(eeg <- set_montage(eeg, m))
+  expect_equal(eeg$montage$channels, m$channels)
+  expect_equal(eeg$montage$coord_frame, "standard_1005")
+})
+
+# ============================================================================
 #                     SUMMARY OF TEST COVERAGE
 # ============================================================================
 # - new_montage(): basic construction, default coord_frame
@@ -1131,4 +1452,13 @@ test_that("standard_1010 attaches to a recording with its channel names", {
 #   mirror symmetry, agreement with the BioSemi 64 layout (and the 16 known
 #   exceptions), a fingerprint of the whole table, names outside the layout,
 #   attaching with set_montage()
+# - standard_1005: the 335 electrodes (written out row by row), the head
+#   sphere and table shape, every standard_1010 electrode at exactly the same
+#   place, the 5 percent electrodes (midline, outer ring, lower row, C row,
+#   OI) against angles worked out by hand, equal spacing along one circle for
+#   every row, the half electrodes outside the ear line and OI halfway between
+#   their neighbours, new rows halfway between the rows around them (the
+#   paper's CCP3h example and the whole grid), mirror symmetry, a fingerprint
+#   of the whole table, picking electrodes by name and names outside the
+#   layout, attaching with set_montage()
 # ============================================================================

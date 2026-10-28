@@ -40,19 +40,22 @@ new_montage <- function(channels, positions, coord_frame = "biosemi64") {
   )
 }
 
-#' Create a Montage From a Built-in BioSemi Cap Layout
+#' Create a Montage From a Built-in Layout
 #'
 #' Builds a \code{montage} object giving scalp positions (Cartesian
 #' x/y/z and spherical theta/phi/radius) for a set of channel names, taken
-#' from one of the package's built-in BioSemi cap layouts. Pick the layout
-#' that matches the cap the data was recorded with.
+#' from one of the package's built-in layouts: the BioSemi caps, or the
+#' standard 10-10 electrode system. Pick the layout that matches the cap the
+#' data was recorded with.
 #'
 #' @param channels Character vector of channel names to include. If
 #'   \code{NULL} (default), every electrode of the layout is used.
-#' @param template Character string naming the cap layout: one of
+#' @param template Character string naming the layout: one of
 #'   \code{"biosemi16"}, \code{"biosemi32"}, \code{"biosemi64"} (the
 #'   default), \code{"biosemi128"}, \code{"biosemi160"} or
-#'   \code{"biosemi256"}, the BioSemi caps with that many electrodes.
+#'   \code{"biosemi256"} (the BioSemi caps with that many electrodes), or
+#'   \code{"standard_1010"} (the standard 10-10 electrode system, 72
+#'   electrodes).
 #'
 #' @return An object of class \code{'montage'}. See \code{new_montage}.
 #'
@@ -67,9 +70,25 @@ new_montage <- function(channels, positions, coord_frame = "biosemi64") {
 #' BioSemi's own: \code{"A1"} to \code{"D32"}, \code{"A1"} to \code{"E32"} and
 #' \code{"A1"} to \code{"H32"} (32 sockets per letter).
 #'
-#' Positions are the electrode coordinates BioSemi publishes for each cap
-#' (the workbook "Cap_coords_all.xls" on biosemi.com), with the head treated
-#' as a sphere of radius 87.54 mm in every layout.
+#' For the BioSemi layouts, positions are the electrode coordinates BioSemi
+#' publishes for each cap (the workbook "Cap_coords_all.xls" on biosemi.com).
+#'
+#' The \code{"standard_1010"} layout uses the standard 10-20/10-10 names (for
+#' example \code{"Cz"}, \code{"AF3"} or \code{"F9"}) and has 72 electrodes:
+#' the 74 positions of the 10-10 standard without the two ear electrodes
+#' \code{"A1"} and \code{"A2"}, which are not scalp positions. Its positions
+#' are worked out from the rules that define the system (Oostenveld and
+#' Praamstra, 2001, Clinical Neurophysiology 112:713-719): the midline, the
+#' outer ring and the rows of electrodes sit at the percentages of the arcs
+#' described there. For the electrodes the BioSemi 64-channel layout also has,
+#' the positions are the same up to BioSemi's rounding (within about 1 mm)
+#' for 48 of them. The other 16 differ more: AF3, AF4, PO3 and PO4 (about
+#' 5.7 mm), FC5, FC6, CP5 and CP6 (about 2.1 mm), F3, F4, P3 and P4 (about
+#' 1.7 mm) and F5, F6, P5 and P6 (about 1.5 mm).
+#'
+#' Every layout is on a sphere of radius 87.54 mm, with the nasion, the inion
+#' and the preauricular points 115 degrees from the vertex, so all layouts
+#' share one scale.
 #'
 #' Requested channels that have no scalp position in the layout - either
 #' because the layout has no electrode of that name, or because they are
@@ -92,6 +111,9 @@ new_montage <- function(channels, positions, coord_frame = "biosemi64") {
 #'
 #'   # A 32-channel recording whose channels are named by BioSemi socket
 #'   m <- create_montage(c("A1", "A2", "A3"), template = "biosemi32")
+#'
+#'   # The standard 10-10 system, for any cap that uses its names
+#'   m <- create_montage(template = "standard_1010")
 #' }
 #'
 #' @seealso \code{\link{set_montage}}, \code{\link{get_electrode_database}}

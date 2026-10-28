@@ -53,10 +53,11 @@
 
 .BIOSEMI_RADIUS_MM <- 87.54
 
-# Names of the cap layouts create_montage() can build.
+# Names of the layouts create_montage() can build: the BioSemi caps here and
+# the standard systems of montage_standard.R.
 .montage_templates <- function() {
   c("biosemi16", "biosemi32", "biosemi64", "biosemi128", "biosemi160",
-    "biosemi256")
+    "biosemi256", .standard_templates())
 }
 
 # One row per electrode for one template: name, alias (a second name that is
@@ -64,6 +65,9 @@
 .montage_template_table <- function(template) {
   if (identical(template, "biosemi64")) {
     return(.biosemi64_table())
+  }
+  if (template %in% .standard_templates()) {
+    return(.standard_template_table(template))
   }
 
   cap <- .biosemi_cap_angles(template)

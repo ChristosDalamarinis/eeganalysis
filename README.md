@@ -217,14 +217,14 @@ eeganalysis
 │   │
 │   ├── montage.R                            ← Electrode montage handling
 │   │   ├── new_montage()                    ← Create a montage object
-│   │   ├── create_montage()                 ← Build a montage from a BioSemi cap layout (16 to 256 channels) or the standard 10-10 system
+│   │   ├── create_montage()                 ← Build a montage from a BioSemi cap layout (16 to 256 channels) or the standard 10-10 / 10-05 system
 │   │   ├── set_montage()                    ← Attach a montage to an eeg object
 │   │   ├── print.montage()                  ← Display montage object nicely
 │   │   └── read_custom_montage()            ← Read a montage from an .elc, .sfp, .csv, .tsv or .txt file
 │   │
 │   ├── montage_templates.R                  ← BioSemi cap layouts (16/32/64/128/160/256) behind create_montage()
 │   │
-│   ├── montage_standard.R                   ← Standard 10-10 layout (72 electrodes), computed from the rules that define the system
+│   ├── montage_standard.R                   ← Standard 10-10 (72 electrodes) and 10-05 (335) layouts, computed from the rules that define the systems
 │   │
 │   ├── topography.R                         ← Scalp topography plotting
 │   │   └── plot_topography()                ← Interpolated scalp-map plot

@@ -1252,6 +1252,54 @@ detect_electrode_naming_system <- function(data) {
 
 
 
+# ----------------------------------------------------------------------------
+# Layouts for the 3D electrode plots
+#
+# plot_electrode_3d() and plot_electrode_3d_spherical() draw the 64 BioSemi
+# electrodes. Given a layout (the name of a built-in layout, or a montage
+# object) they draw that one instead. .plot_layout_table() turns a layout into
+# one table (electrode, alias, x, y, z, theta, phi) and .match_layout_names()
+# finds the electrode behind each channel name that was asked for.
+# ----------------------------------------------------------------------------
+
+.plot_layout_table <- function(layout) {
+  if (inherits(layout, "montage")) {
+    pos <- layout$positions
+    return(data.frame(electrode = pos$channel, alias = NA_character_,
+                      x = pos$x, y = pos$y, z = pos$z,
+                      theta = pos$theta, phi = pos$phi,
+                      stringsAsFactors = FALSE))
+  }
+
+  available <- .montage_templates()
+  if (!is.character(layout) || length(layout) != 1 || is.na(layout) ||
+      !(layout %in% available)) {
+    stop("ERROR: 'layout' must be the name of a built-in layout (",
+         paste(available, collapse = ", "), ") or a montage object.",
+         call. = FALSE)
+  }
+
+  tab <- .montage_template_table(layout)
+  data.frame(electrode = tab$name, alias = tab$alias,
+             x = tab$x, y = tab$y, z = tab$z,
+             theta = tab$theta, phi = tab$phi,
+             stringsAsFactors = FALSE)
+}
+
+# For each channel name: the name of the electrode in the layout table, looked
+# up by its name first and then by its alias, in any letter case. A name the
+# layout does not know is returned as it was typed.
+.match_layout_names <- function(channels, layout_table) {
+  keys     <- tolower(channels)
+  by_name  <- match(keys, tolower(layout_table$electrode))
+  by_alias <- match(keys, tolower(layout_table$alias))
+  by_alias[is.na(keys)] <- NA_integer_
+
+  row <- ifelse(is.na(by_name), by_alias, by_name)
+  ifelse(is.na(row), channels, layout_table$electrode[row])
+}
+
+
 #' ============================================================================
 #' Plot 3D Electrode Layout on Scalp (BioSemi 64-Channel)
 #'
@@ -1269,6 +1317,14 @@ detect_electrode_naming_system <- function(data) {
 #'   - "single" = all one color (default blue)
 #'   Default is "region".
 #' @param show_head Logical - whether to show the head outline. Default is TRUE.
+#' @param layout The electrodes to draw. \code{NULL} (the default) draws the 64
+#'   BioSemi electrodes. Otherwise the name of a built-in layout (for example
+#'   \code{"standard_1005"} or \code{"biosemi128"}; see
+#'   \code{\link{create_montage}} for the names) or a montage object, such as
+#'   one made by \code{\link{read_custom_montage}}. With a layout,
+#'   \code{channels} picks from that layout: a channel is found by its name or
+#'   by its second name (the old names T3 to T6, or the BioSemi socket names),
+#'   in any letter case.
 #'
 #' @return Returns a plotly object (interactive 3D plot viewable in RStudio)
 #'
@@ -1284,6 +1340,13 @@ detect_electrode_naming_system <- function(data) {
 #' - Z-axis: Bottom (-) to Top (+)
 #' - Nose points in +Y direction
 #'
+#' **Other layouts:**
+#' With \code{layout} the same plot is drawn for any built-in layout or montage
+#' object. The positions are the layout's own x/y/z (in mm), the title names the
+#' layout, and the electrodes are coloured by region as usual. For a layout of
+#' hundreds of electrodes, such as \code{"standard_1005"}, use
+#' \code{show_labels = FALSE}: the names overlap.
+#'
 #' @examples
 #' \dontrun{
 #'
@@ -1298,6 +1361,12 @@ detect_electrode_naming_system <- function(data) {
 #'
 #'   # Example 4: No head outline, just electrodes
 #'   plot_electrode_3d(show_head = FALSE)
+#'
+#'   # Example 5: Another layout, here the 335 electrodes of the 10-05 system
+#'   plot_electrode_3d(layout = "standard_1005", show_labels = FALSE)
+#'
+#'   # Example 6: Some channels of a layout, given by their old names
+#'   plot_electrode_3d(channels = c("Cz", "T3", "T4"), layout = "standard_1020")
 #' }
 #'
 #' @keywords internal
@@ -1308,7 +1377,8 @@ plot_electrode_3d <- function(channels = NULL,
                               highlight_channels = NULL,
                               show_labels = TRUE,
                               color_by = "region",
-                              show_head = TRUE) {
+                              show_head = TRUE,
+                              layout = NULL) {
   
   # ========================================================================
   # LOAD REQUIRED PACKAGE
@@ -1395,6 +1465,14 @@ plot_electrode_3d <- function(channels = NULL,
   # DETERMINE WHICH CHANNELS TO PLOT
   # ========================================================================
   
+  # With a layout, the electrodes and their positions come from the layout
+  # instead of the BioSemi 64 table above.
+  if (!is.null(layout)) {
+    layout_table     <- .plot_layout_table(layout)
+    layout_label     <- if (is.character(layout)) layout else "Custom montage"
+    electrode_coords <- layout_table[, c("electrode", "x", "y", "z")]
+  }
+  
   if (is.null(channels)) {
     channels_to_plot <- electrode_coords$electrode
   } else {
@@ -1408,11 +1486,17 @@ plot_electrode_3d <- function(channels = NULL,
     stringsAsFactors = FALSE
   )
   
-  for (i in 1:nrow(plot_data)) {
-    ch <- plot_data$original_name[i]
-    if (ch %in% biosemi_mapping$biosemi) {
-      plot_data$standard_name[i] <- biosemi_mapping$standard[biosemi_mapping$biosemi == ch]
+  if (is.null(layout)) {
+    for (i in 1:nrow(plot_data)) {
+      ch <- plot_data$original_name[i]
+      if (ch %in% biosemi_mapping$biosemi) {
+        plot_data$standard_name[i] <- biosemi_mapping$standard[biosemi_mapping$biosemi == ch]
+      }
     }
+  } else {
+    # A layout has its own names and second names (old names such as T3, or
+    # BioSemi sockets), found in any letter case.
+    plot_data$standard_name <- .match_layout_names(channels_to_plot, layout_table)
   }
   
   # Merge with coordinates
@@ -1440,8 +1524,8 @@ plot_electrode_3d <- function(channels = NULL,
     plot_data$color_group[grepl("^Fp|^AF|^F[^CT]", plot_data$standard_name)] <- "Frontal"
     plot_data$color_group[grepl("^C|^FC", plot_data$standard_name)] <- "Central"
     plot_data$color_group[grepl("^P[^O]|^CP", plot_data$standard_name)] <- "Parietal"
-    plot_data$color_group[grepl("^O|^PO|^Iz", plot_data$standard_name)] <- "Occipital"
-    plot_data$color_group[grepl("^T[0-9]|^FT|^TP", plot_data$standard_name)] <- "Temporal"
+    plot_data$color_group[grepl("^O|^PO|^I", plot_data$standard_name)] <- "Occipital"
+    plot_data$color_group[grepl("^T[0-9]|^FT|^TP|^TT", plot_data$standard_name)] <- "Temporal"
     
     color_palette <- c(
       "Frontal" = "#e41a1c",
@@ -1559,9 +1643,11 @@ plot_electrode_3d <- function(channels = NULL,
         color = color_palette[group],
         line = list(color = marker_borders, width = border_widths)
       ),
-      text = ~original_name,
-      textposition = "top center",
-      textfont = list(size = 10, color = "black", family = "Arial Black"),
+      # The label settings are only given when labels are wanted: plotly puts
+      # the text mode back whenever text or textfont are present.
+      text = if (show_labels) ~original_name,
+      textposition = if (show_labels) "top center",
+      textfont = if (show_labels) list(size = 10, color = "black", family = "Arial Black"),
       hovertext = ~paste0("<b>", original_name, "</b><br>",
                           "Standard: ", standard_name, "<br>",
                           "Region: ", color_group, "<br>",
@@ -1582,7 +1668,11 @@ plot_electrode_3d <- function(channels = NULL,
   p <- plotly::layout(
     p,
     title = list(
-      text = "BioSemi 64-Channel Electrode Layout (3D)",
+      text = if (is.null(layout)) {
+        "BioSemi 64-Channel Electrode Layout (3D)"
+      } else {
+        paste0(layout_label, " Electrode Layout (3D)")
+      },
       font = list(size = 20, family = "Arial", color = "black")
     ),
     scene = list(
@@ -1654,6 +1744,16 @@ plot_electrode_3d <- function(channels = NULL,
 #' @param show_head Logical - whether to show the head outline. Default is TRUE.
 #' @param head_radius Numeric - radius of head sphere in mm. Default is 87.54 mm
 #'   (calculated from 55 cm circumference).
+#' @param layout The electrodes to draw. \code{NULL} (the default) draws the 64
+#'   BioSemi electrodes. Otherwise the name of a built-in layout (for example
+#'   \code{"standard_1005"} or \code{"biosemi128"}; see
+#'   \code{\link{create_montage}} for the names) or a montage object, such as
+#'   one made by \code{\link{read_custom_montage}}. The electrodes are placed
+#'   from the theta and phi of the layout on the head sphere of radius
+#'   \code{head_radius}, and are not rounded to whole millimetres. With a
+#'   layout, \code{channels} picks from that layout: a channel is found by its
+#'   name or by its second name (the old names T3 to T6, or the BioSemi socket
+#'   names), in any letter case.
 #'
 #' @return Returns a plotly object (interactive 3D plot viewable in RStudio)
 #'
@@ -1684,6 +1784,13 @@ plot_electrode_3d <- function(channels = NULL,
 #' - Z-axis: Bottom (-) to Top (+)
 #' - Nose points in +Y direction
 #'
+#' **Other layouts:**
+#' With \code{layout} the same plot is drawn for any built-in layout or montage
+#' object, from the theta and phi of its electrodes. The title names the layout,
+#' and the electrodes are coloured by region as usual. For a layout of hundreds
+#' of electrodes, such as \code{"standard_1005"}, use
+#' \code{show_labels = FALSE}: the names overlap.
+#'
 #' @examples
 #' \dontrun{
 #'
@@ -1698,6 +1805,12 @@ plot_electrode_3d <- function(channels = NULL,
 #'
 #'   # Example 4: Different head size
 #'   plot_electrode_3d_spherical(head_radius = 90)
+#'
+#'   # Example 5: Another layout, here the 335 electrodes of the 10-05 system
+#'   plot_electrode_3d_spherical(layout = "standard_1005", show_labels = FALSE)
+#'
+#'   # Example 6: Some channels of a layout, given by their old names
+#'   plot_electrode_3d_spherical(channels = c("Cz", "T3", "T4"), layout = "standard_1020")
 #' }
 #'
 #' @keywords internal
@@ -1709,7 +1822,8 @@ plot_electrode_3d_spherical <- function(channels = NULL,
                                         show_labels = TRUE,
                                         color_by = "region",
                                         show_head = TRUE,
-                                        head_radius = 87.54) {
+                                        head_radius = 87.54,
+                                        layout = NULL) {
   
   # ========================================================================
   # LOAD REQUIRED PACKAGE
@@ -1761,6 +1875,14 @@ plot_electrode_3d_spherical <- function(channels = NULL,
   # CONVERT SPHERICAL TO CARTESIAN COORDINATES
   # ========================================================================
   
+  # With a layout, the electrodes and their angles come from the layout
+  # instead of the BioSemi 64 table above.
+  if (!is.null(layout)) {
+    layout_table <- .plot_layout_table(layout)
+    layout_label <- if (is.character(layout)) layout else "Custom montage"
+    electrode_coords_spherical <- layout_table[, c("electrode", "theta", "phi")]
+  }
+  
   # Convert degrees to radians
   deg_to_rad <- function(deg) {
     return(deg * pi / 180)
@@ -1780,10 +1902,12 @@ plot_electrode_3d_spherical <- function(channels = NULL,
     sin(electrode_coords_spherical$phi_rad)
   electrode_coords_spherical$z <- head_radius * cos(electrode_coords_spherical$theta_rad)
   
-  # Round to match BioSemi precision
-  electrode_coords_spherical$x <- round(electrode_coords_spherical$x, 0)
-  electrode_coords_spherical$y <- round(electrode_coords_spherical$y, 0)
-  electrode_coords_spherical$z <- round(electrode_coords_spherical$z, 0)
+  # Round to match BioSemi precision (a layout is left unrounded)
+  if (is.null(layout)) {
+    electrode_coords_spherical$x <- round(electrode_coords_spherical$x, 0)
+    electrode_coords_spherical$y <- round(electrode_coords_spherical$y, 0)
+    electrode_coords_spherical$z <- round(electrode_coords_spherical$z, 0)
+  }
   
   # ========================================================================
   # BIOSEMI A/B TO STANDARD MAPPING
@@ -1830,11 +1954,17 @@ plot_electrode_3d_spherical <- function(channels = NULL,
     stringsAsFactors = FALSE
   )
   
-  for (i in 1:nrow(plot_data)) {
-    ch <- plot_data$original_name[i]
-    if (ch %in% biosemi_mapping$biosemi) {
-      plot_data$standard_name[i] <- biosemi_mapping$standard[biosemi_mapping$biosemi == ch]
+  if (is.null(layout)) {
+    for (i in 1:nrow(plot_data)) {
+      ch <- plot_data$original_name[i]
+      if (ch %in% biosemi_mapping$biosemi) {
+        plot_data$standard_name[i] <- biosemi_mapping$standard[biosemi_mapping$biosemi == ch]
+      }
     }
+  } else {
+    # A layout has its own names and second names (old names such as T3, or
+    # BioSemi sockets), found in any letter case.
+    plot_data$standard_name <- .match_layout_names(channels_to_plot, layout_table)
   }
   
   # Merge with coordinates
@@ -1862,8 +1992,8 @@ plot_electrode_3d_spherical <- function(channels = NULL,
     plot_data$color_group[grepl("^Fp|^AF|^F[^CT]", plot_data$standard_name)] <- "Frontal"
     plot_data$color_group[grepl("^C|^FC", plot_data$standard_name)] <- "Central"
     plot_data$color_group[grepl("^P[^O]|^CP", plot_data$standard_name)] <- "Parietal"
-    plot_data$color_group[grepl("^O|^PO|^Iz", plot_data$standard_name)] <- "Occipital"
-    plot_data$color_group[grepl("^T[0-9]|^FT|^TP", plot_data$standard_name)] <- "Temporal"
+    plot_data$color_group[grepl("^O|^PO|^I", plot_data$standard_name)] <- "Occipital"
+    plot_data$color_group[grepl("^T[0-9]|^FT|^TP|^TT", plot_data$standard_name)] <- "Temporal"
     
     color_palette <- c(
       "Frontal" = "#e41a1c",
@@ -1976,15 +2106,17 @@ plot_electrode_3d_spherical <- function(channels = NULL,
         color = color_palette[group],
         line = list(color = marker_borders, width = border_widths)
       ),
-      text = ~original_name,
-      textposition = "top center",
-      textfont = list(size = 10, color = "black", family = "Arial Black"),
+      # The label settings are only given when labels are wanted: plotly puts
+      # the text mode back whenever text or textfont are present.
+      text = if (show_labels) ~original_name,
+      textposition = if (show_labels) "top center",
+      textfont = if (show_labels) list(size = 10, color = "black", family = "Arial Black"),
       hovertext = ~paste0("<b>", original_name, "</b><br>",
                           "Standard: ", standard_name, "<br>",
                           "Region: ", color_group, "<br>",
                           "Spherical (degrees):<br>",
-                          "  theta (inclination): ", theta, "deg<br>",
-                          "  phi (azimuth): ", phi, "deg<br>",
+                          "  theta (inclination): ", round(theta, 1), "deg<br>",
+                          "  phi (azimuth): ", round(phi, 1), "deg<br>",
                           "Cartesian (mm):<br>",
                           "  X: ", round(x, 1), " (L/R)<br>",
                           "  Y: ", round(y, 1), " (Back/Front)<br>",
@@ -2004,7 +2136,11 @@ plot_electrode_3d_spherical <- function(channels = NULL,
   p <- plotly::layout(
     p,
     title = list(
-      text = "BioSemi 64-Channel Electrode Layout (3D - Spherical)",
+      text = if (is.null(layout)) {
+        "BioSemi 64-Channel Electrode Layout (3D - Spherical)"
+      } else {
+        paste0(layout_label, " Electrode Layout (3D - Spherical)")
+      },
       font = list(size = 20, family = "Arial", color = "black")
     ),
     scene = list(

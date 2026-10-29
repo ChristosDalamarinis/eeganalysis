@@ -621,6 +621,27 @@ test_that("the standard 10-20 layout plots without warnings and in any order", {
   expect_equal(res$grid_z, backwards$grid_z)
 })
 
+# ----------------------------------------------------------------------------
+# Test 6.4: A montage attached by layout name draws the same map
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies a recording that got its montage from
+# set_montage(eeg, "standard_1020"), with channels named the old way (T3, T4,
+# T5, T6), plots without any warning and draws exactly the same map as the
+# same recording with the montage built by hand.
+test_that("plot_topography works after set_montage() with a layout name", {
+  chans <- c("Fp1", "Fp2", "F7", "F3", "Fz", "F4", "F8", "T3", "C3", "Cz", "C4",
+             "T4", "T5", "P3", "Pz", "P4", "T6", "O1", "O2")
+  eeg <- new_eeg(data = matrix(0, nrow = 19, ncol = 10), channels = chans,
+                 sampling_rate = 100)
+  values <- setNames(cos(seq_along(chans)), chans)
+
+  by_name <- set_montage(eeg, "standard_1020")
+  by_hand <- set_montage(eeg, create_montage(chans, template = "standard_1020"))
+
+  expect_no_warning(res <- with_null_device(plot_topography(by_name, values)))
+  expect_equal(res$grid_z, with_null_device(plot_topography(by_hand, values))$grid_z)
+})
+
 # ============================================================================
 #                     SUMMARY OF TEST COVERAGE
 # ============================================================================
@@ -649,4 +670,6 @@ test_that("the standard 10-20 layout plots without warnings and in any order", {
 #   reverse order
 # - The standard 10-20 layout: 19 electrodes, no warnings, same map in
 #   reverse order
+# - A montage attached with set_montage() by layout name draws the same map
+#   as one built by hand
 # ============================================================================

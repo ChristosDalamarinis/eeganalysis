@@ -1085,8 +1085,8 @@ test_that("create_montage() handles names outside standard_1010 and lists it", {
                  "A1, AF1")
   expect_equal(m$channels, c("Cz", "pz"))
 
-  expect_error(create_montage(template = "standard_1020"),
-               "Available templates: .*biosemi256, standard_1010")
+  expect_error(create_montage(template = "standard_1030"),
+               "Available templates: .*biosemi256, standard_1020, standard_1010")
 })
 
 # ----------------------------------------------------------------------------
@@ -1137,7 +1137,8 @@ row_of_21 <- function(i) {
 # the five Fp and the five O, OI and I electrodes, front to back and left to
 # right. The list was also compared with an independent list of the system's
 # names. Every electrode of standard_1010 is among them; the landmarks, the
-# mastoid and ear electrodes and the old names T3 to T6 are not.
+# mastoid and ear electrodes and the old names T3 to T6 are not (the old names
+# are aliases of T7, T8, P7 and P8, see test 9.5).
 test_that("standard_1005 has the 335 electrodes of the 10-05 system", {
   rows <- c(
     "Fp1 Fp1h Fpz Fp2h Fp2",
@@ -1395,19 +1396,19 @@ test_that("the standard_1005 table is unchanged", {
 # ----------------------------------------------------------------------------
 # WHAT THIS TESTS: Verifies a few electrodes can be picked by name in any
 # letter case without a warning, names the 10-05 system does not have (the
-# mastoids, the old name T3) are dropped with a warning naming them, and an
-# unknown template lists both standard layouts among the available ones.
+# mastoid and ear electrodes) are dropped with a warning naming them, and an
+# unknown template lists the standard layouts among the available ones.
 test_that("create_montage() picks electrodes from standard_1005 and lists it", {
   expect_no_warning(m <- create_montage(c("Cz", "c1h", "CCP3h", "FFT7"),
                                         template = "standard_1005"))
   expect_equal(m$channels, c("Cz", "c1h", "CCP3h", "FFT7"))
 
-  expect_warning(m <- create_montage(c("Cz", "M1", "T3"), template = "standard_1005"),
-                 "M1, T3")
+  expect_warning(m <- create_montage(c("Cz", "M1", "A2"), template = "standard_1005"),
+                 "M1, A2")
   expect_equal(m$channels, "Cz")
 
-  expect_error(create_montage(template = "standard_1020"),
-               "Available templates: .*standard_1010, standard_1005")
+  expect_error(create_montage(template = "standard_1030"),
+               "Available templates: .*standard_1020, standard_1010, standard_1005")
 })
 
 # ----------------------------------------------------------------------------
@@ -1423,6 +1424,198 @@ test_that("standard_1005 attaches to a recording with its channel names", {
   expect_no_warning(eeg <- set_montage(eeg, m))
   expect_equal(eeg$montage$channels, m$channels)
   expect_equal(eeg$montage$coord_frame, "standard_1005")
+})
+
+# ============================================================================
+#     TEST SUITE 9: standard_1020 - the original 10-20 electrode system
+# ============================================================================
+
+# Helper: the positions of the standard_1020 layout.
+standard_1020_positions <- function() {
+  create_montage(template = "standard_1020")$positions
+}
+
+# ----------------------------------------------------------------------------
+# Test 9.1: Which electrodes the layout has
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies standard_1020 has exactly the 19 scalp electrodes
+# of the original 10-20 system, front to back and left to right. Fpz and Oz
+# (not in the original system), the ear and mastoid electrodes, the nasion and
+# the old names T3 to T6 are not among the channel names.
+test_that("standard_1020 has the 19 electrodes of the original 10-20 system", {
+  m <- create_montage(template = "standard_1020")
+
+  expect_s3_class(m, "montage")
+  expect_equal(m$coord_frame, "standard_1020")
+  expect_identical(m$channels,
+                   c("Fp1", "Fp2",
+                     "F7", "F3", "Fz", "F4", "F8",
+                     "T7", "C3", "Cz", "C4", "T8",
+                     "P7", "P3", "Pz", "P4", "P8",
+                     "O1", "O2"))
+  expect_false(any(c("Fpz", "Oz", "A1", "A2", "M1", "M2", "Nz", "T3", "T4", "T5",
+                     "T6") %in% m$channels))
+  expect_false(anyNA(m$positions))
+})
+
+# ----------------------------------------------------------------------------
+# Test 9.2: Same shape and scale as the other layouts
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies every electrode lies on the 87.54 mm head sphere,
+# the positions table has the same columns as the other layouts, the
+# lower-case names are the row names, and no value is a negative zero.
+test_that("standard_1020 is built like the other layouts and sits on the head sphere", {
+  m <- create_montage(template = "standard_1020")
+  p <- m$positions
+
+  expect_equal(sqrt(p$x^2 + p$y^2 + p$z^2), rep(87.54, 19), tolerance = 1e-6)
+  expect_true(all(p$radius == 87.54))
+  expect_identical(names(p), names(create_montage(template = "biosemi32")$positions))
+  expect_identical(rownames(p), tolower(m$channels))
+
+  numbers <- unlist(p[, c("x", "y", "z", "theta", "phi")])
+  expect_false(any(numbers == 0 & 1 / numbers < 0))
+})
+
+# ----------------------------------------------------------------------------
+# Test 9.3: The 10-20 electrodes are at the same places in the other layouts
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies the 19 electrodes are in standard_1010 and in
+# standard_1005 at exactly the same place: not close, identical, in every
+# column of the positions table.
+test_that("standard_1020 electrodes are at exactly the same places in the other standard layouts", {
+  a <- standard_1020_positions()
+
+  for (template in c("standard_1010", "standard_1005")) {
+    b <- create_montage(a$channel, template = template)$positions
+    expect_identical(b, a, label = template)
+  }
+})
+
+# ----------------------------------------------------------------------------
+# Test 9.4: Where the rules of the 10-20 system put the electrodes
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies the electrodes against the definition of the
+# system, with angles worked out by hand. The midline is cut at 30, 50 and 70
+# percent of the nasion-inion arc (230 degrees: Fz 46, Cz 0, Pz 46 degrees
+# from the vertex). The outer ring at 92 degrees from the vertex holds Fp, F7,
+# T7, P7 and O1 at 36 degrees apart (10 percent of the circumference), and C3
+# and C4 are halfway between Cz and T7 or T8. F3, F4, P3 and P4 are halfway
+# between the midline electrode and the lateral electrode of their row, which
+# is the same distance from both.
+test_that("standard_1020 places the electrodes where the rules of the system put them", {
+  p <- standard_1020_positions()
+
+  midline <- c("Fz", "Cz", "Pz")
+  expect_equal(angles_of(p, midline, "theta"), c(46, 0, 46))
+  expect_equal(angles_of(p, midline, "phi"), c(90, 0, -90))
+
+  left <- c("Fp1", "F7", "T7", "P7", "O1")
+  right <- c("Fp2", "F8", "T8", "P8", "O2")
+  expect_equal(angles_of(p, left, "theta"), rep(-92, 5))
+  expect_equal(angles_of(p, left, "phi"), c(-72, -36, 0, 36, 72), tolerance = 1e-6)
+  expect_equal(angles_of(p, right, "theta"), rep(92, 5))
+  expect_equal(angles_of(p, right, "phi"), c(72, 36, 0, -36, -72), tolerance = 1e-6)
+
+  expect_equal(angles_of(p, c("C3", "C4"), "theta"), c(-46, 46))
+  expect_equal(angles_of(p, c("C3", "C4"), "phi"), c(0, 0), tolerance = 1e-6)
+
+  xyz <- function(name) unlist(p[match(name, p$channel), c("x", "y", "z")])
+  distance <- function(a, b) sqrt(sum((xyz(a) - xyz(b))^2))
+  halfway <- list(c("F3", "F7", "Fz"), c("F4", "F8", "Fz"),
+                  c("C3", "T7", "Cz"), c("C4", "T8", "Cz"),
+                  c("P3", "P7", "Pz"), c("P4", "P8", "Pz"))
+  for (h in halfway) {
+    expect_equal(distance(h[1], h[2]), distance(h[1], h[3]), tolerance = 1e-5,
+                 label = paste(h[1], "halfway between", h[2], "and", h[3]))
+  }
+})
+
+# ----------------------------------------------------------------------------
+# Test 9.5: The old names T3, T4, T5 and T6
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies the three standard layouts accept the old names of
+# T7, T8, P7 and P8 without a warning, in any letter case: the channel keeps
+# the name it was asked for and gets the position of the present name. A
+# layout still never lists the old names as its own channels, and the BioSemi
+# layouts do not know them.
+test_that("the standard layouts accept the old names T3 to T6", {
+  columns <- c("x", "y", "z", "theta", "phi", "radius")
+
+  for (template in c("standard_1020", "standard_1010", "standard_1005")) {
+    expect_no_warning(old <- create_montage(c("T3", "t4", "T5", "T6", "Cz"),
+                                            template = template))
+    new <- create_montage(c("T7", "T8", "P7", "P8", "Cz"), template = template)
+
+    expect_equal(old$channels, c("T3", "t4", "T5", "T6", "Cz"), label = template)
+    expect_equal(unname(as.matrix(old$positions[, columns])),
+                 unname(as.matrix(new$positions[, columns])), label = template)
+  }
+
+  expect_no_warning(both <- create_montage(c("T3", "T7"), template = "standard_1020"))
+  expect_equal(both$positions$x[1], both$positions$x[2])
+
+  expect_warning(create_montage(c("Cz", "T3"), template = "biosemi32"), "T3")
+})
+
+# ----------------------------------------------------------------------------
+# Test 9.6: Left and right mirror each other
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies the eight electrode pairs (Fp1/Fp2, F7/F8, F3/F4,
+# T7/T8, C3/C4, P7/P8, P3/P4, O1/O2) are mirror images and Fz, Cz and Pz are
+# on the midline.
+test_that("standard_1020 is mirror symmetric", {
+  p <- standard_1020_positions()
+  left <- c("Fp1", "F7", "F3", "T7", "C3", "P7", "P3", "O1")
+  right <- c("Fp2", "F8", "F4", "T8", "C4", "P8", "P4", "O2")
+
+  a <- p[match(left, p$channel), c("x", "y", "z")]
+  b <- p[match(right, p$channel), c("x", "y", "z")]
+  expect_equal(a$x, -b$x, tolerance = 1e-6)
+  expect_equal(a$y, b$y, tolerance = 1e-6)
+  expect_equal(a$z, b$z, tolerance = 1e-6)
+  expect_true(all(a$x < 0))
+  expect_equal(p$x[match(c("Fz", "Cz", "Pz"), p$channel)], c(0, 0, 0))
+})
+
+# ----------------------------------------------------------------------------
+# Test 9.7: No number of the table has been changed
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Guards the whole table. Each column is summed with the row
+# number as weight, so a changed value, a swapped pair or a shifted row alters
+# the sum. The expected sums were computed after the table had been checked
+# against the rules (tests 9.1 to 9.6).
+test_that("the standard_1020 table is unchanged", {
+  p <- standard_1020_positions()
+  i <- seq_len(nrow(p))
+  sums <- vapply(c("x", "y", "z", "theta", "phi"),
+                 function(col) sum(p[[col]] * i), numeric(1))
+
+  expect_equal(sums, c(x = 1288.243486, y = -5680.0813, z = 4699.38632,
+                       theta = 2544.039556, phi = -900), tolerance = 1e-8)
+})
+
+# ----------------------------------------------------------------------------
+# Test 9.8: A recording that uses the old names
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies the situation the old names exist for. A 19
+# channel recording named the old way (T3, T4, T5, T6) gets its montage from
+# create_montage() and set_montage() without any warning, the channels keep
+# their names, and T3 sits where T7 sits.
+test_that("a recording with the old channel names gets a standard_1020 montage", {
+  chans <- c("Fp1", "Fp2", "F7", "F3", "Fz", "F4", "F8", "T3", "C3", "Cz", "C4",
+             "T4", "T5", "P3", "Pz", "P4", "T6", "O1", "O2")
+  eeg <- new_eeg(data = matrix(rnorm(19 * 20), nrow = 19), channels = chans,
+                 sampling_rate = 100)
+
+  expect_no_warning(m <- create_montage(chans, template = "standard_1020"))
+  expect_no_warning(eeg <- set_montage(eeg, m))
+  expect_equal(eeg$montage$channels, chans)
+
+  new <- standard_1020_positions()
+  at <- function(positions, name) unlist(positions[match(name, positions$channel), c("x", "y", "z")])
+  expect_equal(at(eeg$montage$positions, "T3"), at(new, "T7"))
+  expect_equal(at(eeg$montage$positions, "T6"), at(new, "P8"))
 })
 
 # ============================================================================
@@ -1461,4 +1654,10 @@ test_that("standard_1005 attaches to a recording with its channel names", {
 #   paper's CCP3h example and the whole grid), mirror symmetry, a fingerprint
 #   of the whole table, picking electrodes by name and names outside the
 #   layout, attaching with set_montage()
+# - standard_1020: the 19 electrodes, the head sphere and table shape, the
+#   same places as in the other two standard layouts (identical), the
+#   defining angles worked out by hand and F3/C3/P3 (and the right side)
+#   halfway on their row, the old names T3 to T6 in all three standard
+#   layouts, mirror symmetry, a fingerprint of the whole table, a recording
+#   that uses the old names
 # ============================================================================

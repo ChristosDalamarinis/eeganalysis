@@ -15,6 +15,7 @@ test_signal_99.csv
 *.pyc
 *.pyi
 *.pdf
+*.csv
 *.md
 *.png
 *.jinja

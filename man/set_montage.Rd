@@ -10,7 +10,11 @@ set_montage(eeg_obj, montage)
 \item{eeg_obj}{An object of class \code{'eeg'}.}
 
 \item{montage}{An object of class \code{'montage'}, typically built with
-\code{\link{create_montage}}.}
+\code{\link{create_montage}}, or the name of a built-in layout (any
+\code{template} of \code{\link{create_montage}}, for example
+\code{"standard_1020"} or \code{"biosemi64"}). With a name, the positions
+of that layout are used for the EEG channels of \code{eeg_obj}, without
+building the montage first.}
 }
 \value{
 The input \code{eeg} object with \code{$montage} set to a montage
@@ -30,11 +34,27 @@ Channels of type \code{"eeg"} in \code{eeg_obj} that have no matching
 entry in \code{montage}, and channels in \code{montage} that are not
 present in \code{eeg_obj}, both produce a warning (not an error) - such
 channels simply have no scalp position to plot.
+
+When \code{montage} is the name of a layout, each EEG channel is looked up
+in that layout by its name or its alias, the same way
+\code{\link{create_montage}} does it: channels named by BioSemi socket
+(\code{"A1"}, \code{"A2"}, ...) find their electrode in the BioSemi layouts,
+and the old names \code{"T3"} to \code{"T6"} find theirs in the standard
+layouts. The channels keep the names they have in \code{eeg_obj}. Only the
+first kind of warning above can occur, because the montage is built from
+the channels of \code{eeg_obj}; if the layout has no electrode for any EEG
+channel, the function stops with an error.
 }
 \examples{
 \dontrun{
   eeg <- read_bdf_native("recording.bdf")
   eeg <- set_montage(eeg, create_montage())
+
+  # The same in one step, by the name of the layout
+  eeg <- set_montage(eeg, "biosemi64")
+
+  # A recording named the old way (T3, T4, T5, T6 ...)
+  eeg <- set_montage(eeg, "standard_1020")
 }
 
 }

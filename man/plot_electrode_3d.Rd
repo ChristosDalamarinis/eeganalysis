@@ -10,7 +10,8 @@ plot_electrode_3d(
   highlight_channels = NULL,
   show_labels = TRUE,
   color_by = "region",
-  show_head = TRUE
+  show_head = TRUE,
+  layout = NULL
 )
 }
 \arguments{
@@ -31,6 +32,15 @@ Default is "region".
 }}
 
 \item{show_head}{Logical - whether to show the head outline. Default is TRUE.}
+
+\item{layout}{The electrodes to draw. \code{NULL} (the default) draws the 64
+BioSemi electrodes. Otherwise the name of a built-in layout (for example
+\code{"standard_1005"} or \code{"biosemi128"}; see
+\code{\link{create_montage}} for the names) or a montage object, such as
+one made by \code{\link{read_custom_montage}}. With a layout,
+\code{channels} picks from that layout: a channel is found by its name or
+by its second name (the old names T3 to T6, or the BioSemi socket names),
+in any letter case.}
 }
 \value{
 Returns a plotly object (interactive 3D plot viewable in RStudio)
@@ -52,6 +62,13 @@ coordinates (x, y, z) in millimeters from BioSemi's cap layout documentation.
 \item Z-axis: Bottom (-) to Top (+)
 \item Nose points in +Y direction
 }
+
+\strong{Other layouts:}
+With \code{layout} the same plot is drawn for any built-in layout or montage
+object. The positions are the layout's own x/y/z (in mm), the title names the
+layout, and the electrodes are coloured by region as usual. For a layout of
+hundreds of electrodes, such as \code{"standard_1005"}, use
+\code{show_labels = FALSE}: the names overlap.
 }
 \examples{
 \dontrun{
@@ -67,6 +84,12 @@ coordinates (x, y, z) in millimeters from BioSemi's cap layout documentation.
 
   # Example 4: No head outline, just electrodes
   plot_electrode_3d(show_head = FALSE)
+
+  # Example 5: Another layout, here the 335 electrodes of the 10-05 system
+  plot_electrode_3d(layout = "standard_1005", show_labels = FALSE)
+
+  # Example 6: Some channels of a layout, given by their old names
+  plot_electrode_3d(channels = c("Cz", "T3", "T4"), layout = "standard_1020")
 }
 
 }

@@ -1619,6 +1619,139 @@ test_that("a recording with the old channel names gets a standard_1020 montage",
 })
 
 # ============================================================================
+#     TEST SUITE 10: set_montage() With the Name of a Built-in Layout
+# ============================================================================
+
+# Helper: a recording with the given channel names and random data.
+recording_with <- function(chans, channel_types = NULL) {
+  new_eeg(data = matrix(rnorm(length(chans) * 20), nrow = length(chans)),
+          channels = chans, sampling_rate = 100, channel_types = channel_types)
+}
+
+# Helper: the x, y, z of the named channels of a montage, as a plain matrix.
+xyz_of <- function(montage, names) {
+  unname(as.matrix(montage$positions[match(names, montage$positions$channel),
+                                     c("x", "y", "z")]))
+}
+
+# ----------------------------------------------------------------------------
+# Test 10.1: A layout name does what building the montage first does
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies set_montage(eeg, "biosemi64") gives exactly the
+# same recording as building the montage for the EEG channels by hand, without
+# any warning, and leaves a non-EEG channel (an EOG channel) out.
+test_that("set_montage() with a layout name equals building the montage first", {
+  chans <- c(create_montage()$channels, "EOG1")
+  eeg <- recording_with(chans, c(rep("eeg", 64), "eog"))
+
+  expect_no_warning(by_name <- set_montage(eeg, "biosemi64"))
+  by_hand <- set_montage(eeg, create_montage(chans[1:64], template = "biosemi64"))
+
+  expect_identical(by_name, by_hand)
+  expect_equal(length(by_name$montage$channels), 64)
+  expect_false("EOG1" %in% by_name$montage$channels)
+})
+
+# ----------------------------------------------------------------------------
+# Test 10.2: Channels named by BioSemi socket
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies a recording whose channels are named by BioSemi
+# socket (A1 to A32 on the 32 channel cap, A1 to B32 on the 64 channel cap)
+# finds its electrodes by the layout name alone, keeps its channel names, and
+# gets the right positions (B16 is Cz, so it gets the position of Cz).
+test_that("set_montage() finds BioSemi socket names in a BioSemi layout", {
+  sockets32 <- paste0("A", 1:32)
+  expect_no_warning(eeg32 <- set_montage(recording_with(sockets32), "biosemi32"))
+  expect_equal(eeg32$montage$channels, sockets32)
+  expect_equal(xyz_of(eeg32$montage, sockets32),
+               xyz_of(create_montage(sockets32, template = "biosemi32"), sockets32))
+
+  sockets64 <- c(paste0("A", 1:32), paste0("B", 1:32))
+  expect_no_warning(eeg64 <- set_montage(recording_with(sockets64), "biosemi64"))
+  expect_equal(eeg64$montage$channels, sockets64)
+  expect_equal(xyz_of(eeg64$montage, "B16"),
+               xyz_of(create_montage("Cz", template = "biosemi64"), "Cz"))
+})
+
+# ----------------------------------------------------------------------------
+# Test 10.3: The old names T3 to T6, and any letter case
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies a recording named the old way (T3, T4, T5, T6)
+# gets its montage from the standard layouts without a warning, T3 sits where
+# T7 sits, the channels keep the names they have in the recording, and names
+# match in any letter case.
+test_that("set_montage() accepts the old names and any letter case", {
+  chans <- c("Fp1", "T3", "Cz", "T4", "T5", "T6")
+  for (template in c("standard_1020", "standard_1010", "standard_1005")) {
+    expect_no_warning(eeg <- set_montage(recording_with(chans), template))
+    expect_equal(eeg$montage$channels, chans, label = template)
+
+    new <- create_montage(c("T7", "T8", "P7", "P8"), template = template)
+    expect_equal(xyz_of(eeg$montage, c("T3", "T4", "T5", "T6")),
+                 xyz_of(new, c("T7", "T8", "P7", "P8")), label = template)
+  }
+
+  eeg <- set_montage(recording_with(c("cz", "FZ")), "standard_1010")
+  expect_equal(eeg$montage$channels, c("cz", "FZ"))
+})
+
+# ----------------------------------------------------------------------------
+# Test 10.4: A channel the layout has no electrode for
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies a recording with one EEG channel the layout does
+# not know gets exactly one warning (from set_montage(), naming the channel,
+# not a second one from create_montage()), and the other channels are
+# attached.
+test_that("set_montage() with a layout name warns once about unknown channels", {
+  warnings <- character(0)
+  eeg <- withCallingHandlers(
+    set_montage(recording_with(c("Cz", "Fz", "Banana")), "standard_1020"),
+    warning = function(w) {
+      warnings <<- c(warnings, conditionMessage(w))
+      invokeRestart("muffleWarning")
+    }
+  )
+
+  expect_length(warnings, 1)
+  expect_match(warnings, "set_montage\\(\\).*Banana")
+  expect_equal(eeg$montage$channels, c("Cz", "Fz"))
+})
+
+# ----------------------------------------------------------------------------
+# Test 10.5: Names that cannot work
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies a layout with no electrode for any EEG channel is
+# an error, an unknown layout name is an error that lists the available layouts
+# and points to read_custom_montage() (a file name is a likely mistake), more
+# than one name or a missing name is an error, and any other kind of input
+# keeps the old message about class 'montage'.
+test_that("set_montage() rejects layout names that cannot work", {
+  eeg <- recording_with(c("Cz", "Fz"))
+
+  expect_error(set_montage(recording_with(c("Foo", "Bar")), "standard_1020"),
+               "None of the EEG channels.*'standard_1020'")
+  expect_error(set_montage(eeg, "my_cap.elc"),
+               "Unknown montage template 'my_cap.elc'.*standard_1020.*read_custom_montage")
+  expect_error(set_montage(eeg, c("standard_1020", "biosemi64")), "Unknown montage template")
+  expect_error(set_montage(eeg, NA_character_), "Unknown montage template")
+  expect_error(set_montage(eeg, list()), "class 'montage'")
+  expect_error(set_montage(eeg, 42), "class 'montage'")
+})
+
+# ----------------------------------------------------------------------------
+# Test 10.6: The history names the layout
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies the entry added to the preprocessing history is the
+# same as for a montage object: the layout and the number of channels.
+test_that("set_montage() with a layout name records the layout in the history", {
+  eeg <- set_montage(recording_with(c("Cz", "Fz", "Pz")), "standard_1010")
+
+  last <- eeg$preprocessing_history[[length(eeg$preprocessing_history)]]
+  expect_equal(last, "Montage attached: standard_1010 (3 channel(s))")
+  expect_equal(eeg$montage$coord_frame, "standard_1010")
+})
+
+# ============================================================================
 #                     SUMMARY OF TEST COVERAGE
 # ============================================================================
 # - new_montage(): basic construction, default coord_frame
@@ -1660,4 +1793,8 @@ test_that("a recording with the old channel names gets a standard_1020 montage",
 #   halfway on their row, the old names T3 to T6 in all three standard
 #   layouts, mirror symmetry, a fingerprint of the whole table, a recording
 #   that uses the old names
+# - set_montage() with the name of a layout: the same result as building the
+#   montage first, BioSemi socket names, the old names and any letter case,
+#   one warning for an unknown channel, the errors for names that cannot
+#   work, the history entry
 # ============================================================================

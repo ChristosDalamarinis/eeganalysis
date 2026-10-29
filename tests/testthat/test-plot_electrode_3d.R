@@ -91,7 +91,40 @@ test_that("1.3 BioSemi socket names still work with no layout", {
   }
 })
 
-test_that("1.4 an unknown channel with no layout gives the same single warning", {
+test_that("1.4 the default 64 electrodes are the 'biosemi64' layout of the montages", {
+  # One copy of these numbers: the plots read the same table as create_montage()
+  tab    <- eeganalysis:::.montage_template_table("biosemi64")
+  socket <- c(paste0("A", 1:32), paste0("B", 1:32))
+
+  d <- plotted_electrodes(plot_electrode_3d())
+  at <- match(d$name, tab$name)
+  expect_setequal(d$name, tab$name)
+  expect_identical(d$x, tab$x[at])
+  expect_identical(d$y, tab$y[at])
+  expect_identical(d$z, tab$z[at])
+
+  # The spherical plot draws the same electrodes from the angles, in whole mm
+  s <- plotted_electrodes(plot_electrode_3d_spherical())
+  at <- match(s$name, tab$name)
+  expect_setequal(s$name, tab$name)
+  expect_lt(max(abs(c(s$x - tab$x[at], s$y - tab$y[at], s$z - tab$z[at]))), 0.5)
+
+  # Socket names A1 to B32 give the electrode the table gives them
+  for (f in list(plot_electrode_3d, plot_electrode_3d_spherical)) {
+    p <- plotted_electrodes(f(channels = socket))
+    expect_equal(p$standard[match(socket, p$name)], tab$name[match(socket, tab$alias)])
+  }
+})
+
+test_that("1.5 names of the default 64 electrodes are found in any letter case", {
+  for (f in list(plot_electrode_3d, plot_electrode_3d_spherical)) {
+    typed <- c("cz", "FZ", "fp1")
+    expect_no_warning(d <- plotted_electrodes(f(channels = typed)))
+    expect_equal(d$standard[match(typed, d$name)], c("Cz", "Fz", "Fp1"))
+  }
+})
+
+test_that("1.6 an unknown channel with no layout gives the same single warning", {
   for (f in list(plot_electrode_3d, plot_electrode_3d_spherical)) {
     expect_warning(p <- f(channels = c("Cz", "Banana")),
                    "No coordinates found for: Banana")
@@ -360,7 +393,9 @@ test_that("7.2 color_by = 'single' draws one group for a layout", {
 #
 # - No layout: the 64 BioSemi electrodes, titles, positions, region counts,
 #   rounding of the spherical plot, BioSemi socket names and the warning for
-#   an unknown channel are all as before
+#   an unknown channel are all as before; the 64 electrodes are the
+#   'biosemi64' layout of the montages (one copy of the numbers), and their
+#   names are found in any letter case
 # - A layout by name: all 335 electrodes of standard_1005 at the positions of
 #   the layout (exactly for the Cartesian plot, from the angles for the
 #   spherical one, unrounded), every built-in layout drawn with all its

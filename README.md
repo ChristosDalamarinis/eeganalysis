@@ -218,7 +218,7 @@ eeganalysis
 │   ├── montage.R                            ← Electrode montage handling
 │   │   ├── new_montage()                    ← Create a montage object
 │   │   ├── create_montage()                 ← Build a montage from a BioSemi cap layout (16 to 256 channels) or the standard 10-20 / 10-10 / 10-05 system
-│   │   ├── set_montage()                    ← Attach a montage to an eeg object
+│   │   ├── set_montage()                    ← Attach a montage, or a built-in layout by name (e.g. "standard_1020"), to an eeg object
 │   │   ├── print.montage()                  ← Display montage object nicely
 │   │   └── read_custom_montage()            ← Read a montage from an .elc, .sfp, .csv, .tsv or .txt file
 │   │

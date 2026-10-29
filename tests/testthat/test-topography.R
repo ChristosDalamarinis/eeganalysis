@@ -603,6 +603,24 @@ test_that("the standard 10-05 layout plots without warnings and in any order", {
   expect_equal(res$grid_z, backwards$grid_z)
 })
 
+# ----------------------------------------------------------------------------
+# Test 6.3: The 19 electrode 10-20 layout plots silently, in any order
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies the standard_1020 layout (19 electrodes, the
+# sparsest layout of the package) draws without any warning, and that the same
+# values given in reverse order draw exactly the same map.
+test_that("the standard 10-20 layout plots without warnings and in any order", {
+  fx <- make_layout_fixture("standard_1020")
+  values <- setNames(sin(seq_along(fx$channels)), fx$channels)
+
+  expect_no_warning(res <- with_null_device(plot_topography(fx$eeg, values)))
+  expect_equal(nrow(res$channel_positions), 19)
+  expect_equal(res$channel_positions$channel, fx$channels)
+
+  backwards <- with_null_device(plot_topography(fx$eeg, rev(values)))
+  expect_equal(res$grid_z, backwards$grid_z)
+})
+
 # ============================================================================
 #                     SUMMARY OF TEST COVERAGE
 # ============================================================================
@@ -628,5 +646,7 @@ test_that("the standard 10-05 layout plots without warnings and in any order", {
 # - The standard 10-10 layout: 72 electrodes, no warnings, same map in
 #   reverse order
 # - The standard 10-05 layout: 335 electrodes, no warnings, same map in
+#   reverse order
+# - The standard 10-20 layout: 19 electrodes, no warnings, same map in
 #   reverse order
 # ============================================================================

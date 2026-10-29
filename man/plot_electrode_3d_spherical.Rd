@@ -11,7 +11,8 @@ plot_electrode_3d_spherical(
   show_labels = TRUE,
   color_by = "region",
   show_head = TRUE,
-  head_radius = 87.54
+  head_radius = 87.54,
+  layout = NULL
 )
 }
 \arguments{
@@ -35,6 +36,17 @@ Default is "region".
 
 \item{head_radius}{Numeric - radius of head sphere in mm. Default is 87.54 mm
 (calculated from 55 cm circumference).}
+
+\item{layout}{The electrodes to draw. \code{NULL} (the default) draws the 64
+BioSemi electrodes. Otherwise the name of a built-in layout (for example
+\code{"standard_1005"} or \code{"biosemi128"}; see
+\code{\link{create_montage}} for the names) or a montage object, such as
+one made by \code{\link{read_custom_montage}}. The electrodes are placed
+from the theta and phi of the layout on the head sphere of radius
+\code{head_radius}, and are not rounded to whole millimetres. With a
+layout, \code{channels} picks from that layout: a channel is found by its
+name or by its second name (the old names T3 to T6, or the BioSemi socket
+names), in any letter case.}
 }
 \value{
 Returns a plotly object (interactive 3D plot viewable in RStudio)
@@ -79,6 +91,13 @@ converted to Cartesian (x, y, z) for plotting.
 \item Z-axis: Bottom (-) to Top (+)
 \item Nose points in +Y direction
 }
+
+\strong{Other layouts:}
+With \code{layout} the same plot is drawn for any built-in layout or montage
+object, from the theta and phi of its electrodes. The title names the layout,
+and the electrodes are coloured by region as usual. For a layout of hundreds
+of electrodes, such as \code{"standard_1005"}, use
+\code{show_labels = FALSE}: the names overlap.
 }
 \examples{
 \dontrun{
@@ -94,6 +113,12 @@ converted to Cartesian (x, y, z) for plotting.
 
   # Example 4: Different head size
   plot_electrode_3d_spherical(head_radius = 90)
+
+  # Example 5: Another layout, here the 335 electrodes of the 10-05 system
+  plot_electrode_3d_spherical(layout = "standard_1005", show_labels = FALSE)
+
+  # Example 6: Some channels of a layout, given by their old names
+  plot_electrode_3d_spherical(channels = c("Cz", "T3", "T4"), layout = "standard_1020")
 }
 
 }

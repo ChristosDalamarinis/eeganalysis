@@ -145,8 +145,8 @@ eeganalysis
 │   │   ├── scan_biosemi_channels()          ← Quick channel-name scan of a .bdf file
 │   │   ├── inspect_biosemi_file()           ← Preview a .bdf file without full import
 │   │   ├── detect_electrode_naming_system() ← Identify naming convention (10-20/10-10/BioSemi)
-│   │   ├── plot_electrode_3d()              ← 3D electrode visualization (Cartesian)
-│   │   └── plot_electrode_3d_spherical()    ← 3D electrode visualization (spherical)
+│   │   ├── plot_electrode_3d()              ← 3D electrode plot, the 64 BioSemi or any layout (Cartesian)
+│   │   └── plot_electrode_3d_spherical()    ← 3D electrode plot, the 64 BioSemi or any layout (spherical)
 │   │
 │   ├── setexchannels.R                      ← External-channel name lookup (suggestion only)
 │   │   └── detect_external_channels()       ← Suggest candidates by matching known BioSemi ports

@@ -1390,88 +1390,19 @@ plot_electrode_3d <- function(channels = NULL,
   }
   
   # ========================================================================
-  # OFFICIAL BIOSEMI 64-CHANNEL COORDINATES
+  # THE ELECTRODES TO DRAW
   # ========================================================================
+  # The electrodes and their positions come from a layout. With no layout they
+  # are the 64 BioSemi electrodes: the "biosemi64" layout, the one montages use,
+  # so these numbers are kept in one place (get_electrode_database()).
   
-  electrode_coords <- data.frame(
-    electrode = c(
-      "Fp1", "AF7", "AF3", "F1", "F3", "F5", "F7", "FT7", "FC5", "FC3",
-      "FC1", "C1", "C3", "C5", "T7", "TP7", "CP5", "CP3", "CP1", "P1",
-      "P3", "P5", "P7", "P9", "PO7", "PO3", "O1", "Iz", "Oz", "POz",
-      "Pz", "CPz", "Fpz", "Fp2", "AF8", "AF4", "AFz", "Fz", "F2", "F4",
-      "F6", "F8", "FT8", "FC6", "FC4", "FC2", "FCz", "Cz", "C2", "C4",
-      "C6", "T8", "TP8", "CP6", "CP4", "CP2", "P2", "P4", "P6", "P8",
-      "P10", "PO8", "PO4", "O2"
-    ),
-    x = c(
-      -27, -51, -36, -25, -48, -64, -71, -83, -78, -59,
-      -33, -34, -63, -82, -87, -83, -78, -59, -33, -25,
-      -48, -64, -71, -64, -51, -36, -27, 0, 0, 0,
-      0, 0, 0, 27, 51, 36, 0, 0, 25, 48,
-      64, 71, 83, 78, 59, 33, 0, 0, 34, 63,
-      82, 87, 83, 78, 59, 33, 25, 48, 64, 71,
-      64, 51, 36, 27
-    ),
-    y = c(
-      83, 71, 76, 62, 59, 55, 51, 27, 30, 31,
-      33, 0, 0, 0, 0, -27, -30, -31, -33, -62,
-      -59, -55, -51, -47, -71, -76, -83, -79, -87, -82,
-      -63, -34, 87, 83, 71, 76, 82, 63, 62, 59,
-      55, 51, 27, 30, 31, 33, 34, 0, 0, 0,
-      0, 0, -27, -30, -31, -33, -62, -59, -55, -51,
-      -47, -71, -76, -83
-    ),
-    z = c(
-      -3, -3, 24, 56, 44, 23, -3, -3, 27, 56,
-      74, 81, 61, 31, -3, -3, 27, 56, 74, 56,
-      44, 23, -3, -37, -3, 24, -3, -37, -3, 31,
-      61, 81, -3, -3, -3, 24, 31, 61, 56, 44,
-      23, -3, -3, 27, 56, 74, 81, 88, 81, 61,
-      31, -3, -3, 27, 56, 74, 56, 44, 23, -3,
-      -37, -3, 24, -3
-    ),
-    stringsAsFactors = FALSE
-  )
-  
-  # ========================================================================
-  # BIOSEMI A/B TO STANDARD MAPPING
-  # ========================================================================
-  
-  biosemi_mapping <- data.frame(
-    biosemi = c(
-      "A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9", "A10",
-      "A11", "A12", "A13", "A14", "A15", "A16", "A17", "A18", "A19", "A20",
-      "A21", "A22", "A23", "A24", "A25", "A26", "A27", "A28", "A29", "A30",
-      "A31", "A32",
-      "B1", "B2", "B3", "B4", "B5", "B6", "B7", "B8", "B9", "B10",
-      "B11", "B12", "B13", "B14", "B15", "B16", "B17", "B18", "B19", "B20",
-      "B21", "B22", "B23", "B24", "B25", "B26", "B27", "B28", "B29", "B30",
-      "B31", "B32"
-    ),
-    standard = c(
-      "Fp1", "AF7", "AF3", "F1", "F3", "F5", "F7", "FT7", "FC5", "FC3",
-      "FC1", "C1", "C3", "C5", "T7", "TP7", "CP5", "CP3", "CP1", "P1",
-      "P3", "P5", "P7", "P9", "PO7", "PO3", "O1", "Iz", "Oz", "POz",
-      "Pz", "CPz",
-      "Fpz", "Fp2", "AF8", "AF4", "AFz", "Fz", "F2", "F4", "F6", "F8",
-      "FT8", "FC6", "FC4", "FC2", "FCz", "Cz", "C2", "C4", "C6", "T8",
-      "TP8", "CP6", "CP4", "CP2", "P2", "P4", "P6", "P8", "P10", "PO8",
-      "PO4", "O2"
-    ),
-    stringsAsFactors = FALSE
-  )
+  layout_table     <- .plot_layout_table(if (is.null(layout)) "biosemi64" else layout)
+  layout_label     <- if (is.character(layout)) layout else "Custom montage"
+  electrode_coords <- layout_table[, c("electrode", "x", "y", "z")]
   
   # ========================================================================
   # DETERMINE WHICH CHANNELS TO PLOT
   # ========================================================================
-  
-  # With a layout, the electrodes and their positions come from the layout
-  # instead of the BioSemi 64 table above.
-  if (!is.null(layout)) {
-    layout_table     <- .plot_layout_table(layout)
-    layout_label     <- if (is.character(layout)) layout else "Custom montage"
-    electrode_coords <- layout_table[, c("electrode", "x", "y", "z")]
-  }
   
   if (is.null(channels)) {
     channels_to_plot <- electrode_coords$electrode
@@ -1486,18 +1417,10 @@ plot_electrode_3d <- function(channels = NULL,
     stringsAsFactors = FALSE
   )
   
-  if (is.null(layout)) {
-    for (i in 1:nrow(plot_data)) {
-      ch <- plot_data$original_name[i]
-      if (ch %in% biosemi_mapping$biosemi) {
-        plot_data$standard_name[i] <- biosemi_mapping$standard[biosemi_mapping$biosemi == ch]
-      }
-    }
-  } else {
-    # A layout has its own names and second names (old names such as T3, or
-    # BioSemi sockets), found in any letter case.
-    plot_data$standard_name <- .match_layout_names(channels_to_plot, layout_table)
-  }
+  # The layout's own names and second names, found in any letter case: for the
+  # 64 BioSemi electrodes the socket names A1 to B32, for the other layouts
+  # also old names such as T3.
+  plot_data$standard_name <- .match_layout_names(channels_to_plot, layout_table)
   
   # Merge with coordinates
   plot_data <- merge(plot_data, electrode_coords, 
@@ -1835,53 +1758,19 @@ plot_electrode_3d_spherical <- function(channels = NULL,
   }
   
   # ========================================================================
-  # OFFICIAL BIOSEMI 64-CHANNEL SPHERICAL COORDINATES
+  # THE ELECTRODES TO DRAW
   # ========================================================================
-  # From BioSemi Cap_coords_all.xls file
-  # theta (inclination) in degrees, phi (azimuth) in degrees
+  # The electrodes and their angles come from a layout. With no layout they are
+  # the 64 BioSemi electrodes: the "biosemi64" layout, the one montages use, so
+  # these numbers are kept in one place (get_electrode_database()).
   
-  electrode_coords_spherical <- data.frame(
-    electrode = c(
-      "Fp1", "AF7", "AF3", "F1", "F3", "F5", "F7", "FT7", "FC5", "FC3",
-      "FC1", "C1", "C3", "C5", "T7", "TP7", "CP5", "CP3", "CP1", "P1",
-      "P3", "P5", "P7", "P9", "PO7", "PO3", "O1", "Iz", "Oz", "POz",
-      "Pz", "CPz", "Fpz", "Fp2", "AF8", "AF4", "AFz", "Fz", "F2", "F4",
-      "F6", "F8", "FT8", "FC6", "FC4", "FC2", "FCz", "Cz", "C2", "C4",
-      "C6", "T8", "TP8", "CP6", "CP4", "CP2", "P2", "P4", "P6", "P8",
-      "P10", "PO8", "PO4", "O2"
-    ),
-    theta = c(
-      -92, -92, -74, -50, -60, -75, -92, -92, -72, -50,
-      -32, -23, -46, -69, -92, -92, -72, -50, -32, -50,
-      -60, -75, -92, -115, -92, -74, -92, 115, 92, 69,
-      46, 23, 92, 92, 92, 74, 69, 46, 50, 60,
-      75, 92, 92, 72, 50, 32, 23, 0, 23, 46,
-      69, 92, 92, 72, 50, 32, 50, 60, 75, 92,
-      115, 92, 74, 92
-    ),
-    phi = c(
-      -72, -54, -65, -68, -51, -41, -36, -18, -21, -28,
-      -45, 0, 0, 0, 0, 18, 21, 28, 45, 68,
-      51, 41, 36, 36, 54, 65, 72, -90, -90, -90,
-      -90, -90, 90, 72, 54, 65, 90, 90, 68, 51,
-      41, 36, 18, 21, 28, 45, 90, 0, 0, 0,
-      0, 0, -18, -21, -28, -45, -68, -51, -41, -36,
-      -36, -54, -65, -72
-    ),
-    stringsAsFactors = FALSE
-  )
+  layout_table <- .plot_layout_table(if (is.null(layout)) "biosemi64" else layout)
+  layout_label <- if (is.character(layout)) layout else "Custom montage"
+  electrode_coords_spherical <- layout_table[, c("electrode", "theta", "phi")]
   
   # ========================================================================
   # CONVERT SPHERICAL TO CARTESIAN COORDINATES
   # ========================================================================
-  
-  # With a layout, the electrodes and their angles come from the layout
-  # instead of the BioSemi 64 table above.
-  if (!is.null(layout)) {
-    layout_table <- .plot_layout_table(layout)
-    layout_label <- if (is.character(layout)) layout else "Custom montage"
-    electrode_coords_spherical <- layout_table[, c("electrode", "theta", "phi")]
-  }
   
   # Convert degrees to radians
   deg_to_rad <- function(deg) {
@@ -1910,34 +1799,6 @@ plot_electrode_3d_spherical <- function(channels = NULL,
   }
   
   # ========================================================================
-  # BIOSEMI A/B TO STANDARD MAPPING
-  # ========================================================================
-  
-  biosemi_mapping <- data.frame(
-    biosemi = c(
-      "A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9", "A10",
-      "A11", "A12", "A13", "A14", "A15", "A16", "A17", "A18", "A19", "A20",
-      "A21", "A22", "A23", "A24", "A25", "A26", "A27", "A28", "A29", "A30",
-      "A31", "A32",
-      "B1", "B2", "B3", "B4", "B5", "B6", "B7", "B8", "B9", "B10",
-      "B11", "B12", "B13", "B14", "B15", "B16", "B17", "B18", "B19", "B20",
-      "B21", "B22", "B23", "B24", "B25", "B26", "B27", "B28", "B29", "B30",
-      "B31", "B32"
-    ),
-    standard = c(
-      "Fp1", "AF7", "AF3", "F1", "F3", "F5", "F7", "FT7", "FC5", "FC3",
-      "FC1", "C1", "C3", "C5", "T7", "TP7", "CP5", "CP3", "CP1", "P1",
-      "P3", "P5", "P7", "P9", "PO7", "PO3", "O1", "Iz", "Oz", "POz",
-      "Pz", "CPz",
-      "Fpz", "Fp2", "AF8", "AF4", "AFz", "Fz", "F2", "F4", "F6", "F8",
-      "FT8", "FC6", "FC4", "FC2", "FCz", "Cz", "C2", "C4", "C6", "T8",
-      "TP8", "CP6", "CP4", "CP2", "P2", "P4", "P6", "P8", "P10", "PO8",
-      "PO4", "O2"
-    ),
-    stringsAsFactors = FALSE
-  )
-  
-  # ========================================================================
   # DETERMINE WHICH CHANNELS TO PLOT
   # ========================================================================
   
@@ -1954,18 +1815,10 @@ plot_electrode_3d_spherical <- function(channels = NULL,
     stringsAsFactors = FALSE
   )
   
-  if (is.null(layout)) {
-    for (i in 1:nrow(plot_data)) {
-      ch <- plot_data$original_name[i]
-      if (ch %in% biosemi_mapping$biosemi) {
-        plot_data$standard_name[i] <- biosemi_mapping$standard[biosemi_mapping$biosemi == ch]
-      }
-    }
-  } else {
-    # A layout has its own names and second names (old names such as T3, or
-    # BioSemi sockets), found in any letter case.
-    plot_data$standard_name <- .match_layout_names(channels_to_plot, layout_table)
-  }
+  # The layout's own names and second names, found in any letter case: for the
+  # 64 BioSemi electrodes the socket names A1 to B32, for the other layouts
+  # also old names such as T3.
+  plot_data$standard_name <- .match_layout_names(channels_to_plot, layout_table)
   
   # Merge with coordinates
   plot_data <- merge(plot_data, electrode_coords_spherical, 

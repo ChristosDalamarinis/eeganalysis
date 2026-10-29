@@ -13,7 +13,8 @@ create_montage(channels = NULL, template = "biosemi64")
 \item{template}{Character string naming the layout: one of
 \code{"biosemi16"}, \code{"biosemi32"}, \code{"biosemi64"} (the
 default), \code{"biosemi128"}, \code{"biosemi160"} or
-\code{"biosemi256"} (the BioSemi caps with that many electrodes), or
+\code{"biosemi256"} (the BioSemi caps with that many electrodes),
+\code{"standard_1020"} (the original 10-20 system, 19 electrodes),
 \code{"standard_1010"} (the standard 10-10 electrode system, 72
 electrodes), or \code{"standard_1005"} (the 10-05 system, 335
 electrodes).}
@@ -25,8 +26,8 @@ An object of class \code{'montage'}. See \code{new_montage}.
 Builds a \code{montage} object giving scalp positions (Cartesian
 x/y/z and spherical theta/phi/radius) for a set of channel names, taken
 from one of the package's built-in layouts: the BioSemi caps, or the
-standard 10-10 or 10-05 electrode system. Pick the layout that matches the
-cap the data was recorded with.
+standard 10-20, 10-10 or 10-05 electrode system. Pick the layout that
+matches the cap the data was recorded with.
 }
 \details{
 Channel names are matched case-insensitively. The 16-, 32- and
@@ -69,6 +70,18 @@ positions are worked out from the same paper, and every electrode of
 mastoid and ear electrodes (\code{"M1"}, \code{"M2"}, \code{"A1"},
 \code{"A2"}) have no rule and are not part of it.
 
+The \code{"standard_1020"} layout is the original international 10-20
+system with its 19 scalp electrodes: Fp1, Fp2, F7, F3, Fz, F4, F8, T7, C3,
+Cz, C4, T8, P7, P3, Pz, P4, P8, O1 and O2. The 10-10 system keeps their
+places, so each of them is at exactly the same position as in
+\code{"standard_1010"} and \code{"standard_1005"}. Fpz and Oz, which the
+original system does not have, and the two ear electrodes (\code{"A1"},
+\code{"A2"}) are not part of it.
+
+In the original 10-20 system T7, T8, P7 and P8 were called T3, T4, T5 and
+T6. The three standard layouts accept the old names as well: a channel
+called \code{"T3"} gets the position of \code{"T7"} and keeps its name.
+
 Every layout is on a sphere of radius 87.54 mm, with the nasion, the inion
 and the preauricular points 115 degrees from the vertex, so all layouts
 share one scale.
@@ -94,6 +107,9 @@ naming convention a dataset uses.
 
   # A 32-channel recording whose channels are named by BioSemi socket
   m <- create_montage(c("A1", "A2", "A3"), template = "biosemi32")
+
+  # The original 10-20 system; the old names T3 to T6 are accepted too
+  m <- create_montage(c("Fp1", "T3", "Cz", "T4"), template = "standard_1020")
 
   # The standard 10-10 system, for any cap that uses its names
   m <- create_montage(template = "standard_1010")

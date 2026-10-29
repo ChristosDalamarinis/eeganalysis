@@ -2,7 +2,7 @@
 #          Standard electrode systems, built from the rules that define them
 # ============================================================================
 #
-# The 10-10 and 10-05 systems are defined by rules, not by a table of
+# The 10-20, 10-10 and 10-05 systems are defined by rules, not by a table of
 # coordinates. The rules are described in Oostenveld R, Praamstra P (2001),
 # "The five percent electrode system for high-resolution EEG and ERP
 # measurements", Clinical Neurophysiology 112:713-719 (Sections 2.1 and 2.2).
@@ -86,10 +86,37 @@
 # every position of standard_1010 at the same place. The landmark Nz, the
 # mastoid electrodes (M1, M2) and the ear electrodes (A1, A2) have no rule and
 # are not part of it.
+#
+# The 10-20 system (standard_1020) is the original international system and
+# the smallest of the three. The 10-10 system was built to keep its places, so
+# its 19 scalp electrodes (Fp1, Fp2, F7, F3, Fz, F4, F8, T7, C3, Cz, C4, T8,
+# P7, P3, Pz, P4, P8, O1 and O2) are electrodes of the grid too, at exactly
+# the same places as in the other two layouts. Fpz and Oz are not part of the
+# original system, and neither are its two ear electrodes (A1, A2), which are
+# not scalp positions.
+#
+# Old names. T7, T8, P7 and P8 were called T3, T4, T5 and T6 in the original
+# 10-20 system. All three layouts accept the old names as well: the table
+# gives them as the alias of the electrode, and create_montage() looks a name
+# up by its alias when it has no electrode of that name.
 
 # Names of the layouts built here.
 .standard_templates <- function() {
-  c("standard_1010", "standard_1005")
+  c("standard_1020", "standard_1010", "standard_1005")
+}
+
+# The 19 electrodes of standard_1020, front to back and left to right.
+.standard_1020_names <- function() {
+  c("Fp1", "Fp2",
+    "F7", "F3", "Fz", "F4", "F8",
+    "T7", "C3", "Cz", "C4", "T8",
+    "P7", "P3", "Pz", "P4", "P8",
+    "O1", "O2")
+}
+
+# The old names of four electrodes, by their present names.
+.standard_old_names <- function() {
+  c(T7 = "T3", T8 = "T4", P7 = "T5", P8 = "T6")
 }
 
 # The 72 electrodes of standard_1010, front to back and left to right.
@@ -237,9 +264,11 @@
 
 # One row per electrode for a layout built here: the same columns as the
 # tables of the BioSemi layouts (see .montage_template_table()). The alias is
-# always NA: these layouts have one name per electrode.
+# the old name of T7, T8, P7 and P8 (T3, T4, T5, T6) and NA for every other
+# electrode, which has one name only.
 .standard_template_table <- function(template) {
   names_in_layout <- switch(template,
+                            standard_1020 = .standard_1020_names(),
                             standard_1010 = .standard_1010_names(),
                             standard_1005 = .standard_1005_names())
   points <- .standard_points()[names_in_layout]
@@ -252,7 +281,7 @@
 
   data.frame(
     name   = names_in_layout,
-    alias  = NA_character_,
+    alias  = unname(.standard_old_names()[names_in_layout]),
     x      = clean(xyz[, 1]),
     y      = clean(xyz[, 2]),
     z      = clean(xyz[, 3]),

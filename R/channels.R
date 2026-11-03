@@ -37,8 +37,6 @@
 #   the order is: use the eye channels first (find_bads_eog(),
 #   fit_eog_regression()), drop them afterwards.
 #
-# A longer write-up is in notes/channels-build-plan.md.
-#
 # Author: Christos Dalamarinis
 # Date: Nov - 2026
 # ============================================================================

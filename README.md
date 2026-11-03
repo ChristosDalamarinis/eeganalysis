@@ -33,6 +33,7 @@ Version 0.0.0.9000 — under active development. Currently reads BioSemi `.bdf` 
 |------------------------|------------------------|------------------------|
 | Import BioSemi `.bdf` | `read_bdf_native()` | ✅ |
 | Channel inspection & type assignment | `inspect_biosemi_file()`, `detect_external_channels()`, `set_channel_types()` | ✅ |
+| Cutting and joining recordings (choose, drop, rename, add and combine channels; trim the start and end; join runs) | `pick_channels()`, `pick_types()`, `drop_channels()`, `rename_channels()`, `add_channels()`, `combine_channels()`, `eeg_crop()`, `eeg_concatenate()` | ✅ |
 | Downsampling / Filtering (FIR or Butterworth IIR bandpass, highpass, lowpass and notch; zero-phase or causal; spectrum-fit removal of line noise) | `downsample()`, `eeg_bandpass()`, `eeg_notch()` | ✅ |
 | Filtering plain numbers (a row or a matrix that is not in an `eeg` object; the same filters as `eeg_bandpass()`) | `filter_data()` | ✅ |
 | Looking at a filter (impulse response, magnitude in dB and group delay; FIR or IIR, zero-phase or causal) | `plot_filter()` | ✅ |
@@ -154,6 +155,16 @@ eeganalysis
 │   ├── channel_types.R                      ← Channel role assignment
 │   │   └── set_channel_types()              ← Set eeg/eog/ecg/emg/.../status type per channel
 │   │
+│   ├── channels.R                           ← Cutting a recording up and joining it: choose, drop, rename, add, combine channels; crop; join
+│   │   ├── pick_channels()                  ← Keep the channels you name
+│   │   ├── pick_types()                     ← Keep the channels of a kind (eeg, eog, ...)
+│   │   ├── drop_channels()                  ← Remove the channels you name
+│   │   ├── rename_channels()                ← Change channel names
+│   │   ├── add_channels()                   ← Append the channels of another eeg object
+│   │   ├── combine_channels()               ← Merge groups of channels into one channel each
+│   │   ├── eeg_crop()                       ← Cut time off the start and the end
+│   │   └── eeg_concatenate()                ← Join recordings one after the other
+│   │
 │   ├── downsample.R                         ← Smart downsampling
 │   │   └── downsample()                     ← Downsample with anti-aliasing filter
 │   │
@@ -258,7 +269,7 @@ eeganalysis
 │   │
 │   └── imports.R                            ← Centralized @importFrom declarations
 │
-├── man/                                     ← Auto-generated help files (181, one per exported/internal function)
+├── man/                                     ← Auto-generated help files (197, one per exported/internal function)
 │   ├── new_eeg.Rd
 │   ├── read_bdf_native.Rd
 │   ├── find_bad_channels.Rd
@@ -267,7 +278,7 @@ eeganalysis
 │   ├── apply_ica.Rd
 │   └── ...Rd                                ← Remaining help files
 │
-├── tests/testthat/                          ← Unit tests (testthat, one file per module, 26 total)
+├── tests/testthat/                          ← Unit tests (testthat, one file per module, 28 total)
 │   ├── test-read_bdf_native.R
 │   ├── test-ica1.R
 │   ├── test-bad_channels.R

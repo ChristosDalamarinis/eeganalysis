@@ -34,6 +34,7 @@ Version 0.0.0.9000 — under active development. Currently reads BioSemi `.bdf` 
 | Import BioSemi `.bdf` | `read_bdf_native()` | ✅ |
 | Channel inspection & type assignment | `inspect_biosemi_file()`, `detect_external_channels()`, `set_channel_types()` | ✅ |
 | Cutting and joining recordings (choose, drop, rename, add and combine channels; trim the start and end; join runs) | `pick_channels()`, `pick_types()`, `drop_channels()`, `rename_channels()`, `add_channels()`, `combine_channels()`, `eeg_crop()`, `eeg_concatenate()` | ✅ |
+| Stimulation-artifact removal (replace the few milliseconds after each stimulator pulse or shock with a straight line, zeros or a baseline average; continuous and epoched data) | `fix_stim_artifact()` | ✅ |
 | Downsampling / Filtering (FIR or Butterworth IIR bandpass, highpass, lowpass and notch; zero-phase or causal; spectrum-fit removal of line noise) | `downsample()`, `eeg_bandpass()`, `eeg_notch()` | ✅ |
 | Filtering plain numbers (a row or a matrix that is not in an `eeg` object; the same filters as `eeg_bandpass()`) | `filter_data()` | ✅ |
 | Looking at a filter (impulse response, magnitude in dB and group delay; FIR or IIR, zero-phase or causal) | `plot_filter()` | ✅ |
@@ -165,6 +166,9 @@ eeganalysis
 │   │   ├── eeg_crop()                       ← Cut time off the start and the end
 │   │   └── eeg_concatenate()                ← Join recordings one after the other
 │   │
+│   ├── stim_artifact.R                      ← Stimulation-artifact removal (magnetic pulses, electrical shocks)
+│   │   └── fix_stim_artifact()              ← Replace the short spike after each stimulation event: straight line, zeros or a baseline average
+│   │
 │   ├── downsample.R                         ← Smart downsampling
 │   │   └── downsample()                     ← Downsample with anti-aliasing filter
 │   │
@@ -269,7 +273,7 @@ eeganalysis
 │   │
 │   └── imports.R                            ← Centralized @importFrom declarations
 │
-├── man/                                     ← Auto-generated help files (197, one per exported/internal function)
+├── man/                                     ← Auto-generated help files (201, one per exported/internal function)
 │   ├── new_eeg.Rd
 │   ├── read_bdf_native.Rd
 │   ├── find_bad_channels.Rd
@@ -278,7 +282,7 @@ eeganalysis
 │   ├── apply_ica.Rd
 │   └── ...Rd                                ← Remaining help files
 │
-├── tests/testthat/                          ← Unit tests (testthat, one file per module, 28 total)
+├── tests/testthat/                          ← Unit tests (testthat, one file per module, 29 total)
 │   ├── test-read_bdf_native.R
 │   ├── test-ica1.R
 │   ├── test-bad_channels.R

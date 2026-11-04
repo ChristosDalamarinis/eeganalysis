@@ -32,6 +32,7 @@ Version 0.0.0.9000 — under active development. Currently reads BioSemi `.bdf` 
 | Stage | Function(s) | Status |
 |------------------------|------------------------|------------------------|
 | Import BioSemi `.bdf` | `read_bdf_native()` | ✅ |
+| Adding events by hand (times of a stimulation, a cue or a button press from a log, or a regular schedule for resting-state windows, when the recording has no trigger for them) | `add_events()` | ✅ |
 | Channel inspection & type assignment | `inspect_biosemi_file()`, `detect_external_channels()`, `set_channel_types()` | ✅ |
 | Cutting and joining recordings (choose, drop, rename, add and combine channels; trim the start and end; join runs) | `pick_channels()`, `pick_types()`, `drop_channels()`, `rename_channels()`, `add_channels()`, `combine_channels()`, `eeg_crop()`, `eeg_concatenate()` | ✅ |
 | Stimulation-artifact removal (replace the few milliseconds after each stimulator pulse or shock with a straight line, zeros or a baseline average; continuous and epoched data) | `fix_stim_artifact()` | ✅ |
@@ -140,6 +141,9 @@ eeganalysis
 │   ├── label_bdf_events.R                   ← Event labeling
 │   │   ├── label_bdf_events()               ← Attach human-readable labels to trigger codes
 │   │   └── apply_trigger_labels()           ← Apply a label scheme to events
+│   │
+│   ├── events.R                             ← Writing events by hand
+│   │   └── add_events()                     ← Add events (a time and a code each) when the recording has no trigger for them
 │   │
 │   ├── channel_info2.R                      ← Electrode database & channel inspection
 │   │   ├── get_electrode_database()         ← Access 64-ch BioSemi electrode database
@@ -273,7 +277,7 @@ eeganalysis
 │   │
 │   └── imports.R                            ← Centralized @importFrom declarations
 │
-├── man/                                     ← Auto-generated help files (201, one per exported/internal function)
+├── man/                                     ← Auto-generated help files (203, one per exported/internal function)
 │   ├── new_eeg.Rd
 │   ├── read_bdf_native.Rd
 │   ├── find_bad_channels.Rd
@@ -282,7 +286,7 @@ eeganalysis
 │   ├── apply_ica.Rd
 │   └── ...Rd                                ← Remaining help files
 │
-├── tests/testthat/                          ← Unit tests (testthat, one file per module, 29 total)
+├── tests/testthat/                          ← Unit tests (testthat, one file per module, 30 total)
 │   ├── test-read_bdf_native.R
 │   ├── test-ica1.R
 │   ├── test-bad_channels.R

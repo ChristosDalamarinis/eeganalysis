@@ -3,9 +3,10 @@
 # ============================================================================
 #
 # Functions tested:
-#   add_events()   - write events (a time and a code each) into the events
-#                    table of a continuous recording
+#   add_events()    - write events (a time and a code each) into the events
+#                     table of a continuous recording
 #   (and the helper behind it: .events_existing())
+#   remove_events() - take events out of the events table by their code
 #
 # THE TEST RECORDING
 #   ev_eeg(): 3 channels (Fz, Cz, Pz, all eeg), 100 Hz and 1000 samples (10 s)
@@ -23,6 +24,13 @@
 #   6. Two events on one sample
 #   7. Wrong input
 #   8. Used by the other steps (epoching, stimulation artifact, crop, downsample)
+#   remove_events():
+#   9. Which events go, and what is left
+#  10. The code rule (lower 16 bits) and codes stored as text
+#  11. Codes that are not in the table
+#  12. Nothing but rows is taken out; nothing else changes
+#  13. An empty result, no events, wrong input
+#  14. Used by the other steps (add_events, epoching)
 #
 # Author: Christos Dalamarinis
 # Date: Nov - 2026
@@ -274,6 +282,7 @@ test_that("two new events that round to the same sample are refused", {
 test_that("a new event on a sample that already has an event is refused (unless replace = TRUE)", {
   x <- ev_eeg(events = ev_table(c(101L, 501L), c(1L, 2L)))
   expect_error(add_events(x, 1, 9), "an event already sits at sample 101 \\(time 1 s\\)")
+  expect_error(add_events(x, 1, 9), "Remove it first with remove_events\\(\\) or use replace = TRUE")
   expect_error(add_events(x, c(3, 5), 9), "sample 501 \\(time 5 s\\)")
   expect_equal(add_events(x, 1.01, 9)$events$onset, c(101L, 102L, 501L))
   expect_equal(add_events(x, 1, 9, replace = TRUE)$events$type, 9L)
@@ -363,4 +372,288 @@ test_that("added events move with eeg_crop() and downsample()", {
 test_that("the object with added events prints", {
   out <- add_events(ev_eeg(), times = c(2, 4), code = 9)
   expect_output(print(out), "Total events")
+})
+
+
+# ============================================================================
+#                              remove_events()
+# ============================================================================
+#
+# The table used in most blocks below: five events, 100 Hz, so
+#   onset      101  201  301  401  501
+#   onset_time   1    2    3    4    5
+#   code         1    2    1    3    2
+
+rm_eeg <- function() {
+  ev_eeg(events = ev_table(c(101L, 201L, 301L, 401L, 501L), c(1L, 2L, 1L, 3L, 2L)))
+}
+
+
+# ============================================================================
+#   9. WHICH EVENTS GO, AND WHAT IS LEFT
+# ============================================================================
+
+test_that("removing one code leaves the other events, in the same order, with the right numbers", {
+  out <- remove_events(rm_eeg(), events = 1)
+  ev  <- out$events
+
+  expect_equal(ev$onset, c(201L, 401L, 501L))
+  expect_equal(ev$onset_time, c(2, 4, 5))
+  expect_equal(ev$type, c(2L, 3L, 2L))
+  expect_equal(ev$description, c("Trigger: 2", "Trigger: 3", "Trigger: 2"))
+  expect_equal(names(ev), c("onset", "onset_time", "type", "description"))
+  expect_equal(rownames(ev), as.character(1:3))                  # row names start again at 1
+})
+
+test_that("several codes at once, in any order, repeated codes counted once", {
+  x <- rm_eeg()
+  expect_equal(remove_events(x, c(2, 1))$events$onset, 401L)
+  expect_equal(remove_events(x, c(1, 2))$events$onset, 401L)
+  expect_equal(remove_events(x, c(3, 1))$events$onset, c(201L, 501L))
+  expect_equal(remove_events(x, 3)$events$onset, c(101L, 201L, 301L, 501L))   # the order of the rest is kept
+  expect_equal(remove_events(x, c(1, 1, 1))$events$onset, c(201L, 401L, 501L))
+  expect_match(remove_events(x, c(1, 1, 1))$preprocessing_history[[1]], "^Events removed: 2 event")   # not 6
+})
+
+test_that("the history line names the number of events and the codes that were removed", {
+  x <- rm_eeg()
+  expect_equal(remove_events(x, 1)$preprocessing_history[[1]], "Events removed: 2 event(s), code(s) 1")
+  expect_equal(remove_events(x, c(2, 1))$preprocessing_history[[1]], "Events removed: 4 event(s), code(s) 1, 2")
+  expect_equal(remove_events(x, 3)$preprocessing_history[[1]], "Events removed: 1 event(s), code(s) 3")
+
+  # the codes are sorted, not listed in the order the events appear
+  y <- ev_eeg(events = ev_table(c(101L, 201L, 301L), c(2L, 1L, 2L)))
+  expect_equal(remove_events(y, c(2, 1))$preprocessing_history[[1]], "Events removed: 3 event(s), code(s) 1, 2")
+})
+
+
+# ============================================================================
+#  10. THE CODE RULE (LOWER 16 BITS) AND CODES STORED AS TEXT
+# ============================================================================
+
+test_that("a code is the lower 16 bits of type; the stored type is not changed; system codes never match", {
+  # 65545 = 65536 + 9 (a system bit plus code 9), 65536 = system bit only
+  x   <- ev_eeg(events = ev_table(c(101L, 201L, 301L, 401L), c(65545L, 9L, 65536L, 3L)))
+  out <- remove_events(x, 9)
+  expect_equal(out$events$onset, c(301L, 401L))
+  expect_equal(out$events$type, c(65536L, 3L))                   # kept as stored, not cut to 16 bits
+  expect_equal(out$preprocessing_history[[1]], "Events removed: 2 event(s), code(s) 9")
+
+  expect_equal(remove_events(x, 3)$events$onset, c(101L, 201L, 301L))
+  expect_error(remove_events(x, 65536), "whole numbers from 1 to 65535")
+
+  only_system <- ev_eeg(events = ev_table(c(101L, 201L), c(65536L, 131072L)))
+  expect_error(remove_events(only_system, 1), "no event has the code\\(s\\) 1")
+})
+
+test_that("codes stored as text that are numbers match, and stay text; other text never matches", {
+  ev <- ev_table(c(101L, 201L, 301L, 401L, 501L), c(1L, 2L, 1L, 3L, 2L))
+  ev$type <- as.character(ev$type)
+  out <- remove_events(ev_eeg(events = ev), 1)
+  expect_equal(out$events$type, c("2", "3", "2"))
+  expect_type(out$events$type, "character")
+
+  ev2 <- ev_table(c(101L, 201L, 301L), c(1L, 5L, 2L))
+  ev2$type <- c("1", "go", "2")
+  expect_warning(out2 <- remove_events(ev_eeg(events = ev2), c(1, 2)), NA)    # no "NAs introduced" warning
+  expect_equal(out2$events$type, "go")                           # text that is not a number is left alone
+  expect_equal(out2$events$onset, 201L)
+})
+
+test_that("codes above 255 are matched in full", {
+  x <- ev_eeg(events = ev_table(c(101L, 201L, 301L), c(256L, 1L, 513L)))
+  expect_equal(remove_events(x, 256)$events$onset, c(201L, 301L))
+  expect_equal(remove_events(x, 513)$events$onset, c(101L, 201L))
+  expect_error(remove_events(x, 2), "no event has the code\\(s\\) 2")                # 513 is not 2, 256 is not 0
+  y <- ev_eeg(events = ev_table(c(101L, 201L), c(65535L, 7L)))
+  expect_equal(remove_events(y, 65535)$events$onset, 201L)
+})
+
+
+# ============================================================================
+#  11. CODES THAT ARE NOT IN THE TABLE
+# ============================================================================
+
+test_that("no given code found: an error that names them", {
+  x <- rm_eeg()
+  expect_error(remove_events(x, 7), "no event has the code\\(s\\) 7 \\(inspect_triggers\\(\\) lists the codes")
+  expect_error(remove_events(x, c(7, 8)), "code\\(s\\) 7, 8")
+  expect_error(remove_events(x, c(7, 7)), "code\\(s\\) 7 \\(inspect_triggers")        # a repeated code is named once
+})
+
+test_that("some codes found and some not: the found ones go, a warning names the others", {
+  x <- rm_eeg()
+  expect_warning(out <- remove_events(x, c(1, 7, 8)), "no event has the code\\(s\\) 7, 8; they are skipped")
+  expect_equal(out$events$onset, c(201L, 401L, 501L))
+  expect_equal(out$preprocessing_history[[1]], "Events removed: 2 event(s), code(s) 1")   # only what was found
+  expect_warning(remove_events(x, c(1, 2)), NA)                  # all found: no warning
+})
+
+
+# ============================================================================
+#  12. NOTHING BUT ROWS IS TAKEN OUT; NOTHING ELSE CHANGES
+# ============================================================================
+
+test_that("extra columns keep their values and kinds", {
+  ev <- ev_table(c(101L, 201L, 301L, 401L, 501L), c(1L, 2L, 1L, 3L, 2L))
+  ev$label <- c("a", "b", "c", "d", "e")
+  ev$score <- c(0.5, 1.5, 2.5, 3.5, 4.5)
+  ev$group <- factor(c("u", "v", "u", "w", "v"))
+  out <- remove_events(ev_eeg(events = ev), 1)
+
+  expect_equal(names(out$events), c("onset", "onset_time", "type", "description", "label", "score", "group"))
+  expect_equal(out$events$label, c("b", "d", "e"))
+  expect_equal(out$events$score, c(1.5, 3.5, 4.5))
+  expect_s3_class(out$events$group, "factor")
+  expect_equal(levels(out$events$group), c("u", "v", "w"))
+  expect_equal(as.character(out$events$group), c("v", "w", "v"))
+})
+
+test_that("no column is converted: the kinds of the table stay as they were", {
+  ev <- data.frame(onset = c(101, 501), onset_time = c(1L, 5L), type = c(1, 2),
+                   description = factor(c("a", "b")))
+  out <- remove_events(ev_eeg(events = ev), 1)
+  expect_type(out$events$onset, "double")
+  expect_type(out$events$onset_time, "integer")
+  expect_type(out$events$type, "double")
+  expect_s3_class(out$events$description, "factor")
+  expect_equal(out$events$onset, 501)
+})
+
+test_that("a table with only the type column stays a table", {
+  x <- ev_eeg()
+  x$events <- data.frame(type = c(1L, 2L, 1L))
+  out <- remove_events(x, 1)
+  expect_s3_class(out$events, "data.frame")
+  expect_equal(out$events$type, 2L)
+  expect_equal(names(out$events), "type")
+})
+
+test_that("only events and the history change; the input is untouched", {
+  ann <- data.frame(onset = 2, duration = 0.5, description = "BAD_x",
+                    channel = NA_character_, stringsAsFactors = FALSE)
+  x <- ev_eeg(events = ev_table(c(101L, 201L), c(1L, 2L)), bads = "Pz", annotations = ann,
+              montage = create_montage(c("Fz", "Cz", "Pz")),
+              metadata = list(subject = "S01"), reference = "Common Average")
+  x$preprocessing_history <- list("An earlier step")
+  copy <- x
+  out  <- remove_events(x, 2)
+
+  expect_identical(x, copy)
+  for (f in setdiff(names(x), c("events", "preprocessing_history"))) {
+    expect_identical(out[[f]], x[[f]], info = f)
+  }
+  expect_equal(length(out$preprocessing_history), 2L)
+  expect_equal(out$preprocessing_history[[1]], "An earlier step")
+  expect_equal(out$preprocessing_history[[2]], "Events removed: 1 event(s), code(s) 2")
+})
+
+
+# ============================================================================
+#  13. AN EMPTY RESULT, NO EVENTS, WRONG INPUT
+# ============================================================================
+
+test_that("removing every event leaves a table with no rows and the same columns, and add_events() can fill it", {
+  x    <- rm_eeg()
+  none <- remove_events(x, c(1, 2, 3))
+  expect_equal(nrow(none$events), 0L)
+  expect_equal(names(none$events), names(x$events))
+  expect_type(none$events$onset, "integer")
+  expect_type(none$events$onset_time, "double")
+  expect_type(none$events$type, "integer")
+  expect_type(none$events$description, "character")
+  expect_equal(none$preprocessing_history[[1]], "Events removed: 5 event(s), code(s) 1, 2, 3")
+
+  expect_error(remove_events(none, 1), "the recording has no events")
+
+  again <- add_events(none, times = 3, code = 9)
+  expect_equal(again$events$onset, 301L)
+  expect_type(again$events$type, "integer")
+  ep <- epoch_eeg(again, events = 9, tmin = -0.2, tmax = 0.5, baseline = NULL, verbose = FALSE)
+  expect_equal(dim(ep$data)[3], 1L)
+})
+
+test_that("a recording with no events is refused: a missing table, an empty table", {
+  x <- ev_eeg()
+  expect_error(remove_events(x, 1), "the recording has no events")      # the empty table new_eeg() makes
+  x$events <- NULL
+  expect_error(remove_events(x, 1), "the recording has no events")
+})
+
+test_that("an events table without a type column is refused", {
+  x <- ev_eeg()
+  x$events <- data.frame(onset = 101L, description = "a")
+  expect_error(remove_events(x, 1), "data frame with a 'type' column")
+  x$events <- "not a table"
+  expect_error(remove_events(x, 1), "data frame with a 'type' column")
+  x$events <- list(type = 1L)
+  expect_error(remove_events(x, 1), "data frame with a 'type' column")
+})
+
+test_that("'events' is checked", {
+  x <- rm_eeg()
+  for (bad in list(NA_real_, "a", 0, 65536, 1.5, numeric(0), Inf, -1, c(1, NA), TRUE, NULL)) {
+    expect_error(remove_events(x, bad), "whole numbers from 1 to 65535", info = deparse(bad))
+  }
+  expect_error(remove_events(x), "argument \"events\" is missing")
+  expect_equal(remove_events(x, 65535 - 65534)$events$onset, c(201L, 401L, 501L))      # 1 as a computed number
+  expect_equal(remove_events(x, 2L)$events$onset, c(101L, 301L, 401L))                 # integer codes work too
+})
+
+test_that("epochs and other objects are refused", {
+  rec <- add_events(ev_eeg(), times = c(3, 6), code = 9)
+  ep  <- epoch_eeg(rec, events = 9, tmin = -0.2, tmax = 0.5, baseline = NULL, verbose = FALSE)
+  expect_error(remove_events(ep, events = 9), "continuous 'eeg' objects only")
+  expect_error(remove_events(list(a = 1), events = 9), "object of class 'eeg'")
+})
+
+
+# ============================================================================
+#  14. USED BY THE OTHER STEPS
+# ============================================================================
+
+test_that("add_events() then remove_events() of the same code gives the original table back", {
+  x    <- ev_eeg(events = ev_table(c(101L, 501L), c(1L, 2L)))
+  back <- remove_events(add_events(x, times = c(2, 3), code = 9), 9)
+  expect_equal(back$events, x$events)
+})
+
+test_that("remove_events() makes room for add_events() where an old event sits", {
+  x <- ev_eeg(events = ev_table(551L, 5L))
+  expect_error(add_events(x, 5.5, 9), "already sits at sample 551")
+  y <- add_events(remove_events(x, 5), 5.5, 9)
+  expect_equal(y$events$onset, 551L)
+  expect_equal(y$events$type, 9L)
+})
+
+test_that("a junk code removed from the table gives no epochs for it", {
+  ev <- ev_table(c(201L, 301L, 401L, 501L, 601L, 701L), c(1L, 255L, 1L, 255L, 1L, 255L))
+  x  <- ev_eeg(events = ev)
+  before <- epoch_eeg(x, events = "all", tmin = 0, tmax = 0.5, baseline = NULL, verbose = FALSE)
+  after  <- epoch_eeg(remove_events(x, 255), events = "all", tmin = 0, tmax = 0.5, baseline = NULL, verbose = FALSE)
+  expect_equal(dim(before$data), c(3L, 51L, 6L))
+  expect_equal(dim(after$data), c(3L, 51L, 3L))
+  expect_equal(unname(after$data[1, , 2]), unname(x$data["Fz", 401:451]))     # the second code-1 event is at sample 401
+})
+
+test_that("fix_stim_artifact() repairs only the events that are left", {
+  spike <- c(0.36, 5000, 4000, 3000, 2000, 1500, 0.96)
+  d <- ev_data(2000L)
+  d["Fz", 1001:1007] <- spike
+  d["Fz", 1501:1507] <- spike
+  x <- ev_eeg(fs = 512, data = d, events = ev_table(c(1001L, 1501L), c(9L, 255L), fs = 512))
+
+  both <- fix_stim_artifact(x, events = "all")
+  expect_equal(unname(both$data["Fz", 1501:1507]),
+               c(0.36, 0.46, 0.56, 0.66, 0.76, 0.86, 0.96), tolerance = 1e-12)
+
+  fixed <- fix_stim_artifact(remove_events(x, 255), events = "all")
+  expect_equal(unname(fixed$data["Fz", 1001:1007]),
+               c(0.36, 0.46, 0.56, 0.66, 0.76, 0.86, 0.96), tolerance = 1e-12)
+  expect_equal(unname(fixed$data["Fz", 1501:1507]), spike)                      # no event any more: left as it was
+})
+
+test_that("an object with events removed prints, also when no event is left", {
+  expect_output(print(remove_events(rm_eeg(), 1)), "Total events")
+  expect_output(print(remove_events(rm_eeg(), c(1, 2, 3))), "Total events")
 })

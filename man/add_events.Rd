@@ -60,7 +60,8 @@ ms at 512 Hz). The sample must lie inside the recording.
 such as \code{label} is filled with \code{NA} for the new rows), unless you
 use \code{replace = TRUE}. The table is sorted by \code{onset}. Two events
 on the same sample are refused, because \code{\link{epoch_eeg}} would keep
-only the first of them.
+only the first of them. To make room for a new event, take the old one out
+first with \code{\link{remove_events}}, or use \code{replace = TRUE}.
 }
 \examples{
 \dontrun{
@@ -78,6 +79,7 @@ only the first of them.
 
 }
 \seealso{
-\code{\link{inspect_triggers}}, \code{\link{epoch_eeg}},
-\code{\link{fix_stim_artifact}}, \code{\link{new_eeg}}
+\code{\link{remove_events}}, \code{\link{inspect_triggers}},
+\code{\link{epoch_eeg}}, \code{\link{fix_stim_artifact}},
+\code{\link{new_eeg}}
 }

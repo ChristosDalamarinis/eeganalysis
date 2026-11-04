@@ -1,15 +1,17 @@
 # ============================================================================
-#                         ADD EVENTS BY HAND
-#          (write events into the events table of a recording)
+#                        ADD AND REMOVE EVENTS BY HAND
+#     (write events into, or take events out of, the events table of a
+#                              recording)
 # ============================================================================
 #
 # The events table (eeg$events) says "something happened at this sample". The
 # readers fill it from the trigger channel. If the experiment never sent a
 # trigger for something (the stimulation, a cue, a button press), or the
 # trigger was lost, there is no row for it, and every step that needs events
-# (epoch_eeg(), fix_stim_artifact(), ...) cannot see it. This file has ONE
-# exported function, add_events(), that writes such rows from times the user
-# gives.
+# (epoch_eeg(), fix_stim_artifact(), ...) cannot see it. This file has TWO
+# exported functions: add_events() writes such rows from times the user gives,
+# and remove_events() takes rows out again by their code (a junk trigger, a
+# test trigger, an event that is in the way of a new one).
 #
 # WHAT IT DOES AND WHAT IT DOES NOT
 #   It does not look at the data. It cannot see when something happened: it
@@ -34,6 +36,15 @@
 #   stores "type" as text. Adding a number to it the plain way would turn the
 #   whole column into text and break matching such as events = 9. The helper
 #   .events_existing() turns "type" into integers first.
+#
+# REMOVING
+#   remove_events() only takes rows out. It does not use .events_existing(),
+#   because that helper converts the columns and removing must not convert
+#   anything: the table keeps its columns, their classes and its order. An
+#   event goes when its code (the lower 16 bits of "type", the rule epoch_eeg()
+#   and fix_stim_artifact() use) is one of the codes given. It removes the row
+#   that SAYS "something happened", never the something itself (a stimulation
+#   spike stays in the signal).
 #
 # Author: Christos Dalamarinis
 # Date: Nov - 2026
@@ -124,7 +135,8 @@
 #' such as \code{label} is filled with \code{NA} for the new rows), unless you
 #' use \code{replace = TRUE}. The table is sorted by \code{onset}. Two events
 #' on the same sample are refused, because \code{\link{epoch_eeg}} would keep
-#' only the first of them.
+#' only the first of them. To make room for a new event, take the old one out
+#' first with \code{\link{remove_events}}, or use \code{replace = TRUE}.
 #'
 #' @param eeg An object of class \code{eeg} (continuous data). An
 #'   \code{eeg_epochs} object is refused: its events are fixed.
@@ -157,8 +169,9 @@
 #'   eeg <- add_events(eeg, times = c(10, 20), code = 1, replace = TRUE)
 #' }
 #'
-#' @seealso \code{\link{inspect_triggers}}, \code{\link{epoch_eeg}},
-#'   \code{\link{fix_stim_artifact}}, \code{\link{new_eeg}}
+#' @seealso \code{\link{remove_events}}, \code{\link{inspect_triggers}},
+#'   \code{\link{epoch_eeg}}, \code{\link{fix_stim_artifact}},
+#'   \code{\link{new_eeg}}
 #' @export
 add_events <- function(eeg, times, code, description = NULL, replace = FALSE) {
 
@@ -231,7 +244,7 @@ add_events <- function(eeg, times, code, description = NULL, replace = FALSE) {
     if (length(clash) > 0L) {
       stop("ERROR: an event already sits at sample ", onset[clash[1L]],
            " (time ", format((onset[clash[1L]] - 1) / fs), " s). Remove it ",
-           "first or use replace = TRUE.", call. = FALSE)
+           "first with remove_events() or use replace = TRUE.", call. = FALSE)
     }
   }
 
@@ -265,6 +278,121 @@ add_events <- function(eeg, times, code, description = NULL, replace = FALSE) {
 
   out <- eeg
   out$events <- events
+  out$preprocessing_history <- c(out$preprocessing_history, list(note))
+  out
+}
+
+
+# ----------------------------------------------------------------------------
+# remove_events()
+# ----------------------------------------------------------------------------
+#' Remove Events from a Recording by Code
+#'
+#' Takes every event with one of the given codes out of the events table of a
+#' continuous recording. Use it for a junk or test trigger that
+#' \code{\link{inspect_triggers}} shows, for a wrong code, or to make room for
+#' a new event of \code{\link{add_events}} (which refuses a second event on a
+#' sample that already has one).
+#'
+#' \strong{Which events go.} An event goes when its code is one of the codes in
+#' \code{events}. The code is the lower 16 bits of \code{type}, the rule
+#' \code{\link{epoch_eeg}} and \code{\link{fix_stim_artifact}} use, so the code
+#' you see in \code{\link{inspect_triggers}} is the code you remove. System
+#' triggers (lower 16 bits = 0) can never match, so they are never touched.
+#'
+#' \strong{Only rows are taken out.} The table keeps all its columns (also
+#' \code{label}), in the same order and of the same kind (\code{type} is not
+#' converted); the remaining events keep their order; the row names start again
+#' at 1. You can remove every event (give all the codes): the table then has no
+#' rows but keeps its columns, and \code{\link{add_events}} can fill it again.
+#'
+#' \strong{Codes that are not in the table.} If none of the codes is found the
+#' function stops, which catches a typo. If some are found and some not, the
+#' found ones are removed and a warning names the others.
+#'
+#' \strong{It removes the row, not the data.} The function takes out the line
+#' that says "something happened at this sample". It does not touch the signal:
+#' for example a stimulation spike stays in the data, and
+#' \code{\link{fix_stim_artifact}} is what repairs it.
+#'
+#' \strong{One single event.} The function works by code, so it removes every
+#' event with that code. To take out one event only, subset the table by hand,
+#' for example \code{eeg$events <- eeg$events[eeg$events$onset != 551, ]} (that
+#' leaves no line in the history).
+#'
+#' @param eeg An object of class \code{eeg} (continuous data). An
+#'   \code{eeg_epochs} object is refused: its events are fixed.
+#' @param events The codes to remove: whole numbers from 1 to 65535, one or
+#'   more. There is no default and no \code{"all"}, so the table cannot be
+#'   emptied by accident.
+#'
+#' @return A new \code{eeg} object. Only \code{events} changes, and one line
+#'   is added to \code{preprocessing_history}. The input is left untouched.
+#'
+#' @examples
+#' \dontrun{
+#'   inspect_triggers(eeg)                     # shows the codes, say 1, 2, 255
+#'   eeg <- remove_events(eeg, events = 255)   # a test trigger: take it out
+#'
+#'   # several codes at once
+#'   eeg <- remove_events(eeg, events = c(2, 255))
+#'
+#'   # make room for a new event where an old one sits
+#'   eeg <- remove_events(eeg, events = 5)
+#'   eeg <- add_events(eeg, times = 5.5, code = 9)
+#' }
+#'
+#' @seealso \code{\link{add_events}}, \code{\link{inspect_triggers}},
+#'   \code{\link{epoch_eeg}}, \code{\link{fix_stim_artifact}}
+#' @export
+remove_events <- function(eeg, events) {
+
+  # ========== INPUT VALIDATION ==========
+  .channels_kind(eeg, "remove_events", epochs_ok = FALSE)
+
+  if (!is.numeric(events) || length(events) < 1L || !all(is.finite(events)) ||
+      any(events != round(events)) || any(events < 1) || any(events > 65535)) {
+    stop("ERROR: 'events' must be whole numbers from 1 to 65535 (the codes ",
+         "to remove).", call. = FALSE)
+  }
+  events <- unique(as.integer(events))
+
+  ev <- eeg$events
+  if (is.null(ev) || (is.data.frame(ev) && nrow(ev) == 0L)) {
+    stop("ERROR: the recording has no events.", call. = FALSE)
+  }
+  if (!is.data.frame(ev) || !("type" %in% names(ev))) {
+    stop("ERROR: eeg$events must be a data frame with a 'type' column.",
+         call. = FALSE)
+  }
+
+  # ========== WHICH EVENTS GO ==========
+  # the code is the lower 16 bits of "type"; text that is not a number gives
+  # NA and never matches
+  code <- suppressWarnings(bitwAnd(as.integer(ev$type), 65535L))
+  go   <- !is.na(code) & code %in% events
+  absent <- setdiff(events, code[!is.na(code)])
+  if (!any(go)) {
+    stop("ERROR: no event has the code(s) ", paste(events, collapse = ", "),
+         " (inspect_triggers() lists the codes in the recording).",
+         call. = FALSE)
+  }
+  if (length(absent) > 0L) {
+    warning("no event has the code(s) ", paste(absent, collapse = ", "),
+            "; they are skipped.", call. = FALSE)
+  }
+
+  # ========== THE NEW TABLE ==========
+  # only rows are taken out: columns, their kinds and the order stay as they are
+  kept <- ev[!go, , drop = FALSE]
+  rownames(kept) <- NULL
+
+  # ========== RETURN ==========
+  note <- paste0("Events removed: ", sum(go), " event(s), code(s) ",
+                 paste(sort(unique(code[go])), collapse = ", "))
+
+  out <- eeg
+  out$events <- kept
   out$preprocessing_history <- c(out$preprocessing_history, list(note))
   out
 }

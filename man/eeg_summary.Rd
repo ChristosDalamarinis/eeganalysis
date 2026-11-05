@@ -8,6 +8,7 @@ eeg_summary(
   eeg_obj,
   flag_flat_threshold = 0.5,
   flag_amplitude_threshold = 500,
+  amplitude_window = 2,
   flag_outlier_sd_multiplier = 3,
   show_exg = TRUE
 )
@@ -18,9 +19,20 @@ eeg_summary(
 \item{flag_flat_threshold}{Numeric. Channels with std below this value
 (in uV) are flagged as potentially flat / disconnected. Default: 0.5.}
 
-\item{flag_amplitude_threshold}{Numeric. Channels with any absolute
-amplitude exceeding this value (in uV) are flagged as potentially
-noisy or saturated. Default: 500.}
+\item{flag_amplitude_threshold}{Numeric. Channels whose absolute
+amplitude, measured from the channel's own level (see
+\code{amplitude_window}), ever exceeds this value (in uV) are flagged as
+potentially noisy or saturated. Default: 500.}
+
+\item{amplitude_window}{Numeric. Length in seconds of the stretches in
+which each channel's own level (its average) is measured and subtracted
+before the amplitude check looks at it. Raw BioSemi data keeps a
+constant offset on every electrode (often tens of mV) that slowly
+drifts, and without this step every channel would look far above
+\code{flag_amplitude_threshold}. The level is measured again in every
+stretch because it creeps; a last stretch shorter than the window joins
+the stretch before it. \code{Inf} measures one level for the whole
+recording. Must be at least 2 samples long. Default: 2.}
 
 \item{flag_outlier_sd_multiplier}{Numeric. A channel whose std exceeds
 this multiple of the median std across all EEG channels is flagged

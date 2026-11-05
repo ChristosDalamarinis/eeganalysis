@@ -37,9 +37,20 @@
 #' @param flag_flat_threshold Numeric. Channels with std below this value
 #'   (in uV) are flagged as potentially flat / disconnected. Default: 0.5.
 #'
-#' @param flag_amplitude_threshold Numeric. Channels with any absolute
-#'   amplitude exceeding this value (in uV) are flagged as potentially
-#'   noisy or saturated. Default: 500.
+#' @param flag_amplitude_threshold Numeric. Channels whose absolute
+#'   amplitude, measured from the channel's own level (see
+#'   \code{amplitude_window}), ever exceeds this value (in uV) are flagged as
+#'   potentially noisy or saturated. Default: 500.
+#'
+#' @param amplitude_window Numeric. Length in seconds of the stretches in
+#'   which each channel's own level (its average) is measured and subtracted
+#'   before the amplitude check looks at it. Raw BioSemi data keeps a
+#'   constant offset on every electrode (often tens of mV) that slowly
+#'   drifts, and without this step every channel would look far above
+#'   \code{flag_amplitude_threshold}. The level is measured again in every
+#'   stretch because it creeps; a last stretch shorter than the window joins
+#'   the stretch before it. \code{Inf} measures one level for the whole
+#'   recording. Must be at least 2 samples long. Default: 2.
 #'
 #' @param flag_outlier_sd_multiplier Numeric. A channel whose std exceeds
 #'   this multiple of the median std across all EEG channels is flagged
@@ -88,6 +99,13 @@
 #' function writes them to \code{bads} instead of only printing them. The
 #' global LOF check also always runs.
 #'
+#' The amplitude check measures every channel from its own level, so it also
+#' works on raw data with large DC offsets (see \code{amplitude_window}). The
+#' neighbor-correlation and LOF checks use the data as it is: large offsets
+#' or a strong slow drift can disturb them, so for raw data a high-pass
+#' filter (for example 1 Hz, see \code{\link{eeg_bandpass}}) before this
+#' function gives the most reliable result.
+#'
 #' The neighbor-correlation check only runs if \code{eeg_obj$montage} is
 #' attached (see \code{\link{set_montage}}); if not, it is skipped with a
 #' message and the other three checks still run.
@@ -128,6 +146,7 @@
 find_bad_channels <- function(eeg_obj,
                                flag_flat_threshold         = 0.5,
                                flag_amplitude_threshold    = 500,
+                               amplitude_window            = 2,
                                flag_outlier_sd_multiplier  = 3,
                                k                           = 4,
                                correlation_threshold       = 0.45,
@@ -163,6 +182,7 @@ find_bad_channels <- function(eeg_obj,
     eeg_obj,
     flag_flat_threshold        = flag_flat_threshold,
     flag_amplitude_threshold   = flag_amplitude_threshold,
+    amplitude_window           = amplitude_window,
     flag_outlier_sd_multiplier = flag_outlier_sd_multiplier)
 
   # ========== CHECK 2+3: NEIGHBOR CORRELATION (MONTAGE-GATED) ==========
@@ -269,7 +289,16 @@ find_bad_channels <- function(eeg_obj,
 #' @param flag_flat_threshold Numeric, std (uV) below which a channel is
 #'   flagged as flat. Default: 0.5.
 #' @param flag_amplitude_threshold Numeric, peak absolute amplitude (uV)
-#'   above which a channel is flagged. Default: 500.
+#'   above which a channel is flagged. The amplitude is measured from the
+#'   channel's own level (see \code{amplitude_window}), not from zero.
+#'   Default: 500.
+#' @param amplitude_window Numeric, length in seconds of the stretches in
+#'   which each channel's own level (its average) is measured and subtracted
+#'   before the amplitude check. Needed for raw BioSemi data, whose
+#'   electrodes sit on constant offsets of tens of mV that also drift
+#'   slowly. The last stretch, if shorter than the window, joins the one
+#'   before it; \code{Inf} uses one level for the whole recording. Must be a
+#'   single number above 0 and at least 2 samples long. Default: 2.
 #' @param flag_outlier_sd_multiplier Numeric, multiple of the median EEG-
 #'   channel std above which a channel is flagged as an outlier. Default: 3.
 #'
@@ -281,7 +310,26 @@ find_bad_channels <- function(eeg_obj,
 flag_channel_quality <- function(eeg_obj,
                                   flag_flat_threshold        = 0.5,
                                   flag_amplitude_threshold   = 500,
+                                  amplitude_window           = 2,
                                   flag_outlier_sd_multiplier = 3) {
+
+  # The window for measuring each channel's own level (checked first, so a
+  # wrong value is reported even when no channel is eligible)
+  if (!is.numeric(amplitude_window) || length(amplitude_window) != 1L ||
+      is.na(amplitude_window) || amplitude_window <= 0) {
+    stop("ERROR: 'amplitude_window' must be a single number above 0 (the ",
+         "length in seconds of the stretches in which each channel's own ",
+         "level is measured), or Inf.", call. = FALSE)
+  }
+  window_samples <- if (is.infinite(amplitude_window)) {
+    ncol(eeg_obj$data)
+  } else {
+    round(amplitude_window * eeg_obj$sampling_rate)
+  }
+  if (window_samples < 2) {
+    stop("ERROR: 'amplitude_window' (", amplitude_window, " s) is shorter ",
+         "than 2 samples at ", eeg_obj$sampling_rate, " Hz.", call. = FALSE)
+  }
 
   eeg_idx <- which(eeg_obj$channel_types == "eeg" &
                       !(eeg_obj$channels %in% eeg_obj$bads))
@@ -293,10 +341,21 @@ flag_channel_quality <- function(eeg_obj,
   channels <- eeg_obj$channels[eeg_idx]
   data     <- eeg_obj$data[eeg_idx, , drop = FALSE]
 
+  # The amplitude is measured from each channel's own level, re-measured in
+  # every stretch (see .centre_by_stretch()). The std below does not need
+  # this: a constant level does not change it.
+  centred <- .centre_by_stretch(data, window_samples)
+
   # Round before thresholding - matches eeg_summary()'s existing order
   std_uv <- round(apply(data, 1, sd), 2)
-  min_uv <- round(apply(data, 1, min), 2)
-  max_uv <- round(apply(data, 1, max), 2)
+  min_uv <- round(apply(centred, 1, min), 2)
+  max_uv <- round(apply(centred, 1, max), 2)
+
+  level_text <- if (is.infinite(amplitude_window)) {
+    "its own level"
+  } else {
+    paste0("its own level, re-measured every ", format(amplitude_window), " s")
+  }
 
   median_std <- median(std_uv, na.rm = TRUE)
 
@@ -321,8 +380,9 @@ flag_channel_quality <- function(eeg_obj,
       flags <- rbind(flags, data.frame(
         channel = ch,
         reason  = "Excessive amplitude",
-        value   = paste0("peak |amplitude| = ", round(amax, 2),
-                          " uV  (threshold: > ", flag_amplitude_threshold, " uV)"),
+        value   = paste0("peak |amplitude| from ", level_text, " = ",
+                          round(amax, 2), " uV  (threshold: > ",
+                          flag_amplitude_threshold, " uV)"),
         stringsAsFactors = FALSE))
     }
 
@@ -339,6 +399,44 @@ flag_channel_quality <- function(eeg_obj,
   }
 
   flags
+}
+
+#' Subtract Each Channel's Own Level, Stretch by Stretch (internal)
+#'
+#' Cuts the recording into consecutive stretches of \code{window_samples}
+#' samples and, in every stretch, subtracts each channel's own average from
+#' that channel. What is left is how much the channel wiggles around where it
+#' stands. The level is measured again in every stretch because it creeps
+#' (raw BioSemi data keeps a constant offset on every electrode, often tens of
+#' mV, that also drifts slowly). As many whole stretches are used as fit into
+#' the recording (at least one), so a last piece shorter than one stretch
+#' joins the stretch before it, and a recording shorter than one stretch is a
+#' single stretch.
+#'
+#' @param data Numeric matrix, channels x timepoints.
+#' @param window_samples Number of samples in one stretch (at least 1).
+#' @return A matrix of the same size and dimnames as \code{data}. In every
+#'   stretch each row has mean 0.
+#' @keywords internal
+.centre_by_stretch <- function(data, window_samples) {
+
+  n <- ncol(data)
+  if (n == 0L) {
+    return(data)
+  }
+
+  n_stretch <- max(1, n %/% window_samples)
+  out       <- data
+
+  for (s in seq_len(n_stretch)) {
+    first <- (s - 1) * window_samples + 1
+    last  <- if (s == n_stretch) n else s * window_samples
+    idx   <- first:last
+    block <- data[, idx, drop = FALSE]
+    out[, idx] <- block - rowMeans(block)
+  }
+
+  out
 }
 
 #' Find Each Channel's Nearest Physical Neighbors
@@ -402,6 +500,47 @@ find_channel_neighbors <- function(positions, k = 4) {
   do.call(rbind, neighbor_rows)
 }
 
+#' Middle Value of Every Column, All at Once (internal)
+#'
+#' Does the same job as \code{apply(m, 2, median)} without calling
+#' \code{median()} once per column: every column is sorted in a single step,
+#' then the middle row is taken (an odd number of rows) or the mean of the two
+#' middle rows (an even number). For the neighbor-correlation check this is
+#' the difference between about 30 seconds and a fraction of a second for 20
+#' seconds of 64-channel data, because the middle value is needed at every
+#' sample of every channel. A column that holds a missing value (\code{NA} or
+#' \code{NaN}) gives \code{NA}, like \code{median()} with its default
+#' \code{na.rm = FALSE}.
+#'
+#' @param m Numeric matrix, rows = the values to take the middle of (for
+#'   example the neighbor channels), columns = the samples.
+#' @return A numeric vector with one value per column of \code{m}
+#'   (\code{numeric(0)} for a matrix without columns).
+#' @keywords internal
+.column_medians <- function(m) {
+
+  k <- nrow(m)
+  n <- ncol(m)
+
+  if (n == 0L) {
+    return(numeric(0))
+  }
+  if (k == 0L) {
+    return(rep(NA_real_, n))
+  }
+
+  sorted <- matrix(m[order(col(m), m)], nrow = k)
+
+  middle <- if (k %% 2L == 1L) {
+    sorted[(k + 1L) / 2L, ]
+  } else {
+    (sorted[k / 2L, ] + sorted[k / 2L + 1L, ]) / 2
+  }
+
+  middle[colSums(is.na(m)) > 0L] <- NA_real_
+  middle
+}
+
 #' Flag Channels That Disagree With Their Physical Neighbors
 #'
 #' Internal helper: for each channel, compares its signal against the
@@ -451,7 +590,7 @@ flag_low_neighbor_correlation <- function(data, channels, neighbor_map,
     neighbor_data_rows <- data[match(neighbor_names, channels), , drop = FALSE]
 
     reference <- if (isTRUE(robust)) {
-      apply(neighbor_data_rows, 2, median)
+      .column_medians(neighbor_data_rows)
     } else {
       colMeans(neighbor_data_rows)
     }

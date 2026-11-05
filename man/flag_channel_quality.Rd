@@ -8,6 +8,7 @@ flag_channel_quality(
   eeg_obj,
   flag_flat_threshold = 0.5,
   flag_amplitude_threshold = 500,
+  amplitude_window = 2,
   flag_outlier_sd_multiplier = 3
 )
 }
@@ -18,7 +19,17 @@ flag_channel_quality(
 flagged as flat. Default: 0.5.}
 
 \item{flag_amplitude_threshold}{Numeric, peak absolute amplitude (uV)
-above which a channel is flagged. Default: 500.}
+above which a channel is flagged. The amplitude is measured from the
+channel's own level (see \code{amplitude_window}), not from zero.
+Default: 500.}
+
+\item{amplitude_window}{Numeric, length in seconds of the stretches in
+which each channel's own level (its average) is measured and subtracted
+before the amplitude check. Needed for raw BioSemi data, whose
+electrodes sit on constant offsets of tens of mV that also drift
+slowly. The last stretch, if shorter than the window, joins the one
+before it; \code{Inf} uses one level for the whole recording. Must be a
+single number above 0 and at least 2 samples long. Default: 2.}
 
 \item{flag_outlier_sd_multiplier}{Numeric, multiple of the median EEG-
 channel std above which a channel is flagged as an outlier. Default: 3.}

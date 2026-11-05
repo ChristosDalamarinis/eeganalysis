@@ -34,9 +34,20 @@
 #' @param flag_flat_threshold Numeric. Channels with std below this value
 #'   (in uV) are flagged as potentially flat / disconnected. Default: 0.5.
 #'
-#' @param flag_amplitude_threshold Numeric. Channels with any absolute
-#'   amplitude exceeding this value (in uV) are flagged as potentially
-#'   noisy or saturated. Default: 500.
+#' @param flag_amplitude_threshold Numeric. Channels whose absolute
+#'   amplitude, measured from the channel's own level (see
+#'   \code{amplitude_window}), ever exceeds this value (in uV) are flagged as
+#'   potentially noisy or saturated. Default: 500.
+#'
+#' @param amplitude_window Numeric. Length in seconds of the stretches in
+#'   which each channel's own level (its average) is measured and subtracted
+#'   before the amplitude check looks at it. Raw BioSemi data keeps a
+#'   constant offset on every electrode (often tens of mV) that slowly
+#'   drifts, and without this step every channel would look far above
+#'   \code{flag_amplitude_threshold}. The level is measured again in every
+#'   stretch because it creeps; a last stretch shorter than the window joins
+#'   the stretch before it. \code{Inf} measures one level for the whole
+#'   recording. Must be at least 2 samples long. Default: 2.
 #'
 #' @param flag_outlier_sd_multiplier Numeric. A channel whose std exceeds
 #'   this multiple of the median std across all EEG channels is flagged
@@ -77,6 +88,7 @@
 eeg_summary <- function(eeg_obj,
                         flag_flat_threshold        = 0.5,
                         flag_amplitude_threshold   = 500,
+                        amplitude_window           = 2,
                         flag_outlier_sd_multiplier = 3,
                         show_exg                   = TRUE) {
   
@@ -157,6 +169,7 @@ eeg_summary <- function(eeg_obj,
     eeg_obj,
     flag_flat_threshold        = flag_flat_threshold,
     flag_amplitude_threshold   = flag_amplitude_threshold,
+    amplitude_window           = amplitude_window,
     flag_outlier_sd_multiplier = flag_outlier_sd_multiplier)
 
   if (nrow(flags) == 0) flags <- NULL
@@ -250,7 +263,13 @@ eeg_summary <- function(eeg_obj,
   cat(strrep("-", 70), "\n")
   cat("  Thresholds used:\n")
   cat("    Flat            : std < ", flag_flat_threshold, " uV\n", sep = "")
-  cat("    Excessive amp.  : peak |amplitude| > ", flag_amplitude_threshold, " uV\n", sep = "")
+  amplitude_level_text <- if (is.infinite(amplitude_window)) {
+    "own level"
+  } else {
+    paste0("own level, re-measured every ", format(amplitude_window), " s")
+  }
+  cat("    Excessive amp.  : peak |amplitude| from ", amplitude_level_text,
+      " > ", flag_amplitude_threshold, " uV\n", sep = "")
   cat("    Outlier noise   : std > ", flag_outlier_sd_multiplier,
       " x median std (", round(flag_outlier_sd_multiplier * median_std, 2), " uV)\n", sep = "")
   cat("\n")

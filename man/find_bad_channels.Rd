@@ -8,6 +8,7 @@ find_bad_channels(
   eeg_obj,
   flag_flat_threshold = 0.5,
   flag_amplitude_threshold = 500,
+  amplitude_window = 2,
   flag_outlier_sd_multiplier = 3,
   k = 4,
   correlation_threshold = 0.45,
@@ -23,9 +24,20 @@ find_bad_channels(
 \item{flag_flat_threshold}{Numeric. Channels with std below this value
 (in uV) are flagged as potentially flat / disconnected. Default: 0.5.}
 
-\item{flag_amplitude_threshold}{Numeric. Channels with any absolute
-amplitude exceeding this value (in uV) are flagged as potentially
-noisy or saturated. Default: 500.}
+\item{flag_amplitude_threshold}{Numeric. Channels whose absolute
+amplitude, measured from the channel's own level (see
+\code{amplitude_window}), ever exceeds this value (in uV) are flagged as
+potentially noisy or saturated. Default: 500.}
+
+\item{amplitude_window}{Numeric. Length in seconds of the stretches in
+which each channel's own level (its average) is measured and subtracted
+before the amplitude check looks at it. Raw BioSemi data keeps a
+constant offset on every electrode (often tens of mV) that slowly
+drifts, and without this step every channel would look far above
+\code{flag_amplitude_threshold}. The level is measured again in every
+stretch because it creeps; a last stretch shorter than the window joins
+the stretch before it. \code{Inf} measures one level for the whole
+recording. Must be at least 2 samples long. Default: 2.}
 
 \item{flag_outlier_sd_multiplier}{Numeric. A channel whose std exceeds
 this multiple of the median std across all EEG channels is flagged
@@ -105,6 +117,13 @@ The flat/excessive-amplitude/outlier-noise checks always run and use the
 same default thresholds \code{\link{eeg_summary}} already reports - this
 function writes them to \code{bads} instead of only printing them. The
 global LOF check also always runs.
+
+The amplitude check measures every channel from its own level, so it also
+works on raw data with large DC offsets (see \code{amplitude_window}). The
+neighbor-correlation and LOF checks use the data as it is: large offsets
+or a strong slow drift can disturb them, so for raw data a high-pass
+filter (for example 1 Hz, see \code{\link{eeg_bandpass}}) before this
+function gives the most reliable result.
 
 The neighbor-correlation check only runs if \code{eeg_obj$montage} is
 attached (see \code{\link{set_montage}}); if not, it is skipped with a

@@ -14,6 +14,7 @@
 #   6. Print output and parameters
 #   7. Integration tests
 #   8. Bad channel handling
+#   9. Raw offsets and amplitude_window
 #
 # Author: Christos Dalamarinis
 # Date: May 2026
@@ -765,6 +766,106 @@ test_that("eeg_summary handles bads together with EXG and Status channels", {
   expect_equal(nrow(report$exg_stats), 1)   # EXG1 still present
   expect_false("Status" %in% report$eeg_stats$channel)
 })
+
+
+# ============================================================================
+# TEST SUITE 9: Raw offsets and amplitude_window
+# ============================================================================
+#
+# Raw BioSemi data keeps a constant offset on every electrode (tens of mV =
+# thousands of uV) that also drifts slowly, with only a small wiggle (a few
+# tens of uV) on top. The suspicious-channel flags must judge the wiggle, not
+# the offset. Fixture: 10 channels "Ch1".."Ch10", 256 Hz, 10 s, each = its own
+# offset (-28000 .. +28000 uV) + an optional slow drift (0.02 Hz sine) + a
+# normal wiggle (sd 20 uV unless given).
+.make_offset_summary_eeg <- function(wiggle_sd = rep(20, 10), drift = 0, seed = 7) {
+  set.seed(seed)
+  fs <- 256
+  n  <- 10 * fs
+  tt <- (0:(n - 1)) / fs
+  n_ch <- length(wiggle_sd)
+  data <- t(vapply(seq_len(n_ch), function(i) {
+    w <- as.numeric(stats::filter(rnorm(n), 0.9, "recursive"))
+    w <- w / sd(w) * wiggle_sd[i]
+    offset <- -28000 + (i - 1) * 56000 / (n_ch - 1)
+    offset + drift * sin(2 * pi * 0.02 * tt + i) + w
+  }, numeric(n)))
+  new_eeg(data = data, channels = paste0("Ch", seq_len(n_ch)),
+          sampling_rate = fs, channel_types = rep("eeg", n_ch))
+}
+
+# ----------------------------------------------------------------------------
+# Test 9.1: offsets alone are not suspicious
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Ten good channels, each standing on a large offset, give no
+# flags at all (before, every one was "Excessive amplitude"), and the printed
+# thresholds say how the amplitude is measured.
+test_that("eeg_summary does not flag channels that only stand on a large offset", {
+  eeg <- .make_offset_summary_eeg()
+  expect_gt(max(abs(eeg$data)), 20000)
+
+  output <- capture.output(report <- eeg_summary(eeg))
+
+  expect_null(report$flags)
+  expect_true(any(grepl("Excessive amp.  : peak \\|amplitude\\| from own level, re-measured every 2 s > 500 uV", output)))
+})
+
+# ----------------------------------------------------------------------------
+# Test 9.2: a broken channel is still flagged when every channel has an offset
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Ch4 wiggles by several hundred uV (sd 300) on top of its
+# offset: it is flagged "Excessive amplitude" - and only it.
+test_that("eeg_summary still flags a channel that really wiggles too much", {
+  sds <- rep(20, 10)
+  sds[4] <- 300
+  capture.output(report <- eeg_summary(.make_offset_summary_eeg(wiggle_sd = sds)))
+
+  excessive <- report$flags[grepl("Excessive", report$flags$reason), ]
+  expect_equal(excessive$channel, "Ch4")
+  expect_match(excessive$value, "^peak \\|amplitude\\| from its own level, re-measured every 2 s = ")
+})
+
+# ----------------------------------------------------------------------------
+# Test 9.3: amplitude_window reaches the check
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: The level drifts by 2000 uV. Re-measured every 2 s (the
+# default) nothing is flagged; one level for the whole 10 s recording (Inf)
+# flags several good channels, and the printed line changes accordingly.
+test_that("eeg_summary passes amplitude_window on to the amplitude check", {
+  eeg <- .make_offset_summary_eeg(drift = 2000)
+
+  capture.output(default_report <- eeg_summary(eeg))
+  expect_null(default_report$flags)
+
+  output <- capture.output(inf_report <- eeg_summary(eeg, amplitude_window = Inf))
+  expect_gte(sum(grepl("Excessive", inf_report$flags$reason)), 3)
+  expect_true(any(grepl("Excessive amp.  : peak \\|amplitude\\| from own level > 500 uV", output)))
+  expect_false(any(grepl("re-measured", output)))
+})
+
+# ----------------------------------------------------------------------------
+# Test 9.3b: the printed line names the window that was used
+# ----------------------------------------------------------------------------
+test_that("eeg_summary prints the amplitude_window it used", {
+  eeg <- .make_offset_summary_eeg()
+  output <- capture.output(eeg_summary(eeg, amplitude_window = 0.5))
+  expect_true(any(grepl("Excessive amp.  : peak \\|amplitude\\| from own level, re-measured every 0.5 s > 500 uV", output)))
+  expect_false(any(grepl("re-measured every 2 s", output)))
+})
+
+# ----------------------------------------------------------------------------
+# Test 9.4: wrong amplitude_window is refused before anything is printed
+# ----------------------------------------------------------------------------
+test_that("eeg_summary refuses a wrong amplitude_window", {
+  eeg <- .make_offset_summary_eeg()
+  expect_error(eeg_summary(eeg, amplitude_window = -1),
+               "'amplitude_window' must be a single number above 0")
+  expect_error(eeg_summary(eeg, amplitude_window = "2"),
+               "'amplitude_window' must be a single number above 0")
+  expect_error(eeg_summary(eeg, amplitude_window = 0.001),
+               "shorter than 2 samples")
+})
+
 
 
 # ============================================================================

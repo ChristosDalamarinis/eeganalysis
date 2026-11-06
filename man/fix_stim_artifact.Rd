@@ -111,9 +111,9 @@ first (with \code{events = <stimulation code>}), then epoch.
 
 \strong{What it does not do.} Only the short spike is replaced. The slower
 tail and the muscle twitch that a magnetic pulse also leaves are not
-removed. No annotation is added for the repaired stretches (\code{epoch_eeg}
-would reject every trial that touches one); the step is recorded in
-\code{preprocessing_history}.
+removed. No \code{"BAD_"} annotation is added for the repaired stretches
+(\code{epoch_eeg} would reject every trial that touches one); the step is
+recorded in \code{preprocessing_history}.
 }
 \examples{
 \dontrun{

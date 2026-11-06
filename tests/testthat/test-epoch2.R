@@ -1783,6 +1783,142 @@ test_that("epoch_eeg with empty annotations data frame keeps all epochs", {
   expect_equal(epochs$n_epochs, 2)
 })
 
+# ----------------------------------------------------------------------------
+# Tests 2.49b - 2.49i: which annotations reject an epoch
+#
+# reject_by_annotation = TRUE rejects only on a note whose description starts
+# with "bad" (any letter case) - the rule fit_ica() uses too. Any other note
+# (e.g. "Block1") is just a label. A character vector keeps matching the whole
+# description exactly.
+#
+# Helper: four events (sr = 256) at samples 300, 700, 1100 and 1500, epochs
+# cut with tmin = -0.1 and tmax = 0.4, so the four epoch windows are
+#   epoch 1 [1.07, 1.57] s    epoch 2 [2.63, 3.13] s
+#   epoch 3 [4.20, 4.70] s    epoch 4 [5.76, 6.26] s
+# Every note is 0.2 s long; one that starts at 1.1 s lies inside epoch 1,
+# at 2.7 s inside epoch 2, at 4.3 s inside epoch 3 and at 5.85 s inside
+# epoch 4. So the expected number of kept epochs can be counted by hand.
+# ----------------------------------------------------------------------------
+.epoch_with_notes <- function(descriptions, onsets,
+                              reject_by_annotation = TRUE,
+                              channel = NA_character_) {
+  eeg <- make_mock_eeg(n_timepoints = 2000, sr = 256,
+                       event_onsets = c(300L, 700L, 1100L, 1500L),
+                       event_types  = rep("1", 4))
+  eeg$annotations <- data.frame(
+    onset       = onsets,
+    duration    = 0.2,
+    description = descriptions,
+    channel     = channel,
+    stringsAsFactors = FALSE
+  )
+  epoch_eeg(eeg, events = "all",
+            tmin = -0.1, tmax = 0.4,
+            baseline = NULL,
+            reject_by_annotation = reject_by_annotation,
+            verbose = FALSE)
+}
+
+# Test 2.49b: a note that does not start with "bad" never rejects an epoch
+test_that("reject_by_annotation = TRUE ignores a note that does not start with 'bad'", {
+  epochs <- .epoch_with_notes("Block1", 1.1)
+
+  expect_equal(epochs$n_epochs, 4)
+  expect_equal(nrow(epochs$rejection_log), 0)
+})
+
+# Test 2.49c: a "BAD_" note and a "Block1" note in one recording - only the
+#             "BAD_" one costs an epoch (the case from the diagnostic report)
+test_that("reject_by_annotation = TRUE rejects only on the BAD_ note when both kinds are present", {
+  epochs <- .epoch_with_notes(c("BAD_test", "Block1"), c(1.1, 2.7))
+
+  expect_equal(epochs$n_epochs, 3)
+  expect_equal(epochs$rejection_log$epoch_id, 1)
+  expect_equal(epochs$rejection_log$reason, "Overlaps annotation: BAD_test")
+})
+
+# Test 2.49d: "bad" counts in any letter case and only as the start of the
+#             description (so "badminton" also counts; "Block1" still does not)
+test_that("reject_by_annotation = TRUE matches the 'bad' prefix in any letter case", {
+  epochs <- .epoch_with_notes(c("bad_x", "Bad Segment", "badminton", "Block1"),
+                              c(1.1, 2.7, 4.3, 5.85))
+
+  expect_equal(epochs$n_epochs, 1)
+  expect_equal(sort(epochs$rejection_log$epoch_id), c(1, 2, 3))
+  expect_equal(sort(epochs$rejection_log$reason),
+               sort(c("Overlaps annotation: bad_x",
+                      "Overlaps annotation: Bad Segment",
+                      "Overlaps annotation: badminton")))
+})
+
+# Test 2.49e: "bad" in the middle of a description is not enough, and a start
+#             that is only close to it ("Baseline" starts with "ba") is not either
+test_that("reject_by_annotation = TRUE needs 'bad' at the start of the description", {
+  epochs <- .epoch_with_notes(c("xBAD_test", "Not_bad", "Baseline"),
+                              c(1.1, 2.7, 4.3))
+
+  expect_equal(epochs$n_epochs, 4)
+  expect_equal(nrow(epochs$rejection_log), 0)
+})
+
+# Test 2.49f: a character vector still matches the whole description exactly
+#             (capital and small letters matter) and can name a note that does
+#             not start with "bad"
+test_that("a character reject_by_annotation matches whole descriptions exactly", {
+  notes  <- c("Block1", "BAD_test", "block2")
+  onsets <- c(1.1, 2.7, 4.3)
+
+  # naming a note that does not start with "bad" rejects it ...
+  one <- .epoch_with_notes(notes, onsets, reject_by_annotation = "Block1")
+  expect_equal(one$n_epochs, 3)
+  expect_equal(one$rejection_log$epoch_id, 1)
+
+  # ... and the BAD_ note is then NOT rejected, because it was not named
+  two <- .epoch_with_notes(notes, onsets,
+                           reject_by_annotation = c("Block1", "BAD_test"))
+  expect_equal(two$n_epochs, 2)
+  expect_equal(sort(two$rejection_log$epoch_id), c(1, 2))
+
+  # a part of a name is not enough, and neither is another letter case
+  expect_equal(.epoch_with_notes(notes, onsets, reject_by_annotation = "BAD")$n_epochs, 4)
+  expect_equal(.epoch_with_notes(notes, onsets, reject_by_annotation = "block1")$n_epochs, 4)
+
+  # a lower-case note that does not start with "bad" is matched when named
+  three <- .epoch_with_notes(notes, onsets, reject_by_annotation = "block2")
+  expect_equal(three$n_epochs, 3)
+  expect_equal(three$rejection_log$epoch_id, 3)
+})
+
+# Test 2.49g: a note without a description (NA) neither crashes nor rejects
+test_that("reject_by_annotation = TRUE does not reject on a note with an NA description", {
+  epochs <- .epoch_with_notes(c(NA_character_, "BAD_x"), c(1.1, 2.7))
+
+  expect_equal(epochs$n_epochs, 3)
+  expect_equal(epochs$rejection_log$epoch_id, 2)
+})
+
+# Test 2.49h: when a label and a BAD_ note both touch one epoch, the log names
+#             the BAD_ note and its channel (not the label that comes first)
+test_that("rejection log names the BAD_ note when a label overlaps the same epoch", {
+  epochs <- .epoch_with_notes(c("Block1", "BAD_test"), c(1.1, 1.2),
+                              channel = c(NA_character_, "Ch1"))
+
+  expect_equal(epochs$n_epochs, 3)
+  expect_equal(nrow(epochs$rejection_log), 1)
+  expect_equal(epochs$rejection_log$reason, "Overlaps annotation: BAD_test")
+  expect_equal(epochs$rejection_log$channel, "Ch1")
+})
+
+# Test 2.49i: every description this package writes itself still rejects
+#             (annotate_amplitude/muscle/nan/break and the join of recordings)
+test_that("reject_by_annotation = TRUE still rejects on every BAD_ description the package writes", {
+  for (nm in c("BAD_flat", "BAD_peak", "BAD_muscle", "BAD_NAN",
+               "BAD_break", "BAD_boundary")) {
+    epochs <- .epoch_with_notes(nm, 1.1)
+    expect_equal(epochs$n_epochs, 3, info = nm)
+  }
+})
+
 
 # ============================================================================
 # TEST SUITE 2D: Type-aware rejection — reject_threshold/flat_threshold skip

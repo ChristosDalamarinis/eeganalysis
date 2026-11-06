@@ -35,9 +35,9 @@ components are zeroed out in component space, then everything is mixed
 back through the fitted transform in reverse, undoing the ICA rotation,
 PCA whitening, and pre-whitening steps \code{fit_ica()} applied going
 forward. Only the channels \code{ica} was fit on (\code{ica$ch_names})
-are touched - any other channel in \code{eeg} (e.g. a status channel, or
-one excluded via \code{fit_ica()}'s \code{picks}) passes through
-unchanged.
+are touched - any other channel in \code{eeg} (e.g. a status channel, an
+EOG or ECG channel under \code{fit_ica()}'s default picks, or one left
+out via its \code{picks}) passes through unchanged.
 }
 \examples{
 \dontrun{

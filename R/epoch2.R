@@ -376,12 +376,19 @@ inspect_triggers <- function(eeg_obj,                             # EEG object w
 #' @param on_missing Character. What to do when requested event codes are not found in the data.
 #'   "warn" continues with a warning (default), "error" stops, "ignore" continues silently.
 #' @param reject_by_annotation Logical or character vector. If \code{TRUE} (default),
-#'   any epoch whose time window overlaps a row in \code{eeg_obj$annotations} is
-#'   rejected regardless of amplitude. If a character vector (e.g.
-#'   \code{c("BAD_muscle", "BAD_flat")}), only annotations whose \code{description}
-#'   matches one of those strings trigger rejection. \code{FALSE} disables annotation-
-#'   based rejection entirely. This is the primary fix for muscle artifacts that do not
-#'   produce a large swing but were detected by \code{\link{annotate_muscle}}.
+#'   an epoch whose time window overlaps a row in \code{eeg_obj$annotations} is
+#'   rejected regardless of amplitude, but only when that row's \code{description}
+#'   starts with \code{"bad"} in any letter case (so \code{"BAD_muscle"},
+#'   \code{"bad_flat"} and \code{"Bad segment"} all count). A row with any other
+#'   description, such as \code{"Block1"}, is only a label and never rejects an
+#'   epoch. This is the same rule \code{\link{fit_ica}} uses for its bad stretches.
+#'   If a character vector (e.g. \code{c("BAD_muscle", "BAD_flat")}), only
+#'   annotations whose \code{description} is exactly one of those strings (the whole
+#'   name, capital and small letters matter) trigger rejection; this is also the way
+#'   to reject on a row whose description does not start with "bad".
+#'   \code{FALSE} disables annotation-based rejection entirely. This is the primary
+#'   fix for muscle artifacts that do not produce a large swing but were detected by
+#'   \code{\link{annotate_muscle}}.
 #' @param preload Logical. If TRUE, extract all epoch data into memory (default: TRUE).
 #'   Must be TRUE for reject_threshold and flat_threshold to work. A warning is issued if
 #'   thresholds are set but preload is FALSE.
@@ -422,7 +429,7 @@ epoch_eeg <- function(eeg_obj,                                           # Loade
                       detrend = NULL,                                    # Detrending mode: NULL = off, 0 = mean removal, 1 = linear detrend
                       event_repeated = c("warn", "error", "drop"),       # How to handle duplicate events at the same sample
                       on_missing = c("warn", "error", "ignore"),         # What to do when requested event codes are not found
-                      reject_by_annotation = TRUE,                       # TRUE/FALSE or character vector of description prefixes to reject on annotation overlap
+                      reject_by_annotation = TRUE,                       # TRUE = reject on rows starting with "bad", FALSE = off, or a character vector of exact descriptions to reject on
                       preload = TRUE,                                    # Whether to load all epoch data into memory immediately
                       verbose = TRUE) {                                  # Shows you what's happening during epoching
   
@@ -552,12 +559,20 @@ epoch_eeg <- function(eeg_obj,                                           # Loade
   rejection_indices <- reject_idx_min:reject_idx_max
   
   # ========== PRE-FILTER ANNOTATIONS FOR REJECTION ==========
+  # TRUE: only a row whose description starts with "bad" (any letter case)
+  # rejects - the same rule fit_ica() uses (.annotation_bad_mask()) and
+  # annotate_break() uses for "ignore". Any other row (e.g. "Block1") is just a
+  # label and must not cost epochs. A missing (NA) description never rejects.
+  # Character vector: exact description match (whole name, case-sensitive).
   bad_anns <- NULL
   if (!isFALSE(reject_by_annotation)) {
     anns <- eeg_obj$annotations
     if (!is.null(anns) && nrow(anns) > 0) {
       if (is.character(reject_by_annotation)) {
         anns <- anns[anns$description %in% reject_by_annotation, , drop = FALSE]
+      } else {
+        starts_bad <- startsWith(tolower(as.character(anns$description)), "bad")
+        anns       <- anns[!is.na(starts_bad) & starts_bad, , drop = FALSE]
       }
       if (nrow(anns) > 0) bad_anns <- anns
     }

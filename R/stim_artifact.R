@@ -27,9 +27,9 @@
 # WHAT IT CHANGES
 #   Only the data of the chosen channels, inside the windows. Events,
 #   annotations, bads, montage, times and everything else stay as they were.
-#   No annotation is added for the repaired stretches: epoch_eeg() throws away
-#   every epoch that touches ANY annotation, so every trial would be lost. One
-#   line in preprocessing_history records what was done.
+#   No "BAD_" annotation is added for the repaired stretches: epoch_eeg() throws
+#   away every epoch that touches a "BAD_" annotation, so every trial would be
+#   lost. One line in preprocessing_history records what was done.
 #
 # THE MATHS LIVES IN ONE PLACE
 #   Continuous recordings and epochs both go through .stim_block(), which
@@ -263,9 +263,9 @@
 #'
 #' \strong{What it does not do.} Only the short spike is replaced. The slower
 #' tail and the muscle twitch that a magnetic pulse also leaves are not
-#' removed. No annotation is added for the repaired stretches (\code{epoch_eeg}
-#' would reject every trial that touches one); the step is recorded in
-#' \code{preprocessing_history}.
+#' removed. No \code{"BAD_"} annotation is added for the repaired stretches
+#' (\code{epoch_eeg} would reject every trial that touches one); the step is
+#' recorded in \code{preprocessing_history}.
 #'
 #' @param eeg An object of class \code{eeg} (continuous) or \code{eeg_epochs}.
 #' @param events Which events are stimulations. \code{"all"} (default) uses

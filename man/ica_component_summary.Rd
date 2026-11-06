@@ -29,8 +29,11 @@ variance the PCA step captured with that many components (nothing
 outside that subspace was ever available for any component to
 explain).}
 \item{corr_\if{html}{\out{<channel>}}}{One column per non-EEG (EOG/ECG/etc.) channel in
-\code{ica$ch_names}, if any - that channel's correlation with each
-component. Omitted entirely if there are no non-EEG channels.}
+\code{eeg} that is not listed in \code{eeg$bads}, if any - that
+channel's correlation with each component. The channels are read
+from \code{eeg}, so they do not have to be part of the fit (under
+\code{fit_ica()}'s default picks they are not). The status channel is
+never included. Omitted entirely if there are no such channels.}
 }
 }
 \description{

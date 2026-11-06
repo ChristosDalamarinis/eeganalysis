@@ -543,11 +543,51 @@ test_that("fit_ica rejects non-'eeg_ica' / non-'eeg' inputs", {
   expect_error(fit_ica(new_ica(), list()), "class 'eeg'")
 })
 
-test_that("fit_ica default picks exclude the status channel", {
+test_that("fit_ica default picks use only the channels typed 'eeg'", {
+  # Fixture channels: Fp1, Fp2, Cz (eeg), EXG1 (eog), Status (status). The
+  # default fit holds exactly the three EEG channels, in eeg order. The eye
+  # channel stays out, so apply_ica() cannot touch it and it keeps its job as
+  # the reference channel of find_bads_eog().
   fx  <- make_ica_fixture()
   ica <- suppressWarnings(fit_ica(new_ica(n_components = 3, random_state = 1), fx$eeg))
+  expect_equal(ica$ch_names, c("Fp1", "Fp2", "Cz"))
   expect_false("Status" %in% ica$ch_names)
-  expect_setequal(ica$ch_names, c("Fp1", "Fp2", "Cz", "EXG1"))
+  expect_false("EXG1" %in% ica$ch_names)
+})
+
+test_that("fit_ica explicit picks are taken as given, including a non-EEG channel", {
+  fx  <- make_ica_fixture()
+  ica <- suppressWarnings(
+    fit_ica(new_ica(n_components = 3, random_state = 1), fx$eeg,
+            picks = c("Fp1", "Fp2", "Cz", "EXG1"))
+  )
+  expect_equal(ica$ch_names, c("Fp1", "Fp2", "Cz", "EXG1"))
+  ica_n <- suppressWarnings(
+    fit_ica(new_ica(n_components = 3, random_state = 1), fx$eeg, picks = 1:4)
+  )
+  expect_equal(ica_n$ch_names, c("Fp1", "Fp2", "Cz", "EXG1"))
+})
+
+test_that("fit_ica default picks skip an EEG channel listed in eeg$bads; explicit picks do not", {
+  fx <- make_ica_fixture()
+  eeg_b <- fx$eeg
+  eeg_b$bads <- "Cz"
+  ica <- suppressWarnings(fit_ica(new_ica(n_components = 2, random_state = 1), eeg_b))
+  expect_equal(ica$ch_names, c("Fp1", "Fp2"))
+  ica_x <- suppressWarnings(
+    fit_ica(new_ica(n_components = 2, random_state = 1), eeg_b,
+            picks = c("Fp1", "Fp2", "Cz"))
+  )
+  expect_equal(ica_x$ch_names, c("Fp1", "Fp2", "Cz"))
+})
+
+test_that("fit_ica default picks follow the channel TYPE, not the channel name", {
+  # Retype Cz as "eog" and EXG1 as "eeg": the default now fits Fp1, Fp2 and
+  # EXG1 (eeg order) and leaves the channel named Cz out.
+  fx   <- make_ica_fixture()
+  eeg2 <- set_channel_types(fx$eeg, c(Cz = "eog", EXG1 = "eeg"))
+  ica  <- suppressWarnings(fit_ica(new_ica(n_components = 2, random_state = 1), eeg2))
+  expect_equal(ica$ch_names, c("Fp1", "Fp2", "EXG1"))
 })
 
 test_that("fit_ica accepts character picks and restricts ch_names accordingly", {
@@ -578,6 +618,23 @@ test_that("fit_ica errors on unknown channel name in picks", {
 test_that("fit_ica errors when fewer than 2 channels are selected", {
   fx <- make_ica_fixture()
   expect_error(fit_ica(new_ica(), fx$eeg, picks = "Fp1"), "at least 2 channels")
+})
+
+test_that("fit_ica default picks error, with a hint, when fewer than 2 channels are typed 'eeg'", {
+  fx   <- make_ica_fixture()
+  eeg2 <- set_channel_types(fx$eeg, c(Fp2 = "eog", Cz = "eog"))   # only Fp1 is still "eeg"
+  msg  <- tryCatch(fit_ica(new_ica(n_components = 2), eeg2),
+                   error = function(e) conditionMessage(e))
+  expect_match(msg, "at least 2 channels are required to fit ICA, got 1", fixed = TRUE)
+  expect_match(msg, "typed \"eeg\"", fixed = TRUE)
+  expect_match(msg, "set_channel_types()", fixed = TRUE)
+
+  # an explicit picks list that is too short gets the plain message: the hint
+  # is about the default and would only confuse there
+  msg_x <- tryCatch(fit_ica(new_ica(), fx$eeg, picks = "Fp1"),
+                    error = function(e) conditionMessage(e))
+  expect_match(msg_x, "at least 2 channels are required to fit ICA, got 1", fixed = TRUE)
+  expect_false(grepl("set_channel_types", msg_x, fixed = TRUE))
 })
 
 test_that("fit_ica populates all fitted (trailing-underscore) fields and flips current_fit", {
@@ -850,19 +907,94 @@ test_that("ica_component_summary variance_explained sums to ~1 at full rank", {
 
 test_that("ica_component_summary adds one corr_<channel> column per external channel", {
   fx  <- make_ica_fixture()
-  ica <- suppressWarnings(fit_ica(new_ica(n_components = 4, random_state = 1), fx$eeg))
+  ica <- suppressWarnings(fit_ica(new_ica(n_components = 3, random_state = 1), fx$eeg))
   summ <- ica_component_summary(ica, fx$eeg)
 
+  # EXG1 is not part of the (default) fit, yet its column is there: the
+  # external channels are read from eeg, not from ica$ch_names
+  expect_false("EXG1" %in% ica$ch_names)
   expect_true("corr_EXG1" %in% names(summ))
   expect_true(all(abs(summ$corr_EXG1) <= 1 + 1e-8))
 })
 
-test_that("ica_component_summary omits corr_ columns when there are no external channels", {
+test_that("ica_component_summary omits corr_ columns when eeg has no external channels", {
+  fx  <- make_source_separation_fixture()    # 3 channels, all typed "eeg"
+  ica <- suppressWarnings(fit_ica(new_ica(n_components = 2, random_state = 1), fx$eeg))
+  summ <- ica_component_summary(ica, fx$eeg)
+  expect_equal(names(summ), c("component", "variance_explained"))
+})
+
+test_that("ica_component_summary reads the external channels from eeg also for an EEG-only fit", {
+  # Explicit EEG-only picks: EXG1 is outside the fit, still gets its column.
   fx  <- make_ica_fixture()
   ica <- suppressWarnings(fit_ica(new_ica(n_components = 3, random_state = 1), fx$eeg,
                                    picks = c("Fp1", "Fp2", "Cz")))
   summ <- ica_component_summary(ica, fx$eeg)
-  expect_equal(names(summ), c("component", "variance_explained"))
+  expect_equal(names(summ), c("component", "variance_explained", "corr_EXG1"))
+})
+
+# Standard fixture plus an ECG channel (typed "ecg") that follows source 2, so
+# eeg holds TWO external channels: EXG1 (eog, follows source 1) and ECG1 (ecg,
+# follows source 2), with the status channel between them.
+make_ica_fixture_ecg <- function(seed = 123) {
+  fx <- make_ica_fixture(seed = seed)
+  set.seed(seed + 1)
+  ecg1 <- fx$sources[2, ] + rnorm(ncol(fx$sources), sd = 0.05)
+  eeg <- new_eeg(data = rbind(fx$eeg$data, ECG1 = ecg1),
+                 channels = c(fx$eeg$channels, "ECG1"),
+                 sampling_rate = 256,
+                 channel_types = c(fx$eeg$channel_types, "ecg"))
+  list(eeg = eeg, sources = fx$sources)
+}
+
+test_that("ica_component_summary corr_ columns follow eeg's channel order and equal a hand-computed cor()", {
+  fx  <- make_ica_fixture_ecg()
+  ica <- suppressWarnings(fit_ica(new_ica(n_components = 3, random_state = 1), fx$eeg))
+  expect_equal(ica$ch_names, c("Fp1", "Fp2", "Cz"))     # neither external channel is in the fit
+  summ <- ica_component_summary(ica, fx$eeg)
+
+  # exactly the two external channels, EXG1 before ECG1 as in eeg$channels;
+  # no column for Status or for any EEG channel
+  expect_equal(names(summ), c("component", "variance_explained", "corr_EXG1", "corr_ECG1"))
+
+  src <- get_sources(ica, fx$eeg)
+  by_hand <- function(ch) {
+    row <- fx$eeg$data[match(ch, fx$eeg$channels), ]
+    vapply(1:3, function(k) cor(src[k, ], row), numeric(1), USE.NAMES = FALSE)
+  }
+  expect_equal(unname(summ$corr_EXG1), by_hand("EXG1"), tolerance = 1e-12)
+  expect_equal(unname(summ$corr_ECG1), by_hand("ECG1"), tolerance = 1e-12)
+
+  # the two columns are different channels' correlations: EXG1 follows source
+  # 1 and ECG1 follows source 2, so some component must separate them clearly
+  expect_gt(max(abs(summ$corr_EXG1 - summ$corr_ECG1)), 0.5)
+})
+
+test_that("ica_component_summary skips an external channel listed in eeg$bads", {
+  fx    <- make_ica_fixture_ecg()
+  eeg_b <- fx$eeg
+  eeg_b$bads <- "EXG1"
+  ica   <- suppressWarnings(fit_ica(new_ica(n_components = 3, random_state = 1), eeg_b))
+  summ  <- ica_component_summary(ica, eeg_b)
+  expect_equal(names(summ), c("component", "variance_explained", "corr_ECG1"))
+})
+
+test_that("ica_component_summary gives one corr_ column per external channel even if it is also in the fit", {
+  fx  <- make_ica_fixture_ecg()
+  ica <- suppressWarnings(fit_ica(new_ica(n_components = 4, random_state = 1), fx$eeg,
+                                   picks = c("Fp1", "Fp2", "Cz", "EXG1")))
+  summ <- ica_component_summary(ica, fx$eeg)
+  expect_equal(sum(names(summ) == "corr_EXG1"), 1L)
+  expect_equal(names(summ), c("component", "variance_explained", "corr_EXG1", "corr_ECG1"))
+})
+
+test_that("find_bads_eog finds the EXG1-like component although EXG1 is outside the default fit", {
+  fx  <- make_ica_fixture()
+  ica <- suppressWarnings(fit_ica(new_ica(n_components = 3, random_state = 1), fx$eeg))
+  expect_false("EXG1" %in% ica$ch_names)
+  ica2 <- find_bads_eog(ica, fx$eeg, threshold = 0.5, measure = "correlation")
+  summ <- ica_component_summary(ica, fx$eeg)
+  expect_equal(unname(ica2$labels_$eog), summ$component[which.max(abs(summ$corr_EXG1))])
 })
 
 # ============================================================================
@@ -948,6 +1080,30 @@ test_that("apply_ica leaves channels outside ch_names untouched", {
   expect_equal(cleaned$data[status_idx, ], fx$eeg$data[status_idx, ])
 })
 
+test_that("apply_ica after a default fit leaves the EOG channel exactly as recorded", {
+  fx   <- make_ica_fixture()
+  ica  <- suppressWarnings(fit_ica(new_ica(n_components = 3, random_state = 1), fx$eeg))
+  summ <- ica_component_summary(ica, fx$eeg)
+  ica  <- set_exclude(ica, summ$component[which.max(abs(summ$corr_EXG1))])
+  cleaned <- apply_ica(ica, fx$eeg)
+
+  exg_idx <- which(fx$eeg$channels == "EXG1")
+  expect_equal(max(abs(cleaned$data[exg_idx, ] - fx$eeg$data[exg_idx, ])), 0)   # EXG1 row: no change at all
+  expect_gt(max(abs(cleaned$data[1:3, ] - fx$eeg$data[1:3, ])), 0.1)            # the EEG rows did change
+})
+
+test_that("apply_ica after a fit with the EOG channel in picks cleans that channel too", {
+  fx   <- make_ica_fixture()
+  ica  <- suppressWarnings(fit_ica(new_ica(n_components = 4, random_state = 1), fx$eeg,
+                                    picks = c("Fp1", "Fp2", "Cz", "EXG1")))
+  summ <- ica_component_summary(ica, fx$eeg)
+  ica  <- set_exclude(ica, summ$component[which.max(abs(summ$corr_EXG1))])
+  cleaned <- apply_ica(ica, fx$eeg)
+
+  exg_idx <- which(fx$eeg$channels == "EXG1")
+  expect_gt(max(abs(cleaned$data[exg_idx, ] - fx$eeg$data[exg_idx, ])), 0.1)
+})
+
 test_that("apply_ica returns class eeg and appends a descriptive history entry", {
   fx  <- make_ica_fixture()
   ica <- suppressWarnings(fit_ica(new_ica(n_components = 2, random_state = 1), fx$eeg,
@@ -962,7 +1118,7 @@ test_that("apply_ica returns class eeg and appends a descriptive history entry",
 
 test_that("apply_ica removes an artifact-correlated component and reduces its footprint elsewhere", {
   fx  <- make_ica_fixture()
-  ica <- suppressWarnings(fit_ica(new_ica(n_components = 4, random_state = 1), fx$eeg))
+  ica <- suppressWarnings(fit_ica(new_ica(n_components = 3, random_state = 1), fx$eeg))
   summ <- ica_component_summary(ica, fx$eeg)
   bad_comp <- summ$component[which.max(abs(summ$corr_EXG1))]
 

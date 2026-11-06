@@ -15,13 +15,18 @@ to fit on.}
 
 \item{picks}{\code{NULL} (default), a character vector of channel names,
 or a numeric vector of channel indices - which channels of \code{eeg}
-to fit ICA on. If \code{NULL}, every channel with
-\code{channel_types != "status"} and not listed in \code{eeg$bads} is
-used (i.e. the \code{"eeg"} channels plus any channel typed
-\code{"eog"}, \code{"ecg"} or another non-status type, minus any marked
-bad; the BioSemi status channel is always excluded, matching
-\code{.compute_pre_whitener()}'s expectations). An explicit \code{picks}
-is taken as-is and can include bad channels if requested.}
+to fit ICA on. If \code{NULL}, only the channels typed \code{"eeg"} (see
+\code{eeg$channel_types}) that are not listed in \code{eeg$bads} are
+used. Channels typed \code{"eog"}, \code{"ecg"}, \code{"emg"} or any
+other non-EEG type, and the BioSemi status channel, stay out of the
+fit. An eye or heart channel is meant to serve as the reference that
+points at an artifact component (see \code{\link{find_bads_eog}} and
+\code{\link{find_bads_ecg}}), and since \code{\link{apply_ica}}
+rewrites every channel the ICA was fit on, leaving such a channel out
+also keeps its recorded signal intact after cleaning. An explicit
+\code{picks} is taken as-is: it can include non-EEG channels (for
+example the EOG channels, to put them in the decomposition on purpose)
+and bad channels if requested.}
 
 \item{reject_by_annotation}{Logical. If \code{TRUE} (default), timepoints
 covered by a \code{"BAD_*"} row of \code{eeg$annotations} (see

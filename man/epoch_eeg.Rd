@@ -70,12 +70,19 @@ correction. NULL = off (default), 0 = mean removal, 1 = linear detrending.}
 "warn" continues with a warning (default), "error" stops, "ignore" continues silently.}
 
 \item{reject_by_annotation}{Logical or character vector. If \code{TRUE} (default),
-any epoch whose time window overlaps a row in \code{eeg_obj$annotations} is
-rejected regardless of amplitude. If a character vector (e.g.
-\code{c("BAD_muscle", "BAD_flat")}), only annotations whose \code{description}
-matches one of those strings trigger rejection. \code{FALSE} disables annotation-
-based rejection entirely. This is the primary fix for muscle artifacts that do not
-produce a large swing but were detected by \code{\link{annotate_muscle}}.}
+an epoch whose time window overlaps a row in \code{eeg_obj$annotations} is
+rejected regardless of amplitude, but only when that row's \code{description}
+starts with \code{"bad"} in any letter case (so \code{"BAD_muscle"},
+\code{"bad_flat"} and \code{"Bad segment"} all count). A row with any other
+description, such as \code{"Block1"}, is only a label and never rejects an
+epoch. This is the same rule \code{\link{fit_ica}} uses for its bad stretches.
+If a character vector (e.g. \code{c("BAD_muscle", "BAD_flat")}), only
+annotations whose \code{description} is exactly one of those strings (the whole
+name, capital and small letters matter) trigger rejection; this is also the way
+to reject on a row whose description does not start with "bad".
+\code{FALSE} disables annotation-based rejection entirely. This is the primary
+fix for muscle artifacts that do not produce a large swing but were detected by
+\code{\link{annotate_muscle}}.}
 
 \item{preload}{Logical. If TRUE, extract all epoch data into memory (default: TRUE).
 Must be TRUE for reject_threshold and flat_threshold to work. A warning is issued if

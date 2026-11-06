@@ -1022,13 +1022,18 @@ print.eeg_ica <- function(x, ...) {
 #'   to fit on.
 #' @param picks \code{NULL} (default), a character vector of channel names,
 #'   or a numeric vector of channel indices - which channels of \code{eeg}
-#'   to fit ICA on. If \code{NULL}, every channel with
-#'   \code{channel_types != "status"} and not listed in \code{eeg$bads} is
-#'   used (i.e. the \code{"eeg"} channels plus any channel typed
-#'   \code{"eog"}, \code{"ecg"} or another non-status type, minus any marked
-#'   bad; the BioSemi status channel is always excluded, matching
-#'   \code{.compute_pre_whitener()}'s expectations). An explicit \code{picks}
-#'   is taken as-is and can include bad channels if requested.
+#'   to fit ICA on. If \code{NULL}, only the channels typed \code{"eeg"} (see
+#'   \code{eeg$channel_types}) that are not listed in \code{eeg$bads} are
+#'   used. Channels typed \code{"eog"}, \code{"ecg"}, \code{"emg"} or any
+#'   other non-EEG type, and the BioSemi status channel, stay out of the
+#'   fit. An eye or heart channel is meant to serve as the reference that
+#'   points at an artifact component (see \code{\link{find_bads_eog}} and
+#'   \code{\link{find_bads_ecg}}), and since \code{\link{apply_ica}}
+#'   rewrites every channel the ICA was fit on, leaving such a channel out
+#'   also keeps its recorded signal intact after cleaning. An explicit
+#'   \code{picks} is taken as-is: it can include non-EEG channels (for
+#'   example the EOG channels, to put them in the decomposition on purpose)
+#'   and bad channels if requested.
 #' @param reject_by_annotation Logical. If \code{TRUE} (default), timepoints
 #'   covered by a \code{"BAD_*"} row of \code{eeg$annotations} (see
 #'   R/annotations.R) are dropped from the data before fitting, so transient
@@ -1070,7 +1075,11 @@ fit_ica <- function(ica, eeg, picks = NULL, reject_by_annotation = TRUE) {
   # ========== SELECT CHANNELS ==========
 
   if (is.null(picks)) {
-    idx <- which(eeg$channel_types != "status" & !(eeg$channels %in% eeg$bads))
+    # EEG channels only (type "eeg", not marked bad). Channels typed eog/ecg/
+    # emg/etc. and the status channel stay out of the fit, so apply_ica()
+    # leaves them untouched and they remain available as the reference
+    # channels of find_bads_eog()/find_bads_ecg().
+    idx <- which(eeg$channel_types == "eeg" & !(eeg$channels %in% eeg$bads))
   } else if (is.character(picks)) {
     idx <- match(picks, eeg$channels)
     if (anyNA(idx)) {
@@ -1082,8 +1091,15 @@ fit_ica <- function(ica, eeg, picks = NULL, reject_by_annotation = TRUE) {
   }
 
   if (length(idx) < 2) {
+    hint <- if (is.null(picks)) {
+      paste0(" The default uses only the channels typed \"eeg\" that are ",
+             "not marked bad: pass 'picks', or set the channel types first ",
+             "(see set_channel_types()).")
+    } else {
+      ""
+    }
     stop("ERROR: at least 2 channels are required to fit ICA, got ",
-         length(idx), ".")
+         length(idx), ".", hint)
   }
 
   data <- eeg$data[idx, , drop = FALSE]
@@ -1700,12 +1716,15 @@ plot_ica_topography <- function(ica, eeg, component, montage = NULL, ...) {
 #     (sum(pca_explained_variance_[1:n_components_]) /
 #     sum(pca_explained_variance_)) - since whatever variance lives outside
 #     that PCA subspace was never available to any component to explain.
-#   - corr_<channel>: for every non-EEG channel (any type other than "eeg"
-#     or "status": EOG/ECG/EMG/GSR/etc. - see new_eeg()'s channel_types
-#     argument) present in ica$ch_names, that channel's raw correlation with
-#     every component's time-course. A component correlating strongly with an
-#     EOG channel is very likely an eye-movement/blink artifact, etc. If there
-#     are no such channels in ica$ch_names, no corr_* columns are added.
+#   - corr_<channel>: for every non-EEG channel of eeg (any type other than
+#     "eeg" or "status": EOG/ECG/EMG/GSR/etc. - see new_eeg()'s channel_types
+#     argument) that is not listed in eeg$bads, that channel's raw
+#     correlation with every component's time-course. The channels are read
+#     from eeg itself, not from ica$ch_names: under fit_ica()'s default picks
+#     they are not part of the fit, yet they are exactly the reference
+#     channels this column is for. A component correlating strongly with an
+#     EOG channel is very likely an eye-movement/blink artifact, etc. If eeg
+#     has no such channels, no corr_* columns are added.
 #
 # ----------------------------------------------------------------------------
 # ica_component_summary() - one row per component: variance + EOG/ECG corr
@@ -1739,8 +1758,11 @@ plot_ica_topography <- function(ica, eeg, component, montage = NULL, ...) {
 #'      outside that subspace was ever available for any component to
 #'      explain).}
 #'    \item{corr_<channel>}{One column per non-EEG (EOG/ECG/etc.) channel in
-#'      \code{ica$ch_names}, if any - that channel's correlation with each
-#'      component. Omitted entirely if there are no non-EEG channels.}
+#'      \code{eeg} that is not listed in \code{eeg$bads}, if any - that
+#'      channel's correlation with each component. The channels are read
+#'      from \code{eeg}, so they do not have to be part of the fit (under
+#'      \code{fit_ica()}'s default picks they are not). The status channel is
+#'      never included. Omitted entirely if there are no such channels.}
 #'  }
 #'
 #' @examples
@@ -1774,7 +1796,6 @@ ica_component_summary <- function(ica, eeg) {
   sources <- get_sources(ica, eeg)
   idx <- match(ica$ch_names, eeg$channels)
   data <- eeg$data[idx, , drop = FALSE]
-  channel_types <- eeg$channel_types[idx]
 
   # ========== VARIANCE EXPLAINED ==========
 
@@ -1791,14 +1812,15 @@ ica_component_summary <- function(ica, eeg) {
 
   # ========== EXTERNAL CHANNEL CORRELATIONS ==========
 
-  ext_idx <- which(!(channel_types %in% c("eeg", "status")))
-  if (length(ext_idx) > 0) {
-    ext_names <- ica$ch_names[ext_idx]
-    for (j in seq_along(ext_idx)) {
-      ext_signal <- data[ext_idx[j], ]
-      col_name <- paste0("corr_", ext_names[j])
-      summary_df[[col_name]] <- apply(sources, 1, function(r) cor(r, ext_signal))
-    }
+  # The reference channels come from eeg itself, not from ica$ch_names: with
+  # fit_ica()'s default picks the eog/ecg/etc. channels are not in the fit.
+  # Channels marked bad are skipped (a dead channel has no usable signal).
+  ext_idx <- which(!(eeg$channel_types %in% c("eeg", "status")) &
+                   !(eeg$channels %in% eeg$bads))
+  for (j in ext_idx) {
+    ext_signal <- eeg$data[j, ]
+    col_name <- paste0("corr_", eeg$channels[j])
+    summary_df[[col_name]] <- apply(sources, 1, function(r) cor(r, ext_signal))
   }
 
   summary_df
@@ -1911,9 +1933,9 @@ set_exclude <- function(ica, components) {
 #' back through the fitted transform in reverse, undoing the ICA rotation,
 #' PCA whitening, and pre-whitening steps \code{fit_ica()} applied going
 #' forward. Only the channels \code{ica} was fit on (\code{ica$ch_names})
-#' are touched - any other channel in \code{eeg} (e.g. a status channel, or
-#' one excluded via \code{fit_ica()}'s \code{picks}) passes through
-#' unchanged.
+#' are touched - any other channel in \code{eeg} (e.g. a status channel, an
+#' EOG or ECG channel under \code{fit_ica()}'s default picks, or one left
+#' out via its \code{picks}) passes through unchanged.
 #'
 #' @param ica A fitted \code{eeg_ica} object (\code{current_fit != "unfitted"}
 #'   - see \code{fit_ica()}).

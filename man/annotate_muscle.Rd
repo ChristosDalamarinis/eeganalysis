@@ -38,7 +38,8 @@ the updated \code{eeg_obj}. If \code{TRUE}, returns
 \code{list(eeg_obj, annotations, scores)}, where \code{annotations} is
 a data frame of just the rows this call added and \code{scores} is the
 smoothed combined z-score trace (length \code{ncol(eeg_obj$data)}),
-useful for plotting.}
+useful for plotting. \code{scores} is \code{NA} inside the stretches
+that earlier annotations already mark as bad (see Details).}
 }
 \value{
 If \code{return_details = FALSE} (default), the input
@@ -46,7 +47,8 @@ If \code{return_details = FALSE} (default), the input
 \code{$annotations} and a step appended to
 \code{$preprocessing_history}. If \code{return_details = TRUE}, a list
 with elements \code{eeg_obj} (as above), \code{annotations} (just the
-rows added by this call), and \code{scores} (the z-score trace).
+rows added by this call), and \code{scores} (the z-score trace, \code{NA}
+inside the stretches left out because of earlier annotations).
 }
 \description{
 Band-pass filters the picked channels to \code{filter_freq} (jaw-clench
@@ -59,9 +61,32 @@ trace exceeds \code{threshold} are flagged; "good" gaps between flagged
 stretches shorter than \code{min_length_good} are absorbed into the
 surrounding flagged stretch rather than left as a sliver of good data.
 Flagged stretches are written to \code{eeg_obj$annotations} as
-\code{"BAD_muscle"} rows.
+\code{"BAD_muscle"} rows. Stretches that earlier annotations already mark
+as bad are left out of the z-scoring and are not flagged again (see
+Details).
 }
 \details{
+\strong{Earlier annotations.} Rows already in \code{eeg_obj$annotations}
+whose description starts with \code{"bad"} (in any letter case: a stretch
+you marked by hand, \code{"BAD_peak"} or \code{"BAD_flat"} from
+\code{\link{annotate_amplitude}}, \code{"BAD_boundary"} from
+\code{\link{eeg_concatenate}}, an earlier \code{"BAD_muscle"}) are left
+out. The mean and spread of each channel's envelope are taken from the
+samples outside those stretches only, the 4 Hz smoothing runs on those
+samples glued together, and the stretches themselves are never flagged
+again - so a burst you already marked does not make the next burst look
+weaker and is not flagged a second time. The fringe of such a burst, just
+outside the marked stretch, stays in the data and now counts against the
+smaller spread, so calling the function again on its own result can add a
+short row at each edge of an earlier \code{"BAD_muscle"} row. For the
+\code{min_length_good} rule such a stretch counts as good data. The
+\code{channel} column of such a row is ignored: a stretch marked bad for
+one channel is left out for every picked channel. A row with any other
+description is just a label and takes no part. The band-pass and the
+envelope are still computed on every sample, because the filter cannot skip
+a stretch. If fewer than 2 samples remain outside the earlier annotations,
+the function stops with an error.
+
 This function bandpass- and lowpass-filters data via the same FFT-based
 overlap-add convolution \code{\link{eeg_bandpass}} uses (see
 R/filter1.R), which has no concept of skipping over already-bad

@@ -439,7 +439,9 @@ annotate_amplitude <- function(eeg_obj,
 #' stretches shorter than \code{min_length_good} are absorbed into the
 #' surrounding flagged stretch rather than left as a sliver of good data.
 #' Flagged stretches are written to \code{eeg_obj$annotations} as
-#' \code{"BAD_muscle"} rows.
+#' \code{"BAD_muscle"} rows. Stretches that earlier annotations already mark
+#' as bad are left out of the z-scoring and are not flagged again (see
+#' Details).
 #'
 #' @param eeg_obj An object of class 'eeg'.
 #' @param threshold Numeric. Z-score threshold above which a sample counts
@@ -460,16 +462,39 @@ annotate_amplitude <- function(eeg_obj,
 #'   \code{list(eeg_obj, annotations, scores)}, where \code{annotations} is
 #'   a data frame of just the rows this call added and \code{scores} is the
 #'   smoothed combined z-score trace (length \code{ncol(eeg_obj$data)}),
-#'   useful for plotting.
+#'   useful for plotting. \code{scores} is \code{NA} inside the stretches
+#'   that earlier annotations already mark as bad (see Details).
 #'
 #' @return If \code{return_details = FALSE} (default), the input
 #'   \code{eeg_obj} with new \code{"BAD_muscle"} rows appended to
 #'   \code{$annotations} and a step appended to
 #'   \code{$preprocessing_history}. If \code{return_details = TRUE}, a list
 #'   with elements \code{eeg_obj} (as above), \code{annotations} (just the
-#'   rows added by this call), and \code{scores} (the z-score trace).
+#'   rows added by this call), and \code{scores} (the z-score trace, \code{NA}
+#'   inside the stretches left out because of earlier annotations).
 #'
 #' @details
+#' \strong{Earlier annotations.} Rows already in \code{eeg_obj$annotations}
+#' whose description starts with \code{"bad"} (in any letter case: a stretch
+#' you marked by hand, \code{"BAD_peak"} or \code{"BAD_flat"} from
+#' \code{\link{annotate_amplitude}}, \code{"BAD_boundary"} from
+#' \code{\link{eeg_concatenate}}, an earlier \code{"BAD_muscle"}) are left
+#' out. The mean and spread of each channel's envelope are taken from the
+#' samples outside those stretches only, the 4 Hz smoothing runs on those
+#' samples glued together, and the stretches themselves are never flagged
+#' again - so a burst you already marked does not make the next burst look
+#' weaker and is not flagged a second time. The fringe of such a burst, just
+#' outside the marked stretch, stays in the data and now counts against the
+#' smaller spread, so calling the function again on its own result can add a
+#' short row at each edge of an earlier \code{"BAD_muscle"} row. For the
+#' \code{min_length_good} rule such a stretch counts as good data. The
+#' \code{channel} column of such a row is ignored: a stretch marked bad for
+#' one channel is left out for every picked channel. A row with any other
+#' description is just a label and takes no part. The band-pass and the
+#' envelope are still computed on every sample, because the filter cannot skip
+#' a stretch. If fewer than 2 samples remain outside the earlier annotations,
+#' the function stops with an error.
+#'
 #' This function bandpass- and lowpass-filters data via the same FFT-based
 #' overlap-add convolution \code{\link{eeg_bandpass}} uses (see
 #' R/filter1.R), which has no concept of skipping over already-bad
@@ -550,6 +575,22 @@ annotate_muscle <- function(eeg_obj,
          "annotate_nan() to locate the gap(s) first.", call. = FALSE)
   }
 
+  # ========== LEAVE OUT STRETCHES ALREADY MARKED BAD ==========
+
+  # Samples inside an earlier annotation whose description starts with "bad"
+  # (any letter case: BAD_manual, BAD_peak, an earlier BAD_muscle, ...) are
+  # left out of the z-score and of the smoothing below, and are never flagged
+  # again. The band-pass and the envelope still run on every sample, because
+  # the filter cannot skip a stretch. The channel column of an annotation is
+  # ignored (same helper as fit_ica()).
+  bad_mask <- .annotation_bad_mask(eeg_obj)
+  keep     <- !bad_mask
+  if (sum(keep) < 2) {
+    stop("ERROR: fewer than 2 samples are left outside the earlier BAD ",
+         "annotations, so there is nothing to compute a z-score from.",
+         call. = FALSE)
+  }
+
   # ========== BANDPASS + HILBERT ENVELOPE PER CHANNEL ==========
 
   n_picked <- length(ch_idx)
@@ -569,13 +610,25 @@ annotate_muscle <- function(eeg_obj,
 
   # ========== Z-SCORE, COMBINE, SMOOTH ==========
 
-  z        <- .zscore_rows(envelope)
+  # Only the samples outside the earlier BAD annotations take part: their mean
+  # and spread give the z-scores, and the kept samples are glued together for
+  # the smoothing. With no earlier annotation every sample is kept and nothing
+  # is left out (the matrix is not copied then).
+  envelope_used <- if (any(bad_mask)) envelope[, keep, drop = FALSE] else envelope
+  z        <- .zscore_rows(envelope_used)
   combined <- colSums(z) / sqrt(n_picked)
   # 'combined' is a row of numbers made here from the channels, not a channel of
   # eeg_obj, so there is no eeg object to give eeg_bandpass(). filter_data() takes
   # the bare row: a 4 Hz low-pass smooths the trace so that it does not jump from
   # one sample to the next.
-  smoothed <- filter_data(combined, sfreq, h_freq = 4)
+  smoothed_kept <- filter_data(combined, sfreq, h_freq = 4)
+
+  # Put the kept samples back at their places. Inside the left-out stretches the
+  # trace is 0, so (for the usual positive threshold) they are not flagged and
+  # they count as "good" for the min_length_good rule below; the trace handed
+  # back marks them NA.
+  smoothed       <- numeric(n_times)
+  smoothed[keep] <- smoothed_kept
 
   art_mask <- smoothed > threshold
 
@@ -592,7 +645,13 @@ annotate_muscle <- function(eeg_obj,
     "annotate_muscle(): ", nrow(new_rows), " new BAD_muscle annotation(s) ",
     "added, covering ", round(sum(new_rows$duration), 2), " s (",
     n_picked, " channel(s), filter_freq = ", filter_freq[1], "-",
-    filter_freq[2], " Hz).")
+    filter_freq[2], " Hz",
+    if (any(bad_mask)) {
+      paste0("; ", round(sum(bad_mask) / sfreq, 2), " s inside earlier BAD ",
+             "annotation(s) left out")
+    } else {
+      ""
+    }, ").")
 
   eeg_obj$preprocessing_history <- c(eeg_obj$preprocessing_history,
                                       list(history_entry))
@@ -600,7 +659,9 @@ annotate_muscle <- function(eeg_obj,
   # ========== RETURN ==========
 
   if (isTRUE(return_details)) {
-    return(list(eeg_obj = eeg_obj, annotations = new_rows, scores = smoothed))
+    scores <- smoothed
+    scores[bad_mask] <- NA_real_
+    return(list(eeg_obj = eeg_obj, annotations = new_rows, scores = scores))
   }
 
   eeg_obj

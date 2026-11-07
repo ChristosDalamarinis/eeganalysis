@@ -292,6 +292,213 @@ test_that("annotate_muscle's score is smooth: the 110-140 Hz strength is low-pas
   expect_lt(var(fast) / var(scores), 1e-3)
 })
 
+# --- annotate_muscle() and notes that are already in eeg$annotations ---------
+#
+# Fixture: 30 s at 1024 Hz, 4 channels of noise (sd 5), plus a 125 Hz burst on
+# every channel: burst A at 8-9 s (amplitude 200, strong) and burst B at 22-23 s
+# (amplitude 40, weak). With nothing marked, A makes the "usual loudness" so
+# large that B stays under the threshold (top score about 1.9, threshold 4) and
+# only A is flagged. With A already marked as bad, A is left out of the
+# z-scoring and B is found (top score about 11). Every note below starts and
+# ends on a whole sample (1024 Hz: multiples of 1/1024 s), so the stretch that
+# is left out can be counted by hand: 1 s = 1024 samples.
+
+.make_muscle_eeg <- function(seed = 61, amp_a = 200, amp_b = 40) {
+  sfreq <- 1024
+  n_tp  <- sfreq * 30
+  t     <- (0:(n_tp - 1)) / sfreq
+  set.seed(seed)
+  data <- t(vapply(.chans, function(ch) {
+    x <- rnorm(n_tp, sd = 5)
+    a <- which(t >= 8 & t < 9)
+    b <- which(t >= 22 & t < 23)
+    x[a] <- x[a] + amp_a * sin(2 * pi * 125 * t[a])
+    x[b] <- x[b] + amp_b * sin(2 * pi * 125 * t[b])
+    x
+  }, numeric(n_tp)))
+  list(eeg = new_eeg(data = data, channels = .chans, sampling_rate = sfreq), t = t)
+}
+
+.note <- function(onset, duration, description = "BAD_manual", channel = NA_character_) {
+  data.frame(onset = onset, duration = duration, description = description,
+             channel = channel, stringsAsFactors = FALSE)
+}
+
+test_that("annotate_muscle with no earlier annotation gives the same trace as before (pinned numbers)", {
+  # The numbers were taken from the code before notes were taken into account.
+  f <- .make_muscle_eeg()
+  r <- annotate_muscle(f$eeg, return_details = TRUE)
+  expect_equal(max(r$scores[f$t >= 8 & f$t < 9]),   11.5612517067, tolerance = 1e-8)
+  expect_equal(max(r$scores[f$t >= 22 & f$t < 23]),  1.8704928273, tolerance = 1e-8)
+  expect_equal(sum(r$scores), -2.5475917103, tolerance = 1e-8)
+  expect_equal(sd(r$scores),   1.9845882269, tolerance = 1e-8)
+  expect_false(anyNA(r$scores))
+  expect_equal(nrow(r$annotations), 1)          # only the strong burst A
+  expect_gt(r$annotations$onset, 7.9)
+  expect_lt(r$annotations$onset + r$annotations$duration, 9.1)
+})
+
+test_that("annotate_muscle does not flag a stretch marked BAD_ by hand again, and then finds the weaker burst", {
+  f   <- .make_muscle_eeg()
+  eeg <- f$eeg
+  eeg$annotations <- .note(8, 1)                 # burst A, marked by hand
+  r <- annotate_muscle(eeg, return_details = TRUE)
+
+  # no new row touches 8-9 s; exactly one row covers burst B (22-23 s)
+  expect_equal(nrow(r$annotations), 1)
+  expect_true(all(r$annotations$description == "BAD_muscle"))
+  expect_gt(r$annotations$onset, 21.5)
+  expect_lt(r$annotations$onset, 22.1)
+  expect_gt(r$annotations$onset + r$annotations$duration, 22.9)
+  expect_lt(r$annotations$onset + r$annotations$duration, 23.5)
+  expect_gt(max(r$scores[f$t >= 22 & f$t < 23]), 4)    # was about 1.9 when A counted
+  # the table now holds the hand-made note and the new row, in time order
+  expect_equal(r$eeg_obj$annotations$description, c("BAD_manual", "BAD_muscle"))
+})
+
+test_that("annotate_muscle's scores are NA exactly inside the marked stretch and numbers everywhere else", {
+  f   <- .make_muscle_eeg()
+  eeg <- f$eeg
+  eeg$annotations <- .note(8, 1)
+  scores <- annotate_muscle(eeg, return_details = TRUE)$scores
+
+  expect_type(scores, "double")
+  expect_length(scores, ncol(eeg$data))
+  expect_equal(which(is.na(scores)), which(f$t >= 8 & f$t < 9))   # samples 8193 to 9216
+  expect_equal(sum(is.na(scores)), 1024)                           # 1 s at 1024 Hz
+})
+
+test_that("annotate_muscle's scores equal a step-by-step recomputation that leaves the marked stretch out", {
+  f   <- .make_muscle_eeg()
+  eeg <- f$eeg
+  eeg$annotations <- .note(8, 1)
+  scores <- annotate_muscle(eeg, return_details = TRUE)$scores
+
+  # 1. band-pass + envelope on EVERY sample; 2. drop the marked samples;
+  # 3. z-score each channel over the kept samples; 4. add up, divide by
+  # sqrt(4 channels); 5. smooth the glued kept samples at 4 Hz; 6. put back.
+  env <- t(vapply(seq_len(nrow(eeg$data)), function(i) {
+    .hilbert_envelope(filter_data(eeg$data[i, ], 1024, l_freq = 110, h_freq = 140))
+  }, numeric(ncol(eeg$data))))
+  keep <- !(f$t >= 8 & f$t < 9)
+  z    <- .zscore_rows(env[, keep])
+  expected <- rep(NA_real_, ncol(eeg$data))
+  expected[keep] <- filter_data(colSums(z) / sqrt(4), 1024, h_freq = 4)
+
+  expect_equal(scores, expected, tolerance = 1e-12)
+})
+
+test_that("annotate_muscle leaves out only notes whose description starts with 'bad' (any letter case)", {
+  f <- .make_muscle_eeg()
+  plain <- annotate_muscle(f$eeg, return_details = TRUE)$scores
+
+  for (d in c("BAD_manual", "bad_x", "Bad Segment", "BAD_peak", "badminton")) {
+    eeg <- f$eeg
+    eeg$annotations <- .note(8, 1, d)
+    scores <- annotate_muscle(eeg, return_details = TRUE)$scores
+    expect_equal(sum(is.na(scores)), 1024, info = d)
+  }
+  # other descriptions are just labels: nothing is left out, trace unchanged
+  for (d in c("Block1", "xBAD", "Not_bad", "Baseline", "good")) {
+    eeg <- f$eeg
+    eeg$annotations <- .note(8, 1, d)
+    scores <- annotate_muscle(eeg, return_details = TRUE)$scores
+    expect_false(anyNA(scores), info = d)
+    expect_equal(scores, plain, info = d)
+  }
+})
+
+test_that("annotate_muscle ignores the channel column of an earlier note", {
+  f <- .make_muscle_eeg()
+  eeg_all <- f$eeg
+  eeg_all$annotations <- .note(8, 1)
+  eeg_cz <- f$eeg
+  eeg_cz$annotations <- .note(8, 1, "BAD_manual", "Cz")      # marked for one channel only
+  s_all <- annotate_muscle(eeg_all, return_details = TRUE)$scores
+  s_cz  <- annotate_muscle(eeg_cz,  return_details = TRUE)$scores
+  expect_equal(which(is.na(s_cz)), which(f$t >= 8 & f$t < 9))
+  expect_equal(s_cz, s_all)
+})
+
+test_that("annotate_muscle called on its own result does not flag a marked burst again", {
+  f <- .make_muscle_eeg(amp_b = 0)               # burst A only
+  first <- annotate_muscle(f$eeg)
+  expect_equal(nrow(first$annotations), 1)
+  r1 <- first$annotations[1, ]
+  second <- annotate_muscle(first, return_details = TRUE)$annotations
+
+  # no new row overlaps the first one ...
+  expect_false(any(second$onset < r1$onset + r1$duration &
+                   r1$onset < second$onset + second$duration))
+  # ... the only new rows are two short stretches that touch its two edges: the
+  # fringe of the burst, which the first call left unflagged and which counts
+  # as loud once burst A is out of the z-scoring
+  expect_equal(nrow(second), 2)
+  expect_true(all(second$duration < 0.05))
+  expect_equal(second$onset[1] + second$duration[1], r1$onset, tolerance = 1e-9)
+  expect_equal(second$onset[2], r1$onset + r1$duration, tolerance = 1e-9)
+})
+
+test_that("annotate_muscle on its own result finds the weaker burst that the first call could not see", {
+  g  <- .make_muscle_eeg()
+  g1 <- annotate_muscle(g$eeg)                   # flags A only, B is hidden by A
+  expect_equal(nrow(g1$annotations), 1)
+  a_row <- g1$annotations[1, ]
+  g2 <- annotate_muscle(g1, return_details = TRUE)$annotations
+
+  # burst B (22-23 s) is now covered by one new row ...
+  expect_true(any(g2$onset > 21.5 & g2$onset < 22.1 & g2$onset + g2$duration > 22.9))
+  # ... and nothing overlaps burst A's row again
+  expect_false(any(g2$onset < a_row$onset + a_row$duration &
+                   a_row$onset < g2$onset + g2$duration))
+})
+
+test_that("annotate_muscle errors when fewer than 2 samples are left outside earlier BAD notes", {
+  f <- .make_muscle_eeg()
+  eeg <- f$eeg
+  eeg$annotations <- .note(0, 30, "BAD_all")                       # every sample
+  expect_error(annotate_muscle(eeg), "fewer than 2 samples")
+  eeg$annotations <- .note(0, 30719 / 1024, "BAD_all")             # all but the last one
+  expect_error(annotate_muscle(eeg), "fewer than 2 samples")
+})
+
+test_that("annotate_muscle's history line names the seconds left out only when some were", {
+  f <- .make_muscle_eeg()
+  eeg <- f$eeg
+  eeg$annotations <- .note(8, 1)
+  h <- annotate_muscle(eeg)$preprocessing_history
+  expect_match(h[[length(h)]], "1 s inside earlier BAD annotation(s) left out", fixed = TRUE)
+
+  h0 <- annotate_muscle(f$eeg)$preprocessing_history
+  expect_false(grepl("left out", h0[[length(h0)]], fixed = TRUE))
+})
+
+test_that("annotate_muscle counts a short left-out stretch between two flagged stretches as good data", {
+  # One continuous burst at 8-10 s with a 0.05 s (51 samples) stretch marked in
+  # its middle. min_length_good = 0.1 s (102 samples): the marked stretch is a
+  # shorter "good" run, so it is folded into the flagged stretch -> ONE row.
+  # min_length_good = 0.01 s (10 samples): it stays a gap -> TWO rows.
+  sfreq <- 1024; n_tp <- sfreq * 30; t <- (0:(n_tp - 1)) / sfreq
+  set.seed(62)
+  data <- t(vapply(.chans, function(ch) {
+    x <- rnorm(n_tp, sd = 5)
+    a <- which(t >= 8 & t < 10)
+    x[a] <- x[a] + 100 * sin(2 * pi * 125 * t[a])
+    x
+  }, numeric(n_tp)))
+  eeg <- new_eeg(data = data, channels = .chans, sampling_rate = sfreq)
+  eeg$annotations <- .note(9, 51 / 1024, "BAD_gap")
+
+  one <- annotate_muscle(eeg, min_length_good = 0.1)$annotations
+  two <- annotate_muscle(eeg, min_length_good = 0.01)$annotations
+  expect_equal(sum(one$description == "BAD_muscle"), 1)
+  expect_equal(sum(two$description == "BAD_muscle"), 2)
+  # in the two-row case the gap between the new rows is exactly the marked stretch
+  m <- two[two$description == "BAD_muscle", ]
+  expect_equal(m$onset[2], 9 + 51 / 1024, tolerance = 1e-9)
+  expect_equal(m$onset[1] + m$duration[1], 9, tolerance = 1e-9)
+})
+
 
 # ============================================================================
 # TEST SUITE 4: annotate_nan()

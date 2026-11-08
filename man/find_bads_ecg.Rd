@@ -36,7 +36,15 @@ resolves to \code{3.0} if \code{measure = "zscore"}, or \code{0.9} if
 
 \item{l_freq, h_freq}{Numeric. Band-pass edges in Hz applied to both the IC
 time-courses and the ECG channel before correlating. Default:
-\code{c(8, 16)} - the heartbeat band.}
+\code{c(8, 16)} - the heartbeat band. The band-pass is the one the
+reference implementation scores components with, not the gentler default
+of \code{\link{filter_data}}: slopes only 0.5 Hz wide, a Hann window, and
+a filter 10 seconds long (rounded up to a power of two of samples, 16 s at
+512 Hz) that runs forward and backward (see
+\code{\link{.make_scoring_filter}}). \code{l_freq} must be at least 0.5 and
+\code{h_freq} at most the Nyquist frequency minus 0.5. A recording shorter
+than the filter still works, but gives a warning, because the result is
+then likely to be distorted.}
 
 \item{method}{\code{"correlation"} (default) or \code{"ctps"} - a
 meaningfully more powerful phase-locking method: instead of asking
@@ -48,9 +56,10 @@ spot, every single heartbeat, reliably. See \code{\link{.qrs_detector}},
 \code{threshold = "auto"} resolves via \code{\link{.get_ctps_threshold}}
 instead of the correlation path's \code{3.0}/\code{0.9}.
 \code{l_freq}/\code{h_freq} only filter the ECG channel for heartbeat
-detection here - unlike the correlation path, the IC epochs analyzed
-are never filtered (the phase/Kuiper-test step assumes the sources it
-receives are already appropriately filtered). \code{measure} has no
+detection here (with the same scoring filter as above) - unlike the
+correlation path, the IC epochs analyzed are never filtered (the
+phase/Kuiper-test step assumes the sources it receives are already
+appropriately filtered). \code{measure} has no
 effect when \code{method = "ctps"} (still validated, just unused).}
 
 \item{measure}{\code{"zscore"} (default) - iterative adaptive z-scoring of

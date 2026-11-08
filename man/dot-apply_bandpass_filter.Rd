@@ -19,6 +19,6 @@ The second of the two steps (design, then run). It does no filtering
 itself: it reads the method from the description made by
 \code{.make_bandpass_filter()} and hands the row to the engine that does
 the work, \code{.overlap_add_filter()} for FIR or \code{.iir_filter()} for
-IIR. Both engines were there before and are unchanged.
+IIR.
 }
 \keyword{internal}

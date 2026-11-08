@@ -141,6 +141,78 @@
 }
 
 # ----------------------------------------------------------------------------
+# .make_scoring_filter() - the band-pass the detectors score with
+# ----------------------------------------------------------------------------
+#' Design the Band-Pass Filter the ICA Detectors Score With (internal)
+#'
+#' Designs, without touching any data, the band-pass filter that the reference
+#' implementation uses when it scores components against a reference signal
+#' and when it cleans an ECG channel before looking for heartbeats: 0.5 Hz wide
+#' slopes at both edges, a Hann window, the "firwin2" way of drawing the
+#' kernel, a filter 10 seconds long (rounded up to a power of two of samples:
+#' 4096 at 256 Hz, 8192 at 512 Hz, 16384 at 1000 and at 1024 Hz) and
+#' forward-and-backward filtering with no delay (which squares the gain: an
+#' edge that a single pass would let through at 0.96 comes out at 0.93). This
+#' is much steeper than the default of \code{\link{filter_data}} (slopes of 2 to
+#' 4 Hz), so waves just outside the band no longer leak into the scores.
+#'
+#' The filter is designed once per call and then run on the reference signal
+#' and on every component with \code{.apply_bandpass_filter()}. The three
+#' settings that \code{\link{filter_data}} does not offer (the "firwin2" design,
+#' the length as text and forward-and-backward filtering) are used here
+#' directly through \code{.make_bandpass_filter()}.
+#'
+#' A signal shorter than the filter is still filtered (the ends are padded),
+#' but the result is distorted at both ends, so one warning is given (the
+#' reference implementation warns in the same case).
+#'
+#' @param sfreq Numeric. Sampling rate in Hz.
+#' @param l_freq,h_freq Numeric. Band-pass edges in Hz (as in
+#'   \code{\link{find_bads_eog}}). \code{l_freq} must be at least 0.5 and
+#'   \code{h_freq} at most half the sampling rate minus 0.5, because the slopes
+#'   are 0.5 Hz wide; the other checks are those of \code{\link{eeg_bandpass}}.
+#' @param n_samples Integer. Number of samples of the signals that will be
+#'   filtered, only to decide whether to warn.
+#' @return The list made by \code{.make_bandpass_filter()}, ready for
+#'   \code{.apply_bandpass_filter()}.
+#' @keywords internal
+.make_scoring_filter <- function(sfreq, l_freq, h_freq, n_samples) {
+
+  # The cutoffs must make sense (same checks and messages as the public filters).
+  .check_band_edges(l_freq, h_freq, sfreq)
+
+  # The slopes are 0.5 Hz wide and lie below l_freq and above h_freq, so they
+  # must still fit between 0 Hz and the Nyquist frequency.
+  if (!is.null(l_freq) && l_freq - 0.5 < 0) {
+    stop("'l_freq' (", l_freq, ") is too low: the scoring filter has a slope ",
+         "0.5 Hz wide below it, so 'l_freq' must be at least 0.5.",
+         call. = FALSE)
+  }
+  if (!is.null(h_freq) && h_freq + 0.5 > sfreq / 2) {
+    stop("'h_freq' (", h_freq, ") is too high: the scoring filter has a slope ",
+         "0.5 Hz wide above it, so 'h_freq' must be at most ", sfreq / 2 - 0.5,
+         " (the Nyquist frequency minus 0.5).", call. = FALSE)
+  }
+
+  spec <- .make_bandpass_filter(sfreq, l_freq, h_freq, method = "fir",
+                                iir_params = NULL, l_trans_bandwidth = 0.5,
+                                h_trans_bandwidth = 0.5,
+                                filter_length = "10s", fir_window = "hann",
+                                phase = "zero-double", pad = "reflect_limited",
+                                fir_design = "firwin2")
+
+  if (spec$N > n_samples) {
+    warning("The band-pass filter used for scoring is ", spec$N, " samples (",
+            round(spec$N / sfreq, 1), " s) long, but the signal has only ",
+            n_samples, " samples (", round(n_samples / sfreq, 1),
+            " s), so the scores are likely to be distorted. Use a longer ",
+            "recording.", call. = FALSE)
+  }
+
+  spec
+}
+
+# ----------------------------------------------------------------------------
 # .score_sources() - correlate every IC against a reference signal
 # ----------------------------------------------------------------------------
 #' Score Every Independent Component Against a Reference Signal (internal)
@@ -148,9 +220,9 @@
 #' Restricted to Pearson correlation against a fixed target (a more general
 #' score-function/no-target-skewness path is not needed by any detector in
 #' this file). Band-pass filters every IC time-course and the
-#' target signal to \code{[l_freq, h_freq]} with \code{\link{filter_data}}
-#' (also used by \code{\link{annotate_muscle}} for the same kind of
-#' per-vector bandpass),
+#' target signal to \code{[l_freq, h_freq]} with the scoring filter
+#' (\code{\link{.make_scoring_filter}}: steep 0.5 Hz slopes, run forward and
+#' backward, designed once and used for the target and for every component),
 #' then correlates each filtered IC against the filtered target.
 #'
 #' @param ica A fitted \code{eeg_ica} object.
@@ -168,13 +240,15 @@
   sfreq   <- eeg$sampling_rate
 
   # The reference signal (target_data) and every IC time course (a row of 'sources')
-  # are plain rows of numbers; neither is a channel of an eeg object, so they go
-  # through filter_data(). Both are filtered to the same band, so that the
-  # correlation below compares like with like.
-  target_filt <- filter_data(target_data, sfreq, l_freq = l_freq, h_freq = h_freq)
+  # are plain rows of numbers; neither is a channel of an eeg object. All of them
+  # go through the same scoring filter, designed once here (the design does not
+  # depend on the numbers), so that the correlation below compares like with like.
+  spec <- .make_scoring_filter(sfreq, l_freq, h_freq, length(target_data))
+
+  target_filt <- .apply_bandpass_filter(target_data, spec)
 
   scores <- vapply(seq_len(nrow(sources)), function(i) {
-    ic_filt <- filter_data(sources[i, ], sfreq, l_freq = l_freq, h_freq = h_freq)
+    ic_filt <- .apply_bandpass_filter(sources[i, ], spec)
     cor(ic_filt, target_filt)
   }, numeric(1))
 
@@ -518,7 +592,15 @@
 #'   \code{measure = "correlation"}.
 #' @param l_freq,h_freq Numeric. Band-pass edges in Hz applied to both the IC
 #'   time-courses and the EOG channel before correlating. Default:
-#'   \code{c(1, 10)} - the eye-movement band.
+#'   \code{c(1, 10)} - the eye-movement band. The band-pass is the one the
+#'   reference implementation scores components with, not the gentler default
+#'   of \code{\link{filter_data}}: slopes only 0.5 Hz wide (so waves just
+#'   outside the band hardly get in), a Hann window, and a filter 10 seconds
+#'   long (rounded up to a power of two of samples, 16 s at 512 Hz) that runs
+#'   forward and backward (see \code{\link{.make_scoring_filter}}).
+#'   \code{l_freq} must be at least 0.5 and \code{h_freq} at most the Nyquist
+#'   frequency minus 0.5. A recording shorter than the filter still works, but
+#'   gives a warning, because the scores are then likely to be distorted.
 #' @param measure \code{"zscore"} (default) - iterative adaptive z-scoring of
 #'   the correlations (\code{\link{.find_outliers}}) - or
 #'   \code{"correlation"} - a direct threshold on \code{abs(correlation)}.
@@ -597,7 +679,15 @@ find_bads_eog <- function(ica, eeg, ch_name = NULL, threshold = "auto",
 #'   \code{measure = "correlation"}.
 #' @param l_freq,h_freq Numeric. Band-pass edges in Hz applied to both the IC
 #'   time-courses and the ECG channel before correlating. Default:
-#'   \code{c(8, 16)} - the heartbeat band.
+#'   \code{c(8, 16)} - the heartbeat band. The band-pass is the one the
+#'   reference implementation scores components with, not the gentler default
+#'   of \code{\link{filter_data}}: slopes only 0.5 Hz wide, a Hann window, and
+#'   a filter 10 seconds long (rounded up to a power of two of samples, 16 s at
+#'   512 Hz) that runs forward and backward (see
+#'   \code{\link{.make_scoring_filter}}). \code{l_freq} must be at least 0.5 and
+#'   \code{h_freq} at most the Nyquist frequency minus 0.5. A recording shorter
+#'   than the filter still works, but gives a warning, because the result is
+#'   then likely to be distorted.
 #' @param method \code{"correlation"} (default) or \code{"ctps"} - a
 #'   meaningfully more powerful phase-locking method: instead of asking
 #'   whether a component roughly moves with the ECG channel, it asks
@@ -608,9 +698,10 @@ find_bads_eog <- function(ica, eeg, ch_name = NULL, threshold = "auto",
 #'   \code{threshold = "auto"} resolves via \code{\link{.get_ctps_threshold}}
 #'   instead of the correlation path's \code{3.0}/\code{0.9}.
 #'   \code{l_freq}/\code{h_freq} only filter the ECG channel for heartbeat
-#'   detection here - unlike the correlation path, the IC epochs analyzed
-#'   are never filtered (the phase/Kuiper-test step assumes the sources it
-#'   receives are already appropriately filtered). \code{measure} has no
+#'   detection here (with the same scoring filter as above) - unlike the
+#'   correlation path, the IC epochs analyzed are never filtered (the
+#'   phase/Kuiper-test step assumes the sources it receives are already
+#'   appropriately filtered). \code{measure} has no
 #'   effect when \code{method = "ctps"} (still validated, just unused).
 #' @param measure \code{"zscore"} (default) - iterative adaptive z-scoring of
 #'   the correlations (\code{\link{.find_outliers}}) - or
@@ -669,11 +760,12 @@ find_bads_ecg <- function(ica, eeg, ch_name = NULL, threshold = "auto",
     ecg_ch <- ecg_chs[1]
     sfreq  <- eeg$sampling_rate
 
-    # filter_data() takes the ECG channel's row of numbers and keeps the heartbeat
-    # band, only so that the beats can be found below. The filtered copy is not
-    # stored in the recording.
-    ecg_filt <- filter_data(eeg$data[match(ecg_ch, eeg$channels), ],
-                            sfreq, l_freq = l_freq, h_freq = h_freq)
+    # The ECG channel's row of numbers is band-passed to the heartbeat band with
+    # the scoring filter (see .make_scoring_filter()), only so that the beats can
+    # be found below. The filtered copy is not stored in the recording.
+    ecg_row  <- eeg$data[match(ecg_ch, eeg$channels), ]
+    spec     <- .make_scoring_filter(sfreq, l_freq, h_freq, length(ecg_row))
+    ecg_filt <- .apply_bandpass_filter(ecg_row, spec)
     beats <- .qrs_detector(ecg_filt, sfreq)
 
     if (identical(threshold, "auto")) {

@@ -101,6 +101,30 @@ make_muscle_fixture <- function(n_samples = 4000, sampling_rate = 256, seed = 7)
   list(eeg = eeg)
 }
 
+# The scoring filter of the detectors is 10 s long (4096 samples at 256 Hz), so
+# a recording shorter than that gets a warning (tested in suite 4c). The fixtures
+# above are 4000 samples (15.6 s), so the calls below would all warn. These two
+# helpers handle exactly that one warning (and leave every other warning alone):
+# quiet_scoring() silences it, count_scoring_warnings() counts it.
+scoring_warning <- "band-pass filter used for scoring"
+quiet_scoring <- function(expr) {
+  withCallingHandlers(expr, warning = function(w) {
+    if (grepl(scoring_warning, conditionMessage(w), fixed = TRUE)) {
+      invokeRestart("muffleWarning")
+    }
+  })
+}
+count_scoring_warnings <- function(expr) {
+  n <- 0L
+  withCallingHandlers(expr, warning = function(w) {
+    if (grepl(scoring_warning, conditionMessage(w), fixed = TRUE)) {
+      n <<- n + 1L
+      invokeRestart("muffleWarning")
+    }
+  })
+  n
+}
+
 # ============================================================================
 #                    TEST SUITE 1: .find_outliers() - private helper
 # ============================================================================
@@ -166,10 +190,10 @@ test_that("find_bads_eog recovers the true blink component and leaves ica$exclud
   ica <- suppressWarnings(fit_ica(new_ica(n_components = fx$n_components, random_state = 1), fx$eeg))
 
   eog_data <- fx$eeg$data[match("EOG_L (EXG1)", fx$eeg$channels), ]
-  scores <- .score_sources(ica, fx$eeg, eog_data, l_freq = 1, h_freq = 10)
+  scores <- quiet_scoring(.score_sources(ica, fx$eeg, eog_data, l_freq = 1, h_freq = 10))
   expect_true(max(abs(scores)) > 0.99)  # the fixture's blink IC should be near-perfectly recovered
 
-  ica2 <- find_bads_eog(ica, fx$eeg)
+  ica2 <- quiet_scoring(find_bads_eog(ica, fx$eeg))
   expect_equal(ica2$labels_$eog, unname(which.max(abs(scores))))
   expect_length(ica2$exclude, 0)  # detect, don't decide
 })
@@ -178,8 +202,8 @@ test_that("find_bads_eog's measure = 'correlation' mode flags the same component
   fx  <- make_detect_fixture()
   ica <- suppressWarnings(fit_ica(new_ica(n_components = fx$n_components, random_state = 1), fx$eeg))
 
-  ica_z <- find_bads_eog(ica, fx$eeg)
-  ica_c <- find_bads_eog(ica, fx$eeg, threshold = 0.5, measure = "correlation")
+  ica_z <- quiet_scoring(find_bads_eog(ica, fx$eeg))
+  ica_c <- quiet_scoring(find_bads_eog(ica, fx$eeg, threshold = 0.5, measure = "correlation"))
   expect_equal(ica_c$labels_$eog, ica_z$labels_$eog)
 })
 
@@ -194,7 +218,7 @@ test_that("find_bads_eog merges results across multiple EOG-like channels, sorte
                    channel_types = c(fx$eeg$channel_types, "eog"))
 
   ica <- suppressWarnings(fit_ica(new_ica(n_components = fx$n_components, random_state = 1), eeg2))
-  ica2 <- find_bads_eog(ica, eeg2)
+  ica2 <- quiet_scoring(find_bads_eog(ica, eeg2))
 
   expect_true(all(c("eog/1/EOG_L (EXG1)", "eog/2/EOG_R (EXG3)", "eog") %in% names(ica2$labels_)))
   expect_true(length(ica2$labels_$eog) >= 1)
@@ -209,10 +233,10 @@ test_that("find_bads_ecg recovers the true heartbeat component and leaves ica$ex
   ica <- suppressWarnings(fit_ica(new_ica(n_components = fx$n_components, random_state = 1), fx$eeg))
 
   ecg_data <- fx$eeg$data[match("ECG (EXG2)", fx$eeg$channels), ]
-  scores <- .score_sources(ica, fx$eeg, ecg_data, l_freq = 8, h_freq = 16)
+  scores <- quiet_scoring(.score_sources(ica, fx$eeg, ecg_data, l_freq = 8, h_freq = 16))
   expect_true(max(abs(scores)) > 0.99)
 
-  ica2 <- find_bads_ecg(ica, fx$eeg)
+  ica2 <- quiet_scoring(find_bads_ecg(ica, fx$eeg))
   expect_equal(ica2$labels_$ecg, unname(which.max(abs(scores))))
   expect_length(ica2$exclude, 0)
 })
@@ -288,8 +312,8 @@ test_that("find_bads_ecg(method = 'ctps') recovers the true heartbeat component 
   fx  <- make_detect_fixture()
   ica <- suppressWarnings(fit_ica(new_ica(n_components = fx$n_components, random_state = 1), fx$eeg))
 
-  ica_corr <- find_bads_ecg(ica, fx$eeg, method = "correlation")
-  ica_ctps <- find_bads_ecg(ica, fx$eeg, method = "ctps")
+  ica_corr <- quiet_scoring(find_bads_ecg(ica, fx$eeg, method = "correlation"))
+  ica_ctps <- quiet_scoring(find_bads_ecg(ica, fx$eeg, method = "ctps"))
 
   expect_equal(ica_ctps$labels_$ecg, ica_corr$labels_$ecg)
   expect_true("ecg/ECG (EXG2)" %in% names(ica_ctps$labels_))
@@ -300,9 +324,9 @@ test_that("find_bads_ecg(method = 'ctps', threshold = 'auto') resolves via .get_
   fx  <- make_detect_fixture()
   ica <- suppressWarnings(fit_ica(new_ica(n_components = fx$n_components, random_state = 1), fx$eeg))
 
-  ica_auto     <- find_bads_ecg(ica, fx$eeg, method = "ctps")
-  ica_explicit <- find_bads_ecg(ica, fx$eeg, method = "ctps",
-                                 threshold = .get_ctps_threshold(fx$eeg$sampling_rate))
+  ica_auto     <- quiet_scoring(find_bads_ecg(ica, fx$eeg, method = "ctps"))
+  ica_explicit <- quiet_scoring(find_bads_ecg(ica, fx$eeg, method = "ctps",
+                                 threshold = .get_ctps_threshold(fx$eeg$sampling_rate)))
 
   expect_equal(ica_auto$labels_$ecg, ica_explicit$labels_$ecg)
 })
@@ -316,7 +340,178 @@ test_that("find_bads_ecg(method = 'ctps') warns and uses only the first channel 
                    channel_types = c(fx$eeg$channel_types, "ecg"))
   ica <- suppressWarnings(fit_ica(new_ica(n_components = fx$n_components, random_state = 1), eeg2))
 
-  expect_warning(find_bads_ecg(ica, eeg2, method = "ctps"), "More than one ECG-like channel")
+  expect_warning(quiet_scoring(find_bads_ecg(ica, eeg2, method = "ctps")), "More than one ECG-like channel")
+})
+
+# ============================================================================
+#         TEST SUITE 4c: the band-pass the detectors score with
+# ============================================================================
+#
+# find_bads_eog() and find_bads_ecg() band-pass the components and the reference
+# channel with a special filter (.make_scoring_filter() in ica_detect.R): slopes
+# only 0.5 Hz wide, a Hann window, a filter 10 s long, run forward and backward.
+# The reference numbers below come from the independent reference implementation.
+# Everything is rebuilt from formulas (no random numbers), so the same values can
+# be worked out again anywhere.
+
+test_that(".make_scoring_filter designs the 0.5 Hz / Hann / 10 s / forward-and-backward filter", {
+  for (fs in c(256, 512, 1000, 1024)) {
+    spec <- .make_scoring_filter(fs, 8, 16, 1e6)
+    expect_identical(spec$phase, "zero-double")
+    expect_identical(spec$fir_design, "firwin2")
+    expect_identical(spec$window, "hann")
+    expect_equal(c(spec$l_trans_bw, spec$h_trans_bw), c(0.5, 0.5))
+  }
+  # 10 s of samples (2560, 5120, 10000, 10240), rounded up to a power of two
+  expect_equal(vapply(c(256, 512, 1000, 1024),
+                      function(fs) .make_scoring_filter(fs, 8, 16, 1e6)$N, 1L),
+               c(4096L, 8192L, 16384L, 16384L))
+  # 10 s at 410 Hz is 4100 samples, just over 4096, so the next power of two is
+  # 8192 (a filter of 9 s would still give 4096).
+  expect_equal(.make_scoring_filter(410, 8, 16, 1e6)$N, 8192L)
+})
+
+test_that("the scoring filter lets a wave through like the reference filter does (512 Hz, 8-16 Hz)", {
+  fs <- 512; t <- (0:(40 * fs - 1)) / fs; mid <- (10 * fs):(30 * fs)
+  spec <- .make_scoring_filter(fs, 8, 16, length(t))
+  # The share of a pure wave that comes out (1 = all of it, 0 = none), measured
+  # in the middle 20 s so that the two ends play no part.
+  gain <- function(f, filt) {
+    y <- filt(sin(2 * pi * f * t))
+    sqrt(2) * sqrt(mean(y[mid]^2))
+  }
+  new <- function(x) .apply_bandpass_filter(x, spec)
+  freqs <- c(6, 7, 7.5, 8, 10, 12, 16, 16.5, 17, 20)
+  want  <- c(0, 0, 0.0013, 0.9302, 1, 1, 0.9302, 0.0013, 0, 0)  # reference, 4 decimals
+  expect_equal(vapply(freqs, gain, 1, filt = new), want, tolerance = 5e-4)
+  # (The edges 8 and 16 Hz come out at 0.9302 and not 1: the filter runs forward
+  # and backward, which squares the 0.9645 of a single pass.)
+  # The default filter of filter_data() leaves half of a 7 Hz wave in.
+  old <- function(x) filter_data(x, fs, l_freq = 8, h_freq = 16)
+  expect_gt(gain(7, old), 0.4)
+  expect_lt(gain(7, new), 1e-3)
+})
+
+test_that("a wave just outside the band no longer leaks into the correlation (hand-checkable)", {
+  # A component made of a 7 Hz and a 12 Hz wave of the same size, a reference
+  # that is the 12 Hz wave alone, the band 8-16 Hz. The 7 Hz wave is outside the
+  # band. If half of it leaks in, the filtered component is 0.5 * sin(7 Hz) +
+  # sin(12 Hz) and its correlation with sin(12 Hz) is 1 / sqrt(1 + 0.25) = 0.894.
+  # If none leaks in, the correlation is 1.
+  fs <- 512; t <- (0:(40 * fs - 1)) / fs
+  ic <- sin(2 * pi * 7 * t) + sin(2 * pi * 12 * t); target <- sin(2 * pi * 12 * t)
+  spec <- .make_scoring_filter(fs, 8, 16, length(t))
+  expect_equal(cor(.apply_bandpass_filter(ic, spec), .apply_bandpass_filter(target, spec)),
+               1, tolerance = 1e-4)
+  expect_equal(cor(filter_data(ic, fs, 8, 16), filter_data(target, fs, 8, 16)),
+               1 / sqrt(1.25), tolerance = 0.02)
+})
+
+test_that("the scoring filter gives the numbers of the reference implementation on a made-up row", {
+  row <- function(n, fs) {
+    t <- (0:(n - 1)) / fs
+    3 * sin(2 * pi * 5 * t) + 2 * sin(2 * pi * 12 * t + 1) + sin(2 * pi * 25 * t) +
+      0.002 * ((0:(n - 1)) %% 97) - 0.1
+  }
+  check <- function(n, fs, l, h, idx, want) {
+    spec <- suppressWarnings(.make_scoring_filter(fs, l, h, n))
+    y <- .apply_bandpass_filter(row(n, fs), spec)
+    expect_equal(y[idx], want, tolerance = 1e-9)
+  }
+  # Samples 1, 2, 3, the middle, and the last three.
+  check(20480, 512, 8, 16, c(1, 2, 3, 5001, 10241, 10242, 20480),
+        c(-3.3306690738754696e-16, 0.12910802310420977, 0.25310219933559647,
+          1.640759451052747, 1.6787643359437592, 1.8173031739505319,
+          -3.3306690738754696e-16))
+  # A row SHORTER than the filter (3000 samples, the filter has 8192): still
+  # filtered, with the ends padded (this one warns, see the next tests).
+  check(3000, 512, 8, 16, c(1, 2, 3, 1501, 2998, 2999, 3000),
+        c(-3.8528554011121234e-05, 0.1290777062231261, 0.25308024667483464,
+          1.8326458180654868, 0.5549929127560416, 0.2807728843643356,
+          -0.00017113829295013118))
+  # Another sampling rate and band (1-10 Hz, the eye-movement band).
+  check(12000, 256, 1, 10, c(1, 2, 3, 6001, 11998, 11999, 12000),
+        c(4.511067734636054e-12, -4.740462390354777e-05, 0.005109877689178005,
+          2.859643497041554, 1.1628766250460758, 0.5910978847568885,
+          3.383959779057477e-13))
+})
+
+test_that(".make_scoring_filter warns when the signal is shorter than the filter, and not otherwise", {
+  expect_warning(.make_scoring_filter(256, 8, 16, 4000),
+                 "filter used for scoring is 4096 samples \\(16 s\\) long, but the signal has only 4000 samples \\(15.6 s\\)")
+  expect_warning(.make_scoring_filter(256, 8, 16, 4096), NA)   # exactly as long: fine
+  expect_warning(.make_scoring_filter(256, 8, 16, 5000), NA)
+})
+
+test_that("the scoring filter refuses edges its 0.5 Hz slopes cannot fit", {
+  expect_error(.make_scoring_filter(256, 0.3, 16, 1e5), "must be at least 0.5")
+  expect_error(.make_scoring_filter(256, 8, 127.8, 1e5), "must be at most 127.5")
+  expect_error(.make_scoring_filter(256, 12, 8, 1e5), "must be less than")  # the checks of the public filters still apply
+  expect_error(.make_scoring_filter(256, 8, 128, 1e5), "Nyquist")
+  expect_error(.make_scoring_filter(256, 0.5, 127.5, 1e5), NA)     # right at the limits: allowed
+})
+
+test_that("a recording shorter than the filter gives ONE warning per call, not one per component", {
+  fx  <- make_detect_fixture()   # 4000 samples at 256 Hz: shorter than the 4096-sample filter
+  ica <- suppressWarnings(fit_ica(new_ica(n_components = fx$n_components, random_state = 1), fx$eeg))
+  expect_equal(count_scoring_warnings(find_bads_eog(ica, fx$eeg)), 1L)   # 16 components, still one
+  expect_equal(count_scoring_warnings(find_bads_ecg(ica, fx$eeg)), 1L)
+  expect_equal(count_scoring_warnings(find_bads_ecg(ica, fx$eeg, method = "ctps")), 1L)
+})
+
+test_that("a recording at least as long as the filter gives no warning", {
+  fx  <- make_detect_fixture(n_samples = 4200)
+  ica <- suppressWarnings(fit_ica(new_ica(n_components = fx$n_components, random_state = 1), fx$eeg))
+  expect_equal(count_scoring_warnings(find_bads_eog(ica, fx$eeg)), 0L)
+  expect_equal(count_scoring_warnings(find_bads_ecg(ica, fx$eeg)), 0L)
+  expect_equal(count_scoring_warnings(find_bads_ecg(ica, fx$eeg, method = "ctps")), 0L)
+  expect_warning(find_bads_eog(ica, fx$eeg), NA)      # and no other warning either
+})
+
+test_that(".score_sources correlates the rows after the scoring filter (one design for all)", {
+  fx  <- make_detect_fixture(n_samples = 4200)
+  ica <- suppressWarnings(fit_ica(new_ica(n_components = fx$n_components, random_state = 1), fx$eeg))
+  ecg <- fx$eeg$data[match("ECG (EXG2)", fx$eeg$channels), ]
+  src <- get_sources(ica, fx$eeg)
+  scores <- .score_sources(ica, fx$eeg, ecg, l_freq = 8, h_freq = 16)
+
+  spec <- .make_scoring_filter(256, 8, 16, 4200)
+  want <- vapply(seq_len(nrow(src)), function(i) {
+    cor(.apply_bandpass_filter(src[i, ], spec), .apply_bandpass_filter(ecg, spec))
+  }, 1)
+  expect_equal(unname(scores), want, tolerance = 1e-12)
+  expect_equal(names(scores), rownames(src))
+
+  # It is not the correlation after the gentler default filter of filter_data().
+  old <- vapply(seq_len(nrow(src)), function(i) {
+    cor(filter_data(src[i, ], 256, l_freq = 8, h_freq = 16),
+        filter_data(ecg, 256, l_freq = 8, h_freq = 16))
+  }, 1)
+  expect_gt(max(abs(scores - old)), 1e-6)
+})
+
+test_that("find_bads_ecg(method = 'ctps') hands the heartbeat finder the ECG after the scoring filter", {
+  fx  <- make_detect_fixture(n_samples = 4200)
+  ica <- suppressWarnings(fit_ica(new_ica(n_components = fx$n_components, random_state = 1), fx$eeg))
+  seen <- NULL
+  # Stand-in for the beat finder: keep what it is given, then stop.
+  testthat::local_mocked_bindings(
+    .qrs_detector = function(ecg, sfreq, ...) { seen <<- ecg; stop("beat finder reached") },
+    .package = "eeganalysis")
+  expect_error(find_bads_ecg(ica, fx$eeg, method = "ctps"), "beat finder reached")
+
+  ecg  <- fx$eeg$data[match("ECG (EXG2)", fx$eeg$channels), ]
+  spec <- .make_scoring_filter(256, 8, 16, 4200)
+  expect_equal(seen, .apply_bandpass_filter(ecg, spec), tolerance = 1e-12)
+  expect_gt(max(abs(seen - filter_data(ecg, 256, l_freq = 8, h_freq = 16))), 1e-3)  # not the old filter
+})
+
+test_that("find_bads_eog and find_bads_ecg report edges the scoring filter cannot use", {
+  fx  <- make_detect_fixture(n_samples = 4200)
+  ica <- suppressWarnings(fit_ica(new_ica(n_components = fx$n_components, random_state = 1), fx$eeg))
+  expect_error(find_bads_eog(ica, fx$eeg, l_freq = 12, h_freq = 8), "must be less than")
+  expect_error(find_bads_eog(ica, fx$eeg, l_freq = 0.3), "must be at least 0.5")
+  expect_error(find_bads_ecg(ica, fx$eeg, method = "ctps", h_freq = 127.9), "must be at most")
 })
 
 # ============================================================================

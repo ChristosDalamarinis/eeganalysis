@@ -11,7 +11,12 @@
 
 \item{h}{Numeric vector. The FIR kernel coefficients.}
 
-\item{phase}{Character. "zero" (default) for zero-phase single-pass.}
+\item{phase}{Character. "zero" (default) for zero-phase single-pass.
+"zero-double" runs the signal forward and then backward: one pass with the
+kernel convolved with its own reverse, which is twice as long (2 * n_h - 1),
+squares the gain and needs no delay correction. The padding length is
+worked out from the kernel as it is given, before it is doubled. Any other
+word (the causal "minimum") gets no delay correction.}
 
 \item{pad}{Character. Padding mode. Default "reflect_limited".}
 }
@@ -22,6 +27,8 @@ Numeric vector of same length as x - the filtered signal.
 Pipeline:
 \enumerate{
 \item Compute padding length: n_edge = max(min(n_h, n_sig) - 1, 0)
+\item For "zero-double" only: replace the kernel by the kernel convolved with
+its own reverse (forward and backward in one pass)
 \item Select optimal FFT block size (cost-minimising power of 2)
 \item Pad signal with reflect_limited by n_edge on each side
 \item Overlap-add FFT convolution loop (block by block)

@@ -35,7 +35,15 @@ resolves to \code{3.0} if \code{measure = "zscore"}, or \code{0.9} if
 
 \item{l_freq, h_freq}{Numeric. Band-pass edges in Hz applied to both the IC
 time-courses and the EOG channel before correlating. Default:
-\code{c(1, 10)} - the eye-movement band.}
+\code{c(1, 10)} - the eye-movement band. The band-pass is the one the
+reference implementation scores components with, not the gentler default
+of \code{\link{filter_data}}: slopes only 0.5 Hz wide (so waves just
+outside the band hardly get in), a Hann window, and a filter 10 seconds
+long (rounded up to a power of two of samples, 16 s at 512 Hz) that runs
+forward and backward (see \code{\link{.make_scoring_filter}}).
+\code{l_freq} must be at least 0.5 and \code{h_freq} at most the Nyquist
+frequency minus 0.5. A recording shorter than the filter still works, but
+gives a warning, because the scores are then likely to be distorted.}
 
 \item{measure}{\code{"zscore"} (default) - iterative adaptive z-scoring of
 the correlations (\code{\link{.find_outliers}}) - or

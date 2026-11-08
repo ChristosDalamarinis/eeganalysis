@@ -362,8 +362,82 @@
     prev_gain <- this_gain
     prev_freq <- this_freq
   }
-  
+
   h
+}
+
+# ----------------------------------------------------------------------------
+# .firwin2_kernel() - preparation helper
+# ----------------------------------------------------------------------------
+
+#' Build a FIR kernel by drawing the wanted shape (scipy.signal.firwin2 equivalent)
+#'
+#' The second way, next to \code{.firwin_kernel()}, to turn a freq/gain list
+#' into a kernel. \code{.firwin_kernel()} adds one windowed sinc kernel per
+#' slope and puts the cutoff of each slope at its middle. This function follows
+#' the list as it is: the gain changes along a straight line from one point to
+#' the next, so a slope starts and ends exactly where the list says. It matches
+#' \code{scipy.signal.firwin2(N, freq, gain, window = window)}, with the
+#' frequencies as a fraction of Nyquist. In four steps:
+#'   1. Draw the wanted gain on a fine, even grid of 1 + 2^ceiling(log2(N))
+#'      frequencies (straight lines between the points of the list).
+#'   2. Delay the drawing by (N - 1) / 2 samples, so that the kernel starts at
+#'      the first sample and is symmetric around its middle.
+#'   3. Go from frequencies back to time (inverse FFT of the mirrored spectrum).
+#'   4. Keep the first N samples and multiply them by the window.
+#'
+#' @param N      Integer. Number of taps, 3 or more. It may be even, but then
+#'               the gain at Nyquist must be 0 (scipy has the same rule).
+#' @param freq   Numeric vector. Frequencies as a fraction of Nyquist, rising
+#'               strictly from 0 to 1.
+#' @param gain   Numeric vector. Gain at each frequency, same length as freq.
+#' @param window Character. One of "hamming", "hann" or "blackman".
+#'               Default: "hann".
+#'
+#' @return Numeric vector of length N.
+#' @keywords internal
+.firwin2_kernel <- function(N, freq, gain, window = "hann") {
+
+  if (!is.numeric(N) || length(N) != 1L || is.na(N) || N < 3 || N != round(N)) {
+    stop("'N' must be a single whole number of 3 or more.", call. = FALSE)
+  }
+  if (length(freq) != length(gain) || length(freq) < 2L) {
+    stop("'freq' and 'gain' must have the same length, at least 2.",
+         call. = FALSE)
+  }
+  if (freq[1L] != 0 || freq[length(freq)] != 1 || any(diff(freq) <= 0)) {
+    stop("'freq' must rise strictly from 0 to 1 (Nyquist).", call. = FALSE)
+  }
+  if (N %% 2 == 0 && gain[length(gain)] != 0) {
+    stop("An even number of taps needs zero gain at Nyquist ",
+         "(the last value of 'gain' must be 0).", call. = FALSE)
+  }
+
+  # 1. The wanted gain on a fine grid of frequencies from 0 to Nyquist.
+  n_grid <- 1L + as.integer(2^ceiling(log2(N)))
+  x      <- seq(0, 1, length.out = n_grid)
+  fx     <- stats::approx(freq, gain, xout = x)$y
+
+  # 2. Delay by (N - 1) / 2 samples: multiply by a rotating phase.
+  fx2 <- fx * exp(-(N - 1) / 2 * 1i * pi * x)
+
+  # 3. Back to time. The grid holds only the frequencies up to Nyquist, so the
+  #    mirror image (complex conjugate, reversed) is added before the inverse FFT.
+  full <- c(fx2, Conj(rev(fx2[2:(n_grid - 1L)])))
+  imp  <- Re(fft(full, inverse = TRUE)) / length(full)
+
+  # 4. The first N samples times the window (same formulas as .firwin_lowpass()).
+  n <- 0:(N - 1)
+  w <- switch(window,
+    hamming  = 0.54 - 0.46 * cos(2 * pi * n / (N - 1)),
+    hann     = 0.50 - 0.50 * cos(2 * pi * n / (N - 1)),
+    blackman = 0.42 - 0.50 * cos(2 * pi * n / (N - 1)) +
+                      0.08 * cos(4 * pi * n / (N - 1)),
+    stop("'window' must be one of \"hamming\", \"hann\", or \"blackman\".",
+         call. = FALSE)
+  )
+
+  imp[seq_len(N)] * w
 }
 
 # ----------------------------------------------------------------------------
@@ -486,32 +560,53 @@
 #'
 #' Pipeline:
 #'   1. Compute padding length: n_edge = max(min(n_h, n_sig) - 1, 0)
-#'   2. Select optimal FFT block size (cost-minimising power of 2)
-#'   3. Pad signal with reflect_limited by n_edge on each side
-#'   4. Overlap-add FFT convolution loop (block by block)
-#'   5. shift = (n_h-1)//2 + n_edge (zero-phase correction + unpadding in one)
-#'   6. Trim output back to original signal length
+#'   2. For "zero-double" only: replace the kernel by the kernel convolved with
+#'      its own reverse (forward and backward in one pass)
+#'   3. Select optimal FFT block size (cost-minimising power of 2)
+#'   4. Pad signal with reflect_limited by n_edge on each side
+#'   5. Overlap-add FFT convolution loop (block by block)
+#'   6. shift = (n_h-1)//2 + n_edge (zero-phase correction + unpadding in one)
+#'   7. Trim output back to original signal length
 #'
 #' @param x     Numeric vector. The signal to filter (one channel).
 #' @param h     Numeric vector. The FIR kernel coefficients.
 #' @param phase Character. "zero" (default) for zero-phase single-pass.
+#'   "zero-double" runs the signal forward and then backward: one pass with the
+#'   kernel convolved with its own reverse, which is twice as long (2 * n_h - 1),
+#'   squares the gain and needs no delay correction. The padding length is
+#'   worked out from the kernel as it is given, before it is doubled. Any other
+#'   word (the causal "minimum") gets no delay correction.
 #' @param pad   Character. Padding mode. Default "reflect_limited".
 #'
 #' @return Numeric vector of same length as x - the filtered signal.
 #' @keywords internal
 .overlap_add_filter <- function(x, h, phase = "zero", pad = "reflect_limited") {
-  
+
   n_h     <- length(h)
   n_sig   <- length(x)
-  
+
   # ---- Trivial case: kernel of length 1 ----
-  if (n_h == 1L) return(x * h)
-  
+  # (forward and backward applies the kernel twice, so the factor is squared)
+  if (n_h == 1L) return(if (phase == "zero-double") x * h^2 else x * h)
+
   # ---- Padding length ----
-  # n_edge = max(min(n_h, n_sig) - 1, 0)
+  # n_edge = max(min(n_h, n_sig) - 1, 0), from the kernel as it was given
   n_edge <- max(min(n_h, n_sig) - 1L, 0L)
   n_x    <- n_sig + 2L * n_edge   # length of padded signal
-  
+
+  # ---- Forward and backward ("zero-double") ----
+  # Filtering forward and then backward equals one pass with the kernel
+  # convolved with its own reverse: symmetric, 2 * n_h - 1 long, no delay. From
+  # here on h and n_h are the doubled kernel.
+  if (phase == "zero-double") {
+    n_conv <- 2L * n_h - 1L
+    n_f    <- .next_fast_len(n_conv)
+    pad_0  <- rep(0.0, n_f - n_h)
+    h      <- Re(fft(fft(c(h, pad_0)) * fft(c(rev(h), pad_0)),
+                     inverse = TRUE))[seq_len(n_conv)] / n_f
+    n_h    <- n_conv
+  }
+
   # ---- Select FFT block size ----
   # Use cost-minimising power of 2 in range [2*n_h-1, n_x]
   min_fft <- 2L * n_h - 1L
@@ -1055,8 +1150,16 @@
 #
 #   Through filter_data(), the places in the package that have to filter a loose
 #   row of numbers (one that is not a channel of a recording) use it as well:
-#   annotate_muscle() in annotations.R, and find_bads_eog() / find_bads_ecg() in
-#   ica_detect.R (they filter the ICA components and the reference signal).
+#   annotate_muscle() in annotations.R.
+#
+#   The ICA detectors, find_bads_eog() and find_bads_ecg() in ica_detect.R,
+#   filter loose rows too (the ICA components and the reference signal), but
+#   with a special filter of their own, a copy of the one the reference
+#   implementation uses when it scores components. They do not go through
+#   filter_data(): .make_scoring_filter() in ica_detect.R calls the two steps
+#   below directly, with three settings that the public functions do not offer
+#   (fir_design = "firwin2", a length given as "10s", and phase "zero-double",
+#   which .check_phase() refuses for the public functions).
 #
 # THE TWO STEPS: DESIGN, THEN RUN
 #   1. DESIGN  .make_bandpass_filter()   settings -> a description of the filter
@@ -1078,16 +1181,18 @@
 #                      belongs to an eeg object: the channel choice, the header
 #                      and progress bar, the history entry, the new eeg object.
 #
-#   .make_bandpass_filter()  --> FIR: .auto_filter_length(), .firwin_kernel(),
+#   .make_bandpass_filter()  --> FIR: .auto_filter_length(), .firwin_kernel() or
+#                                     .firwin2_kernel() (the design),
 #                                     .minimum_phase() (only for phase = "minimum")
 #                            --> IIR: .design_iir_sos(), .iir_ringing_samples()
 #   .apply_bandpass_filter() --> FIR: .overlap_add_filter()
 #                            --> IIR: .iir_filter()
 #
-#   The functions on the right are older and were not changed. Only the two
-#   engines, .overlap_add_filter() and .iir_filter() (with the small helpers
-#   they call), ever see the signal values; everything above them works on
-#   settings and decides what to run.
+#   Only the two engines, .overlap_add_filter() and .iir_filter() (with the
+#   small helpers they call), ever see the signal values; everything above them
+#   works on settings and decides what to run. .overlap_add_filter() also knows
+#   forward-and-backward filtering (phase "zero-double"), which only the ICA
+#   scoring filter uses.
 #
 # THE "spec" LIST
 #   .make_bandpass_filter() returns a plain list that describes the designed
@@ -1095,7 +1200,8 @@
 #   its header and history entry.
 #     always:  method ("fir"/"iir"), filter_type (label for display), phase, pad
 #     FIR:     kernel (the filter coefficients), N (their number), l_trans_bw and
-#              h_trans_bw (transition widths in Hz, NULL where not used), window
+#              h_trans_bw (transition widths in Hz, NULL where not used), window,
+#              fir_design ("firwin" or "firwin2")
 #     IIR:     order, sos (the chain of second-order sections), padlen (samples
 #              of padding at each end), pad_text (the padding as a sentence)
 #
@@ -1124,19 +1230,31 @@
 #' @param iir_params List with \code{order}, as returned by
 #'   \code{.resolve_iir_params()}. Used only for "iir".
 #' @param l_trans_bandwidth,h_trans_bandwidth,filter_length,fir_window See
-#'   \code{\link{eeg_bandpass}}. Used only for "fir".
+#'   \code{\link{eeg_bandpass}}. Used only for "fir". Besides "auto" and a
+#'   number of samples, \code{filter_length} may be a time as text, such as
+#'   "10s" or "500ms" (rounded up to whole samples; with
+#'   \code{phase = "zero-double"} then rounded up to the next power of two).
+#'   "auto" is not available with \code{fir_design = "firwin2"}.
 #' @param phase Character. "zero" or "minimum" (FIR), "zero" or "forward" (IIR).
+#'   Also "zero-double" (FIR with \code{fir_design = "firwin2"} only): forward
+#'   and backward, see \code{.overlap_add_filter()}. The public functions
+#'   refuse "zero-double" (see \code{.check_phase()}); only the ICA detectors
+#'   use it, through \code{.make_scoring_filter()}.
 #' @param pad Character. "reflect_limited".
+#' @param fir_design Character. How the FIR kernel is built from the wanted
+#'   shape: "firwin" (default; \code{.firwin_kernel()}) or "firwin2"
+#'   (\code{.firwin2_kernel()}). Used only for "fir".
 #' @return A list that describes the filter. Always: \code{method},
 #'   \code{filter_type} (text such as "Bandpass (1 - 40 Hz)"), \code{phase} and
 #'   \code{pad}. For FIR also \code{kernel}, \code{N} (its length),
-#'   \code{l_trans_bw} and \code{h_trans_bw} (NULL where not used) and
-#'   \code{window}. For IIR also \code{order}, \code{sos}, \code{padlen} and
-#'   \code{pad_text}.
+#'   \code{l_trans_bw} and \code{h_trans_bw} (NULL where not used),
+#'   \code{window} and \code{fir_design}. For IIR also \code{order},
+#'   \code{sos}, \code{padlen} and \code{pad_text}.
 #' @keywords internal
 .make_bandpass_filter <- function(sfreq, l_freq, h_freq, method, iir_params,
                                   l_trans_bandwidth, h_trans_bandwidth,
-                                  filter_length, fir_window, phase, pad) {
+                                  filter_length, fir_window, phase, pad,
+                                  fir_design = "firwin") {
 
   # ========== SETUP, THE SAME FOR FIR AND IIR ==========
 
@@ -1144,6 +1262,21 @@
   # widths are given in Hz; the FIR design below works with frequencies as a
   # fraction of this one (1 = Nyquist).
   nyquist <- sfreq / 2.0
+
+  # Settings that only the ICA scoring filter uses (see .make_scoring_filter()):
+  # the "firwin2" design and forward-and-backward filtering. They only exist for
+  # FIR; "zero-double" is only built together with "firwin2".
+  if (!(fir_design %in% c("firwin", "firwin2"))) {
+    stop("'fir_design' must be \"firwin\" or \"firwin2\".", call. = FALSE)
+  }
+  if (method == "iir" && (fir_design != "firwin" || phase == "zero-double")) {
+    stop("'fir_design' and phase \"zero-double\" are for FIR filters only.",
+         call. = FALSE)
+  }
+  if (phase == "zero-double" && fir_design != "firwin2") {
+    stop("phase \"zero-double\" is only built for fir_design = \"firwin2\".",
+         call. = FALSE)
+  }
 
   # A short label of the filter, such as "Bandpass (1 - 40 Hz)". It is the same
   # for FIR and IIR and is only for display: eeg_bandpass() prints it in its
@@ -1220,13 +1353,33 @@
   # slope (.auto_filter_length()). A typed length is made odd as well, because a
   # symmetric kernel needs a centre sample. (.firwin_kernel() stops with a clear
   # message if the length is too short for the slope.)
+  # A length may also be given as a time in text, such as "10s" or "500ms": it is
+  # turned into samples (rounded up) and, for forward-and-backward filtering,
+  # rounded up again to the next power of two.
 
   if (identical(filter_length, "auto")) {
+    if (fir_design == "firwin2") {
+      stop("fir_design = \"firwin2\" needs an explicit 'filter_length' (a ",
+           "number of samples or text such as \"10s\"); \"auto\" is not ",
+           "available for it.", call. = FALSE)
+    }
     N <- .auto_filter_length(l_trans_bw, h_trans_bw, sfreq, window = fir_window)
+  } else if (is.character(filter_length)) {
+    if (length(filter_length) != 1L ||
+        !grepl("^[0-9]+([.][0-9]+)? *(s|ms)$", filter_length)) {
+      stop("'filter_length' must be \"auto\", a number of samples, or text ",
+           "such as \"10s\" or \"500ms\".", call. = FALSE)
+    }
+    seconds <- as.numeric(sub(" *(s|ms)$", "", filter_length)) *
+      if (grepl("ms$", filter_length)) 0.001 else 1
+    N <- max(as.integer(ceiling(seconds * sfreq)), 1L)
+    if (phase == "zero-double") N <- as.integer(2^ceiling(log2(N)))
   } else {
     N <- as.integer(filter_length)
-    if (N %% 2L == 0L) N <- N + 1L  # force odd
   }
+  # Odd length: always for the "firwin" design, and for single-pass zero phase.
+  # (The "firwin2" design may be even when the gain at Nyquist is 0.)
+  if ((fir_design == "firwin" || phase == "zero") && N %% 2L == 0L) N <- N + 1L
 
   # ========== FIR: FREQ / GAIN ARRAYS ==========
   # The wanted shape of the filter as a list of points: 'freq' are frequencies
@@ -1271,9 +1424,21 @@
 
   # ========== FIR: KERNEL ==========
 
-  # The kernel: N symmetric coefficients with the wanted shape. 'sfreq' is only
-  # used to put widths in Hz into the error message when N is too short.
-  h <- .firwin_kernel(N, freq, gain, window = fir_window, sfreq = sfreq)
+  # Forward and backward with a gain of 1 at Nyquist (a high-pass): the kernel
+  # must have an odd length, so one tap is added.
+  if (phase == "zero-double" && N %% 2L == 0L && gain[length(gain)] == 1) {
+    N <- N + 1L
+  }
+
+  # The kernel: N symmetric coefficients with the wanted shape. "firwin" adds
+  # one windowed sinc kernel per slope ('sfreq' is only used to put widths in Hz
+  # into the error message when N is too short); "firwin2" draws the shape as it
+  # is given.
+  h <- if (fir_design == "firwin2") {
+    .firwin2_kernel(N, freq, gain, window = fir_window)
+  } else {
+    .firwin_kernel(N, freq, gain, window = fir_window, sfreq = sfreq)
+  }
 
   # "minimum": the same filter shape, rebuilt so that all of its action is on
   # the past side of every sample (causal). No delay correction is made later,
@@ -1282,7 +1447,7 @@
 
   list(method = "fir", filter_type = filter_type, phase = phase, pad = pad,
        kernel = h, N = N, l_trans_bw = l_trans_bw, h_trans_bw = h_trans_bw,
-       window = fir_window)
+       window = fir_window, fir_design = fir_design)
 }
 
 #' Run a designed band-pass filter over one row of numbers
@@ -1291,7 +1456,7 @@
 #' itself: it reads the method from the description made by
 #' \code{.make_bandpass_filter()} and hands the row to the engine that does
 #' the work, \code{.overlap_add_filter()} for FIR or \code{.iir_filter()} for
-#' IIR. Both engines were there before and are unchanged.
+#' IIR.
 #'
 #' @param x Numeric vector. One signal.
 #' @param spec The list made by \code{.make_bandpass_filter()}.

@@ -992,7 +992,9 @@ test_that("find_bads_eog finds the EXG1-like component although EXG1 is outside 
   fx  <- make_ica_fixture()
   ica <- suppressWarnings(fit_ica(new_ica(n_components = 3, random_state = 1), fx$eeg))
   expect_false("EXG1" %in% ica$ch_names)
-  ica2 <- find_bads_eog(ica, fx$eeg, threshold = 0.5, measure = "correlation")
+  # The fixture (3000 samples at 256 Hz, 11.7 s) is shorter than the 10 s filter of
+  # the detectors (4096 samples), which gives one expected warning (see test-ica_detect.R).
+  ica2 <- suppressWarnings(find_bads_eog(ica, fx$eeg, threshold = 0.5, measure = "correlation"))
   summ <- ica_component_summary(ica, fx$eeg)
   expect_equal(unname(ica2$labels_$eog), summ$component[which.max(abs(summ$corr_EXG1))])
 })

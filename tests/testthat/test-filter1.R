@@ -2834,3 +2834,164 @@ test_that("p_value controls how easily a weak hum is called a line", {
   expect_equal(hits(0.5), 3L)                     # loose: found in all 3 pieces
   expect_equal(hits(1e-12), 0L)                   # very strict: not found
 })
+
+# ============================================================================
+#   THE PIECES OF THE ICA SCORING FILTER: firwin2, "10s" lengths, zero-double
+# ============================================================================
+#
+# The ICA detectors score components with a special band-pass (see
+# .make_scoring_filter() in ica_detect.R) that the public filters do not offer:
+# a kernel drawn the "firwin2" way, a length given as text ("10s"), and
+# forward-and-backward filtering ("zero-double"). Each piece is tested here on
+# its own, with numbers that can be worked out by hand, or that come from the
+# independent reference implementation (scipy's firwin2 for the kernels).
+
+test_that(".firwin2_kernel gives one 1 in the middle for an all-pass shape", {
+  # A gain of 1 at every frequency is a single impulse. The Hann window is 0 at
+  # both ends and 1 in the middle, so the 5 taps are 0, 0, 1, 0, 0.
+  expect_equal(.firwin2_kernel(5, c(0, 1), c(1, 1), "hann"),
+               c(0, 0, 1, 0, 0), tolerance = 1e-12)
+})
+
+test_that(".firwin2_kernel matches scipy.signal.firwin2 (9 taps, three windows)", {
+  freq <- c(0, 0.25, 0.5, 1); gain <- c(1, 1, 0, 0)
+  # First five of the nine values (scipy); the kernel is symmetric, so the last
+  # four mirror the first four.
+  want <- list(
+    hann     = c(0, -0.00480038570529064, 0.05131668431462537,
+                 0.24539836973747456, 0.375),
+    hamming  = c(-0.004267766952966373, -0.007038681565607429,
+                 0.0554220190597954, 0.24876666604775108, 0.375),
+    blackman = c(0, -0.0021780589885506017, 0.034895345333945255,
+                 0.2223982038482001, 0.375))
+  for (w in names(want)) {
+    k <- .firwin2_kernel(9, freq, gain, w)
+    expect_equal(k[1:5], want[[w]], tolerance = 1e-12)
+    expect_equal(k, rev(k), tolerance = 1e-12)
+  }
+})
+
+test_that(".firwin2_kernel puts the slope exactly where the points say", {
+  # The ICA band-pass 8-16 Hz at 256 Hz: 0 up to 7.5 Hz, a straight slope to 1 at
+  # 8 Hz, 1 up to 16 Hz, down to 0 at 16.5 Hz (as a fraction of Nyquist = 128 Hz).
+  k  <- .firwin2_kernel(4096, c(0, 7.5, 8, 16, 16.5, 128) / 128,
+                        c(0, 0, 1, 1, 0, 0), "hann")
+  # How much of a wave of frequency f the kernel lets through, one pass.
+  resp <- function(f) Mod(sum(k * exp(-2i * pi * f / 256 * (seq_along(k) - 1))))
+  expect_equal(resp(12),   1,   tolerance = 1e-3)   # inside the band
+  expect_equal(resp(7.75), 0.5, tolerance = 2e-2)   # half way up the slope
+  expect_lt(resp(7),  1e-3)                         # below the slope
+  expect_lt(resp(20), 1e-3)                         # above the slope
+})
+
+test_that(".firwin2_kernel refuses shapes it cannot build", {
+  expect_error(.firwin2_kernel(8, c(0, 1), c(1, 1)), "zero gain at Nyquist")
+  expect_error(.firwin2_kernel(8, c(0, 0.5, 1), c(1, 1, 0)), NA)  # fine: 0 at Nyquist
+  expect_error(.firwin2_kernel(9, c(0, 0.5, 0.5, 1), c(1, 1, 0, 0)), "rise strictly")
+  expect_error(.firwin2_kernel(9, c(0.1, 1), c(1, 0)), "rise strictly")
+  expect_error(.firwin2_kernel(9, c(0, 1), c(1, 0), "kaiser"), "'window' must be")
+  expect_error(.firwin2_kernel(2, c(0, 1), c(1, 1)), "3 or more")
+  expect_error(.firwin2_kernel(9, c(0, 1), c(1, 0, 0)), "same length")
+})
+
+test_that("zero-double spreads an impulse as the kernel convolved with its reverse", {
+  # (1, 2, 1) / 4 convolved with its own reverse is (1, 4, 6, 4, 1) / 16.
+  x <- numeric(21); x[11] <- 1
+  y <- .overlap_add_filter(x, c(1, 2, 1) / 4, phase = "zero-double")
+  expect_equal(y[9:13], c(1, 4, 6, 4, 1) / 16, tolerance = 1e-12)
+  expect_equal(y[-(9:13)], numeric(16), tolerance = 1e-12)   # nothing anywhere else
+})
+
+test_that("zero-double convolves with the REVERSE, not with the kernel itself", {
+  # h = (1, 2, 0) / 3 is not symmetric. Convolved with its reverse it is
+  # (0, 2, 5, 2, 0) / 9 (symmetric, so no delay); convolved with itself it would
+  # be (1, 4, 4, 0, 0) / 9.
+  x <- numeric(21); x[11] <- 1
+  y <- .overlap_add_filter(x, c(1, 2, 0) / 3, phase = "zero-double")
+  expect_equal(y[9:13], c(0, 2, 5, 2, 0) / 9, tolerance = 1e-12)
+})
+
+test_that("zero-double is the same as running the zero-phase filter twice", {
+  # Impulses far from both ends, so that the edge padding plays no part.
+  h <- c(1, 4, 6, 4, 1) / 16
+  x <- numeric(101); x[c(40, 60)] <- c(1, -2)
+  twice <- .overlap_add_filter(.overlap_add_filter(x, h, "zero"), h, "zero")
+  expect_equal(.overlap_add_filter(x, h, "zero-double"), twice, tolerance = 1e-12)
+})
+
+test_that("zero-double matches a slow direct computation, also for signals shorter than the kernel", {
+  # 5 taps, doubled 9 taps. The padding is min(5, n) - 1 samples on each side.
+  # The expected result is built the slow way: pad, convolve with the doubled
+  # kernel (a plain double sum), cut out the middle. The signals have 20 samples
+  # (longer than the doubled kernel), 7 (in between) and 3 (shorter than the
+  # kernel as given): all are still filtered.
+  conv <- function(a, b) as.numeric(tapply(outer(a, b),
+            outer(seq_along(a), seq_along(b), "+"), sum))
+  h  <- c(1, 2, 3, 2, 1) / 9
+  h2 <- conv(h, rev(h))                              # 9 taps
+  for (n in c(20, 7, 3)) {
+    set.seed(5)
+    x      <- rnorm(n)
+    n_edge <- min(length(h), n) - 1L
+    full   <- conv(.reflect_limited_pad(x, n_edge, n_edge), h2)
+    slow   <- full[n_edge + seq_len(n) + (length(h2) - 1) / 2]
+    expect_equal(.overlap_add_filter(x, h, "zero-double"), slow, tolerance = 1e-12)
+  }
+})
+
+test_that("zero-double with a one-tap kernel multiplies twice", {
+  expect_equal(.overlap_add_filter(c(1, 2, 3), 3, "zero-double"), c(9, 18, 27))
+  expect_equal(.overlap_add_filter(c(1, 2, 3), 3, "zero"),        c(3, 6, 9))
+})
+
+test_that(".make_bandpass_filter reads \"10s\" as samples, rounded up to a power of two for zero-double", {
+  # 10 s of samples: 2560, 5120, 10000 and 10240; the next power of two of
+  # each: 4096, 8192, 16384 and 16384.
+  scoring <- function(fs, l = 8, h = 16, len = "10s", phase = "zero-double") {
+    .make_bandpass_filter(fs, l, h, "fir", NULL, 0.5, 0.5, len, "hann", phase,
+                          "reflect_limited", fir_design = "firwin2")
+  }
+  expect_equal(vapply(c(256, 512, 1000, 1024), function(fs) scoring(fs)$N, 1L),
+               c(4096L, 8192L, 16384L, 16384L))
+  expect_equal(scoring(250, len = "500ms")$N, 128L)       # 125 samples -> 128
+  expect_equal(scoring(256, len = "0.7s", phase = "zero")$N, 181L)  # 179.2 samples, up to 180, made odd
+  expect_equal(scoring(256, len = "10s", phase = "zero")$N, 2561L)  # no power of two; made odd
+  spec <- scoring(256)
+  expect_identical(spec$fir_design, "firwin2")
+  expect_length(spec$kernel, 4096L)
+  # The kernel is the one drawn from the points 0, 7.5, 8, 16, 16.5 and 128 Hz.
+  expect_equal(spec$kernel,
+               .firwin2_kernel(4096, c(0, 7.5, 8, 16, 16.5, 128) / 128,
+                               c(0, 0, 1, 1, 0, 0), "hann"), tolerance = 1e-14)
+  # A high-pass forward-and-backward needs an odd length: one tap is added.
+  expect_equal(scoring(256, l = 1, h = NULL)$N, 4097L)
+  expect_equal(scoring(256, l = NULL, h = 40)$N, 4096L)
+})
+
+test_that(".make_bandpass_filter refuses combinations that are not built", {
+  mk <- function(len = "10s", phase = "zero-double", design = "firwin2",
+                 method = "fir", iir = NULL) {
+    .make_bandpass_filter(256, 8, 16, method, iir, 0.5, 0.5, len, "hann",
+                          phase, "reflect_limited", fir_design = design)
+  }
+  expect_error(mk(len = "auto"), "needs an explicit 'filter_length'")
+  expect_error(mk(len = "10 minutes"), "text such as")
+  expect_error(mk(design = "firwin"), "only built for fir_design")
+  expect_error(mk(design = "firwin3"), "'fir_design' must be")
+  expect_error(mk(method = "iir", iir = list(order = 4L, ftype = "butter")),
+               "FIR filters only")
+  # Nothing changes for the default design: same length, design named in the spec.
+  spec <- .make_bandpass_filter(256, 1, 40, "fir", NULL, "auto", "auto", "auto",
+                                "hamming", "zero", "reflect_limited")
+  expect_identical(spec$fir_design, "firwin")
+  expect_equal(spec$N, 845L)
+})
+
+test_that("the public filters still refuse phase 'zero-double' (it is for the ICA detectors only)", {
+  x <- sin(2 * pi * 10 * (0:999) / 256)
+  expect_error(filter_data(x, 256, 8, 16, phase = "zero-double"), "'phase' must be")
+  expect_error(eeg_bandpass(sf_eeg(x, 256), 8, 16, phase = "zero-double",
+                            verbose = FALSE), "'phase' must be")
+  expect_error(eeg_notch(sf_eeg(x, 256), 50, phase = "zero-double",
+                         verbose = FALSE), "'phase' must be")
+})

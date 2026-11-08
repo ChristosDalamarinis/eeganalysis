@@ -15,7 +15,8 @@
   filter_length,
   fir_window,
   phase,
-  pad
+  pad,
+  fir_design = "firwin"
 )
 }
 \arguments{
@@ -29,19 +30,31 @@
 \code{.resolve_iir_params()}. Used only for "iir".}
 
 \item{l_trans_bandwidth, h_trans_bandwidth, filter_length, fir_window}{See
-\code{\link{eeg_bandpass}}. Used only for "fir".}
+\code{\link{eeg_bandpass}}. Used only for "fir". Besides "auto" and a
+number of samples, \code{filter_length} may be a time as text, such as
+"10s" or "500ms" (rounded up to whole samples; with
+\code{phase = "zero-double"} then rounded up to the next power of two).
+"auto" is not available with \code{fir_design = "firwin2"}.}
 
-\item{phase}{Character. "zero" or "minimum" (FIR), "zero" or "forward" (IIR).}
+\item{phase}{Character. "zero" or "minimum" (FIR), "zero" or "forward" (IIR).
+Also "zero-double" (FIR with \code{fir_design = "firwin2"} only): forward
+and backward, see \code{.overlap_add_filter()}. The public functions
+refuse "zero-double" (see \code{.check_phase()}); only the ICA detectors
+use it, through \code{.make_scoring_filter()}.}
 
 \item{pad}{Character. "reflect_limited".}
+
+\item{fir_design}{Character. How the FIR kernel is built from the wanted
+shape: "firwin" (default; \code{.firwin_kernel()}) or "firwin2"
+(\code{.firwin2_kernel()}). Used only for "fir".}
 }
 \value{
 A list that describes the filter. Always: \code{method},
 \code{filter_type} (text such as "Bandpass (1 - 40 Hz)"), \code{phase} and
 \code{pad}. For FIR also \code{kernel}, \code{N} (its length),
-\code{l_trans_bw} and \code{h_trans_bw} (NULL where not used) and
-\code{window}. For IIR also \code{order}, \code{sos}, \code{padlen} and
-\code{pad_text}.
+\code{l_trans_bw} and \code{h_trans_bw} (NULL where not used),
+\code{window} and \code{fir_design}. For IIR also \code{order},
+\code{sos}, \code{padlen} and \code{pad_text}.
 }
 \description{
 Works out the filter from its settings, without touching any data. For an

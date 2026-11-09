@@ -100,7 +100,10 @@ With \code{freqs} given it has no effect (a warning
 says so if you set it). Default: 8.}
 
 \item{channels}{Character or integer vector, or NULL. Channels to
-filter. NULL = all channels. Default: NULL.}
+filter. NULL = every channel except those of type
+"status" (the trigger row; see Details). A status
+channel that is named here is filtered.
+Default: NULL.}
 
 \item{verbose}{Logical. Print parameters and progress.
 Default: TRUE.}
@@ -127,6 +130,14 @@ Then builds a bandstop kernel (gain=0 in the notch, gain=1 elsewhere).
 
 Multiple frequencies (e.g. harmonics) are combined into a single multi-band
 FIR kernel and applied in one pass.
+
+\strong{Which channels are filtered.} The rule is the one of
+\code{\link{eeg_bandpass}}, for all three methods: with
+\code{channels = NULL} every channel is filtered except the ones of type
+\code{"status"}, the trigger row, which holds codes and not a waveform. The
+other types and the channels in \code{eeg_obj$bads} are filtered as before,
+and a status channel that you name yourself in \code{channels} is filtered
+too. If every channel is of type "status", the call stops with an error.
 
 A FIR kernel that is longer than the recording still runs, but the result is
 distorted, so you get one warning (see \code{\link{eeg_bandpass}}). With the

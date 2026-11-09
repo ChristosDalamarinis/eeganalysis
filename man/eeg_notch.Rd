@@ -128,6 +128,14 @@ Then builds a bandstop kernel (gain=0 in the notch, gain=1 elsewhere).
 Multiple frequencies (e.g. harmonics) are combined into a single multi-band
 FIR kernel and applied in one pass.
 
+A FIR kernel that is longer than the recording still runs, but the result is
+distorted, so you get one warning (see \code{\link{eeg_bandpass}}). With the
+default Hamming window the kernel is 3.3 / (\code{trans_bandwidth} / 2)
+seconds long, 6.6 s for \code{trans_bandwidth = 1}, so a recording shorter
+than that needs a wider \code{trans_bandwidth} or a smaller
+\code{filter_length}. The IIR and spectrum-fit methods never give this
+warning.
+
 \strong{IIR filters} (\code{method = "iir"}) are Butterworth band-stop
 filters, built from their poles and zeros and run as a chain of
 second-order sections, so they stay accurate at high sampling rates (see

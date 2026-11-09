@@ -72,8 +72,14 @@
     eeg <- new_eeg(data = matrix(x, nrow = 1L), channels = "Cz",
                    sampling_rate = sfreq)
 
-    # a warning of the real filter (e.g. an unused argument) is shown once
-    y <- if (first) fun(eeg)$data[1, ] else suppressWarnings(fun(eeg)$data[1, ])
+    # a warning of the real filter (e.g. an unused argument) is shown once.
+    # One warning is never shown: "the FIR filter is longer than the signal".
+    # The spike signal is made by this function and is doubled in length until
+    # the response fits, so a window that is still too short is expected here;
+    # a response that never fits is reported by plot_filter() itself.
+    y <- withCallingHandlers(
+      if (first) fun(eeg)$data[1, ] else suppressWarnings(fun(eeg)$data[1, ]),
+      eeganalysis_filter_longer_than_signal = function(w) invokeRestart("muffleWarning"))
     first <- FALSE
 
     peak  <- max(abs(y))

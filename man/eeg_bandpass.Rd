@@ -66,7 +66,10 @@ Any other word is an error.}
 Only "reflect_limited" (default) is implemented.}
 
 \item{channels}{Character or integer vector, or NULL. Channel names
-or indices to filter. NULL = all channels.}
+or indices to filter. NULL = every channel except
+those of type "status" (the trigger row; see
+Details). A status channel that is named here is
+filtered.}
 
 \item{verbose}{Logical. Print filter parameters and progress.
 Default: TRUE.}
@@ -84,6 +87,20 @@ zero-phase FIR filter.
 \details{
 Supports highpass-only (h_freq=NULL), lowpass-only (l_freq=NULL),
 or bandpass (both specified).
+
+\strong{Which channels are filtered.} With \code{channels = NULL} every
+channel is filtered except the ones of type \code{"status"}, the BioSemi
+status (trigger) row (see \code{\link{set_channel_types}}). That row holds
+codes, for example 0 and 255, not a waveform: a filter would turn each step
+into a smooth ramp that overshoots, and the codes would be lost. The type is
+read from \code{eeg_obj$channel_types}, not guessed from the name. Every
+other type (\code{"eog"}, \code{"ecg"}, \code{"misc"}, ...) is filtered as
+before, and so are channels in \code{eeg_obj$bads}. A status channel that
+you name yourself in \code{channels} is filtered, because you asked for it.
+If every channel is of type "status", there is nothing to filter and the
+call stops with an error. The count printed with \code{verbose = TRUE}
+("Channels: 2/3") and written into the preprocessing history says how many
+rows were filtered.
 
 \strong{IIR filters} (\code{method = "iir"}) are Butterworth filters, built
 from their poles and zeros and run as a chain of second-order sections, so

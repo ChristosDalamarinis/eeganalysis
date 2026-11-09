@@ -91,6 +91,9 @@ filter with the same inner functions, so the two always agree.
 A missing value (NA or NaN) spoils the row: the filter cannot run past it,
 so most or all of the row comes back missing. Find and deal with gaps first
 (see \code{\link{annotate_nan}}).
+
+A FIR filter that is longer than the rows still runs, but the result is
+distorted, so you get one warning per call (see \code{\link{eeg_bandpass}}).
 }
 \examples{
 # 10 seconds of a 10 Hz wave with 50 Hz hum, sampled at 256 Hz

@@ -399,17 +399,22 @@ test_that("find_bridged_electrodes rejects non-finite values only in examined ch
 # WHAT THIS TESTS: Verifies a recording shorter than one window is refused,
 # and that exactly one whole window is enough.
 test_that("find_bridged_electrodes errors when not even one window fits", {
+  # The band-pass (845 taps) is longer than these short recordings, so the
+  # function also warns that the filter is longer than the signal. This test is
+  # about the windows, so that warning is muted here.
   short <- make_bridge_eeg(sc$S1[, 1:256])   # 1 second
-  expect_error(find_bridged_electrodes(short), "(it lasts 1 s)", fixed = TRUE)
-  expect_error(find_bridged_electrodes(short, epoch_duration = 1.5),
+  expect_error(suppressWarnings(find_bridged_electrodes(short)),
+               "(it lasts 1 s)", fixed = TRUE)
+  expect_error(suppressWarnings(find_bridged_electrodes(short, epoch_duration = 1.5)),
                "window of 1.5 s", fixed = TRUE)
 
   # one sample short of a whole 2-second window
-  expect_error(find_bridged_electrodes(make_bridge_eeg(sc$S1[, 1:511])),
+  expect_error(suppressWarnings(find_bridged_electrodes(make_bridge_eeg(sc$S1[, 1:511]))),
                "too short for even one window")
 
   # exactly one window
-  res <- find_bridged_electrodes(make_bridge_eeg(sc$S1[, 1:512]), verbose = FALSE)
+  res <- suppressWarnings(
+    find_bridged_electrodes(make_bridge_eeg(sc$S1[, 1:512]), verbose = FALSE))
   expect_equal(res$n_windows, 1)
 })
 
@@ -487,7 +492,8 @@ test_that("find_bridged_electrodes reports the first failing check", {
     sc$S1[, 1:256],
     data.frame(onset = 0, duration = 100, description = "BAD_all",
                channel = NA_character_, stringsAsFactors = FALSE))
-  expect_error(find_bridged_electrodes(short_bad), "too short")
+  # (the band-pass is longer than this 1-second recording, which also warns)
+  expect_error(suppressWarnings(find_bridged_electrodes(short_bad)), "too short")
 })
 
 # ============================================================================

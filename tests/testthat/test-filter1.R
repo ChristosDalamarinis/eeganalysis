@@ -3142,3 +3142,205 @@ test_that("eeg_notch with method 'iir' or 'spectrum_fit' never gives that warnin
   expect_no_warning(eeg_notch(sf_eeg(rnorm(1500), 250), 50, method = "spectrum_fit",
                               filter_length = "10s", verbose = FALSE))
 })
+
+# --- channels = NULL leaves the status (trigger) row alone ---------------------
+# The status row of a BioSemi recording holds codes (for example 0 and 255), not
+# a waveform: a filter would turn each step into a smooth ramp that overshoots,
+# and the codes would be lost. With channels = NULL, eeg_bandpass() and
+# eeg_notch() (all three methods) now filter every channel EXCEPT those of type
+# "status". Every other type, and the bad channels, are filtered as before, and
+# a channel that is named in 'channels' is filtered whatever its type. The
+# reference implementation filters only its EEG channels by default and leaves
+# its trigger (stim) channel alone; its numbers for the EEG rows are in the
+# last block of this group. (It also leaves EOG, ECG, ... alone; here those
+# types stay filtered, as before.)
+# The fixture has no random numbers, so its numbers are the same everywhere.
+
+status_fixture <- function(types = c("eeg", "eeg", "eeg", "eog", "status")) {
+  n  <- 3000
+  sf <- 256
+  t  <- (0:(n - 1)) / sf
+  w  <- function(a, f, p) a * sin(2 * pi * f * t + p)
+  status <- rep(0, n)
+  status[c(501:510, 1501:1510)] <- 255              # two codes, 10 samples each
+  dat <- rbind(
+    Fz     = w(10, 10, 0.3) + w(4, 3.3, 1.1) + w(3, 50, 0.7) + w(2, 23.1, 2.0),
+    Cz     = w(8, 9, 0.9) + w(5, 2.4, 0.2) + w(3, 50, 1.9) + w(2, 31.7, 0.4),
+    Pz     = w(6, 11, 1.7) + w(4, 1.7, 0.5) + w(3, 50, 2.6) + w(2, 17.9, 1.3),
+    VEOG   = w(9, 0.8, 0.1) + w(5, 6.1, 2.2) + w(3, 50, 0.4) + w(2, 37.3, 0.9),
+    Status = status)
+  # the real constructor of the package: the small new_eeg() at the top of this
+  # file has no channel types
+  eeganalysis::new_eeg(data = dat, channels = rownames(dat), sampling_rate = sf,
+                       channel_types = types, bads = "Pz")
+}
+
+test_that(".default_filter_channels skips the status rows, by type and not by name", {
+  e <- status_fixture()
+  expect_identical(.default_filter_channels(e), 1:4)
+  # the TYPE decides: Pz is typed "status" here and "Status" is typed "eeg"
+  e2 <- status_fixture(types = c("eeg", "eeg", "status", "eog", "eeg"))
+  expect_identical(.default_filter_channels(e2), c(1L, 2L, 4L, 5L))
+  # every other type is kept
+  e3 <- status_fixture(types = c("resp", "gsr", "temp", "bio", "misc"))
+  expect_identical(.default_filter_channels(e3), 1:5)
+  # an object with no channel_types gets the default of new_eeg() (a channel
+  # called "Status" is a status channel)
+  e4 <- e
+  e4$channel_types <- NULL
+  expect_identical(.default_filter_channels(e4), 1:4)
+  # nothing left to filter
+  e5 <- status_fixture(types = rep("status", 5))
+  expect_error(.default_filter_channels(e5), "every channel is of type \"status\"")
+})
+
+test_that("eeg_bandpass with channels = NULL leaves the status row exactly as it was", {
+  e <- status_fixture()
+  calls <- list(
+    fir    = function(ch) eeg_bandpass(e, 1, 40, channels = ch, verbose = FALSE),
+    iir    = function(ch) eeg_bandpass(e, 1, 40, method = "iir", channels = ch,
+                                       verbose = FALSE),
+    causal = function(ch) eeg_bandpass(e, h_freq = 40, phase = "minimum",
+                                       channels = ch, verbose = FALSE))
+  for (nm in names(calls)) {
+    out <- calls[[nm]](NULL)
+    expect_identical(out$data["Status", ], e$data["Status", ], info = nm)
+    # NULL means the four other channels, so naming them gives the same numbers
+    named <- calls[[nm]](c("Fz", "Cz", "Pz", "VEOG"))
+    expect_identical(out$data, named$data, info = nm)
+    # the others really are filtered: the bad channel and the EOG row too (the
+    # 50 Hz wave of amplitude 3 is above the cutoff)
+    for (ch in c("Fz", "Cz", "Pz", "VEOG")) {
+      expect_gt(max(abs(out$data[ch, ] - e$data[ch, ])), 1, label = paste(nm, ch))
+    }
+  }
+  # the rest of the object is carried over
+  out <- eeg_bandpass(e, 1, 40, verbose = FALSE)
+  expect_identical(out$channels, e$channels)
+  expect_identical(out$channel_types, e$channel_types)
+  expect_identical(out$bads, e$bads)
+})
+
+test_that("a status channel that is named in 'channels' is filtered, because it was asked for", {
+  e <- status_fixture()
+  out <- eeg_bandpass(e, 1, 40, channels = "Status", verbose = FALSE)
+  expect_gt(max(abs(out$data["Status", ] - e$data["Status", ])), 10)
+  expect_identical(out$data[1:4, ], e$data[1:4, ])            # nothing else touched
+  expect_identical(eeg_bandpass(e, 1, 40, channels = 5L, verbose = FALSE)$data,
+                   out$data)
+  # the same for the notch filter, with every method
+  for (m in c("fir", "iir", "spectrum_fit")) {
+    out <- eeg_notch(e, 50, method = m, channels = "Status", verbose = FALSE)
+    expect_false(identical(out$data["Status", ], e$data["Status", ]), label = m)
+    expect_identical(out$data[1:4, ], e$data[1:4, ])
+  }
+})
+
+test_that("eeg_notch with channels = NULL leaves the status row alone (fir, iir, spectrum_fit)", {
+  e <- status_fixture()
+  calls <- list(
+    fir         = function(ch) eeg_notch(e, 50, channels = ch, verbose = FALSE),
+    iir         = function(ch) eeg_notch(e, 50, method = "iir", channels = ch,
+                                         verbose = FALSE),
+    sfit_freqs  = function(ch) eeg_notch(e, 50, method = "spectrum_fit",
+                                         channels = ch, verbose = FALSE),
+    sfit_search = function(ch) eeg_notch(e, method = "spectrum_fit",
+                                         channels = ch, verbose = FALSE))
+  for (nm in names(calls)) {
+    out   <- calls[[nm]](NULL)
+    named <- calls[[nm]](1:4)
+    expect_identical(out$data["Status", ], e$data["Status", ], info = nm)
+    expect_identical(out$data, named$data, info = nm)
+    # the 50 Hz wave (amplitude 3) is gone from the EEG rows, so they changed
+    expect_gt(max(abs(out$data["Fz", ] - e$data["Fz", ])), 1, label = nm)
+  }
+})
+
+test_that("the type decides, and set_channel_types() changes what is skipped", {
+  # Pz is typed "status" (left alone although it is called Pz); the channel
+  # called "Status" is typed "eeg" (filtered although it is called Status)
+  e2  <- status_fixture(types = c("eeg", "eeg", "status", "eog", "eeg"))
+  out <- eeg_bandpass(e2, 1, 40, verbose = FALSE)
+  expect_identical(out$data["Pz", ], e2$data["Pz", ])
+  expect_gt(max(abs(out$data["Status", ] - e2$data["Status", ])), 10)
+  out <- eeg_notch(e2, 50, verbose = FALSE)
+  expect_identical(out$data["Pz", ], e2$data["Pz", ])
+  expect_false(identical(out$data["Status", ], e2$data["Status", ]))
+
+  # a type set after loading counts as well
+  e   <- status_fixture()
+  e_s <- set_channel_types(e, c(VEOG = "status"))          # now two status rows
+  out <- eeg_bandpass(e_s, 1, 40, verbose = FALSE)
+  expect_identical(out$data["VEOG", ], e$data["VEOG", ])
+  expect_identical(out$data["Status", ], e$data["Status", ])
+  expect_gt(max(abs(out$data["Fz", ] - e$data["Fz", ])), 1)
+  e_m <- set_channel_types(e, c(Status = "misc"))          # no status row left
+  out <- eeg_bandpass(e_m, 1, 40, verbose = FALSE)
+  expect_gt(max(abs(out$data["Status", ] - e$data["Status", ])), 10)
+})
+
+test_that("the printed count and the history entry say how many rows were filtered", {
+  e <- status_fixture()
+  # the history entry of every path
+  last <- function(o) o$preprocessing_history[[length(o$preprocessing_history)]]
+  expect_match(last(eeg_bandpass(e, 1, 40, verbose = FALSE)), "channels: 4/5", fixed = TRUE)
+  expect_match(last(eeg_bandpass(e, 1, 40, method = "iir", verbose = FALSE)),
+               "channels: 4/5", fixed = TRUE)
+  expect_match(last(eeg_notch(e, 50, verbose = FALSE)), "channels: 4/5", fixed = TRUE)
+  expect_match(last(eeg_notch(e, 50, method = "iir", verbose = FALSE)),
+               "channels: 4/5", fixed = TRUE)
+  expect_match(last(eeg_notch(e, 50, method = "spectrum_fit", verbose = FALSE)),
+               "channels: 4/5", fixed = TRUE)
+  # the header printed with verbose = TRUE (one per path)
+  shows <- function(expr) any(grepl("Channels: +4 / 5", capture.output(expr)))
+  expect_true(shows(eeg_bandpass(e, 1, 40)))
+  expect_true(shows(eeg_notch(e, 50)))
+  expect_true(shows(eeg_notch(e, 50, method = "iir")))
+  expect_true(shows(eeg_notch(e, 50, method = "spectrum_fit")))
+})
+
+test_that("with only status channels there is nothing to filter: an error, unless a channel is named", {
+  e <- status_fixture(types = rep("status", 5))
+  expect_error(eeg_bandpass(e, 1, 40, verbose = FALSE), "every channel is of type \"status\"")
+  for (m in c("fir", "iir", "spectrum_fit")) {
+    expect_error(eeg_notch(e, 50, method = m, verbose = FALSE),
+                 "every channel is of type \"status\"")
+  }
+  # naming a channel is the user's choice
+  out <- eeg_bandpass(e, 1, 40, channels = "Fz", verbose = FALSE)
+  expect_identical(dim(out$data), c(5L, 3000L))
+  expect_gt(max(abs(out$data["Fz", ] - e$data["Fz", ])), 1)
+  expect_identical(out$data[-1, ], e$data[-1, ])
+})
+
+test_that("an object without a status channel is filtered row by row, as before", {
+  e <- status_fixture(types = rep("eeg", 5))          # even "Status" is typed eeg
+  expect_identical(eeg_bandpass(e, 1, 40, verbose = FALSE)$data,
+                   eeg_bandpass(e, 1, 40, channels = 1:5, verbose = FALSE)$data)
+  expect_identical(eeg_notch(e, 50, verbose = FALSE)$data,
+                   eeg_notch(e, 50, channels = 1:5, verbose = FALSE)$data)
+  expect_match(eeg_bandpass(e, 1, 40, verbose = FALSE)$preprocessing_history[[1]],
+               "channels: 5/5", fixed = TRUE)
+})
+
+test_that("the EEG rows have the numbers of the reference implementation, and the status row is untouched", {
+  # Its default filter (picks = None) leaves the stim channel alone and filters
+  # the EEG channels (the bad one too). Values at samples 1, 2, 1000, 1500,
+  # 2999 and 3000 of Fz and Cz from its filter() (1 - 40 Hz, FIR) and
+  # notch_filter() (50 Hz, FIR), version 1.12.1; the whole rows agreed to
+  # 1e-13. The status row came out identical to its input there as well.
+  e    <- status_fixture()
+  pick <- c(1L, 2L, 1000L, 1500L, 2999L, 3000L)
+  bp   <- eeg_bandpass(e, 1, 40, verbose = FALSE)$data
+  nt   <- eeg_notch(e, 50, verbose = FALSE)$data
+  expect_lt(max(abs(bp["Fz", pick] - c(1.94289029309e-15, -0.548569491492,
+    6.09474093585, -6.90882265128, 0.473887351092, -5.3290705182e-15))), 1e-9)
+  expect_lt(max(abs(bp["Cz", pick] - c(6.60582699652e-15, -0.902244131682,
+    8.96143451741, -5.94668262436, 1.4202132487, -3.05311331772e-16))), 1e-9)
+  expect_lt(max(abs(nt["Fz", pick] - c(10.2712794222, 10.6260489725,
+    6.0907384072, -6.91005465192, 2.24208754288, 2.75426906848))), 1e-9)
+  expect_lt(max(abs(nt["Cz", pick] - c(10.8776988787, 11.2963843229,
+    8.98173632199, -5.96674641206, 3.92676927633, 2.0300386859))), 1e-9)
+  expect_identical(bp["Status", ], e$data["Status", ])
+  expect_identical(nt["Status", ], e$data["Status", ])
+})

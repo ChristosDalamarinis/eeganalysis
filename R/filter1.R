@@ -1520,6 +1520,37 @@
 }
 
 # ----------------------------------------------------------------------------
+# .default_filter_channels() - what 'channels = NULL' means
+# ----------------------------------------------------------------------------
+
+#' Rows that a filter works on when no channels are named
+#'
+#' The status (trigger) row of a recording holds codes, for example 0 and 255,
+#' not a waveform. A filter would turn every step of it into a smooth ramp that
+#' overshoots, and the codes would be lost. So when the user does not name
+#' channels, \code{eeg_bandpass()} and \code{eeg_notch()} (all three methods)
+#' filter every channel except the ones whose type is \code{"status"}. The
+#' type is read from \code{eeg_obj$channel_types}, not guessed from the name; an
+#' object that has no \code{channel_types} gets the default of
+#' \code{\link{new_eeg}} (\code{.types_of()}). Every other type, and the
+#' channels in \code{eeg_obj$bads}, are filtered as before. A user who names a
+#' status channel is not stopped: this function is used only for the default.
+#'
+#' @param eeg_obj An object of class 'eeg'.
+#' @return Integer vector: the positions (rows of the data) of all channels
+#'   whose type is not \code{"status"}. If every channel is a status channel
+#'   there is nothing to filter, and the function stops with an error.
+#' @keywords internal
+.default_filter_channels <- function(eeg_obj) {
+  ch_idx <- which(.types_of(eeg_obj) != "status")
+  if (length(ch_idx) == 0L) {
+    stop("No channel to filter: every channel is of type \"status\". Name the ",
+         "channels to filter with 'channels'.", call. = FALSE)
+  }
+  ch_idx
+}
+
+# ----------------------------------------------------------------------------
 # .notch_iir() - the IIR half of eeg_notch()
 # ----------------------------------------------------------------------------
 
@@ -2389,6 +2420,20 @@
 #' Supports highpass-only (h_freq=NULL), lowpass-only (l_freq=NULL),
 #' or bandpass (both specified).
 #'
+#' \strong{Which channels are filtered.} With \code{channels = NULL} every
+#' channel is filtered except the ones of type \code{"status"}, the BioSemi
+#' status (trigger) row (see \code{\link{set_channel_types}}). That row holds
+#' codes, for example 0 and 255, not a waveform: a filter would turn each step
+#' into a smooth ramp that overshoots, and the codes would be lost. The type is
+#' read from \code{eeg_obj$channel_types}, not guessed from the name. Every
+#' other type (\code{"eog"}, \code{"ecg"}, \code{"misc"}, ...) is filtered as
+#' before, and so are channels in \code{eeg_obj$bads}. A status channel that
+#' you name yourself in \code{channels} is filtered, because you asked for it.
+#' If every channel is of type "status", there is nothing to filter and the
+#' call stops with an error. The count printed with \code{verbose = TRUE}
+#' ("Channels: 2/3") and written into the preprocessing history says how many
+#' rows were filtered.
+#'
 #' \strong{IIR filters} (\code{method = "iir"}) are Butterworth filters, built
 #' from their poles and zeros and run as a chain of second-order sections, so
 #' they stay accurate even for slow filters (a low cutoff compared with the
@@ -2463,7 +2508,10 @@
 #' @param pad              Character. Padding at both ends of the recording.
 #'                         Only "reflect_limited" (default) is implemented.
 #' @param channels         Character or integer vector, or NULL. Channel names
-#'                         or indices to filter. NULL = all channels.
+#'                         or indices to filter. NULL = every channel except
+#'                         those of type "status" (the trigger row; see
+#'                         Details). A status channel that is named here is
+#'                         filtered.
 #' @param verbose          Logical. Print filter parameters and progress.
 #'                         Default: TRUE.
 #'
@@ -2535,15 +2583,16 @@ eeg_bandpass <- function(eeg_obj,
   iir_params <- chk$iir_params
 
   # ========== RESOLVE CHANNEL INDICES ==========
-  # Which rows of the data table to filter: all of them (NULL), the ones with
-  # these names, or the ones at these positions. This is eeg-object work, so it
-  # stays here; filter_data() has no channels.
+  # Which rows of the data table to filter: all of them except the status
+  # (trigger) rows (NULL), the ones with these names, or the ones at these
+  # positions. This is eeg-object work, so it stays here; filter_data() has no
+  # channels.
 
   n_channels <- nrow(eeg_obj$data)
   chan_names <- eeg_obj$channels
 
   if (is.null(channels)) {
-    ch_idx <- seq_len(n_channels)
+    ch_idx <- .default_filter_channels(eeg_obj)
   } else if (is.character(channels)) {
     ch_idx <- match(channels, chan_names)
     if (any(is.na(ch_idx))) {
@@ -2849,6 +2898,14 @@ filter_data <- function(x,
 #' Multiple frequencies (e.g. harmonics) are combined into a single multi-band
 #' FIR kernel and applied in one pass.
 #'
+#' \strong{Which channels are filtered.} The rule is the one of
+#' \code{\link{eeg_bandpass}}, for all three methods: with
+#' \code{channels = NULL} every channel is filtered except the ones of type
+#' \code{"status"}, the trigger row, which holds codes and not a waveform. The
+#' other types and the channels in \code{eeg_obj$bads} are filtered as before,
+#' and a status channel that you name yourself in \code{channels} is filtered
+#' too. If every channel is of type "status", the call stops with an error.
+#'
 #' A FIR kernel that is longer than the recording still runs, but the result is
 #' distorted, so you get one warning (see \code{\link{eeg_bandpass}}). With the
 #' default Hamming window the kernel is 3.3 / (\code{trans_bandwidth} / 2)
@@ -2995,7 +3052,10 @@ filter_data <- function(x,
 #'                         With \code{freqs} given it has no effect (a warning
 #'                         says so if you set it). Default: 8.
 #' @param channels         Character or integer vector, or NULL. Channels to
-#'                         filter. NULL = all channels. Default: NULL.
+#'                         filter. NULL = every channel except those of type
+#'                         "status" (the trigger row; see Details). A status
+#'                         channel that is named here is filtered.
+#'                         Default: NULL.
 #' @param verbose          Logical. Print parameters and progress.
 #'                         Default: TRUE.
 #'
@@ -3154,8 +3214,10 @@ eeg_notch <- function(eeg_obj,
   n_channels <- nrow(eeg_obj$data)
   chan_names <- eeg_obj$channels
   
+  # NULL: every channel except the status (trigger) rows, for all three methods
+  # (the IIR and spectrum-fit parts get ch_idx handed over below).
   if (is.null(channels)) {
-    ch_idx <- seq_len(n_channels)
+    ch_idx <- .default_filter_channels(eeg_obj)
   } else if (is.character(channels)) {
     ch_idx <- match(channels, chan_names)
     if (any(is.na(ch_idx))) {

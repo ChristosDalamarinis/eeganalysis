@@ -197,8 +197,10 @@ test_that("a type set this way survives eeg_bandpass(), eeg_notch() and downsamp
   eeg <- make_fixture()
   eeg <- set_channel_types(eeg, c(VEOG = "eog", EXG5 = "gsr"))
 
-  bp <- eeg_bandpass(eeg, l_freq = 1, h_freq = 40, verbose = FALSE)
-  nt <- eeg_notch(eeg, freqs = 50, verbose = FALSE)
+  # The FIR filters are longer than this 100-sample fixture and say so with a
+  # warning; this test is about the types, so that warning is muted.
+  bp <- suppressWarnings(eeg_bandpass(eeg, l_freq = 1, h_freq = 40, verbose = FALSE))
+  nt <- suppressWarnings(eeg_notch(eeg, freqs = 50, verbose = FALSE))
   ds <- downsample(eeg, target_rate = 128, verbose = FALSE)
 
   expect_equal(bp$channel_types, eeg$channel_types)

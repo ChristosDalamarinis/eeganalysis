@@ -235,6 +235,24 @@ test_that("a response longer than the longest window gives a warning", {
   )
 })
 
+test_that("a first window that is shorter than the FIR filter is not reported as a warning", {
+  # 0.05 Hz slope at 256 Hz: the kernel is 16897 taps = 66 s, but the first
+  # window of the spike is 32 s. eeg_bandpass() would warn that the filter is
+  # longer than the signal; here the window is simply doubled, so nothing is shown.
+  r <- NULL
+  expect_no_warning(
+    r <- with_null_device(plot_filter(256, l_freq = 1, h_freq = 40,
+                                      l_trans_bandwidth = 0.05)))
+  expect_gt(r$window, 32)
+  # only that warning is muted: another warning of the real filter still comes
+  w <- testthat::capture_warnings(
+    with_null_device(plot_filter(256, l_freq = 1, h_freq = 40,
+                                 l_trans_bandwidth = 0.05,
+                                 iir_params = list(order = 3))))
+  expect_length(w, 1L)
+  expect_match(w, "'iir_params' is not used with method = \"fir\"", fixed = TRUE)
+})
+
 # ============================================================================
 #     TEST SUITE 3: The Picture Is the Filter That Is Applied
 # ============================================================================

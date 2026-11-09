@@ -108,6 +108,15 @@ agree to about 1e-4 of the signal size, mostly below the lowest cutoff. The
 conversion uses a long FFT, so for a very long filter, such as a 0.1 Hz
 high-pass at 2048 Hz (67585 taps), it takes about 40 seconds and 1 GB of
 memory; downsampling first makes it much cheaper.
+
+\strong{A FIR filter longer than the recording.} The default 1 - 30 Hz
+band-pass is 845 samples long at 256 Hz, so a recording of 300 samples is too
+short for it. It still runs, because both ends are padded, but most of what
+comes out is made of padding and the result is distorted, so you get one
+warning (not one per channel). Use wider transition bandwidths, a smaller
+\code{filter_length}, or a longer recording. A filter exactly as long as the
+recording gives no warning. IIR filters have no such length and never give
+it.
 }
 \references{
 Butterworth, S. (1930). On the theory of filter amplifiers. Wireless

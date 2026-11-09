@@ -44,8 +44,11 @@ has_ref    <- dir.exists(REF)
 raw_signal <- if (has_ref) {
   load_ref("raw_signal.csv")
 } else {
+  # 2560 samples, as many as the reference signal has: the default FIR filters
+  # (up to 1691 taps at 256 Hz) must be shorter than the recording, or they
+  # warn that the filter is longer than the signal.
   set.seed(42)
-  rnorm(1024)
+  rnorm(2560)
 }
 eeg1ch <- new_eeg(
   data          = matrix(raw_signal, nrow = 1L),
@@ -71,7 +74,7 @@ annots_2rows <- data.frame(
 # stand-in that has no channel_types.
 eeg_veog <- set_bipolar_reference(
   eeganalysis::new_eeg(
-    data          = outer(1:4, 1:1024, function(ch, t) sin(t * ch / 50)),
+    data          = outer(1:4, 1:2560, function(ch, t) sin(t * ch / 50)),
     channels      = c("Fp1", "Cz", "EXG1", "EXG2"),
     sampling_rate = 256L
   ),
@@ -782,7 +785,7 @@ test_that("eeg_bandpass still derives channel types when the input has none", {
 
 test_that("eeg_bandpass channel selection by name leaves others unchanged", {
   eeg3 <- new_eeg(
-    data          = matrix(rnorm(512 * 3, sd = 10), nrow = 3),
+    data          = matrix(rnorm(1024 * 3, sd = 10), nrow = 3),
     channels      = c("Fp1", "Fp2", "Fz"),
     sampling_rate = 256L
   )
@@ -794,7 +797,7 @@ test_that("eeg_bandpass channel selection by name leaves others unchanged", {
 
 test_that("eeg_bandpass channel selection by integer index leaves others unchanged", {
   eeg3 <- new_eeg(
-    data          = matrix(rnorm(512 * 3, sd = 10), nrow = 3),
+    data          = matrix(rnorm(1024 * 3, sd = 10), nrow = 3),
     channels      = c("Fp1", "Fp2", "Fz"),
     sampling_rate = 256L
   )
@@ -1503,7 +1506,12 @@ test_that("eeg_notch phase = 'minimum' matches MNE to 1e-8 (50 Hz at 512 Hz)", {
   eeg <- new_eeg(data          = matrix(iir_test_signal(3000L, 512), nrow = 1L),
                  channels      = "CH1",
                  sampling_rate = 512L)
-  y <- eeg_notch(eeg, freqs = 50, phase = "minimum", verbose = FALSE)$data[1, ]
+  # The reference run has a 3381-tap kernel on 3000 samples, so the filter
+  # also reports that it is longer than the signal (as the reference does).
+  expect_warning(
+    y <- eeg_notch(eeg, freqs = 50, phase = "minimum", verbose = FALSE)$data[1, ],
+    "3381 samples (6.6 s) long, but the signal has only 3000 samples (5.9 s)",
+    fixed = TRUE)
   idx <- c(1, 2, 40, 500, 1500, 2500, 2999, 3000)
   ref <- c(20.9132253922, 20.6961462987, 4.51458477642, 12.1990025974,
            20.4597147577, 8.32797123767, 6.79745775153, 5.76547830353)
@@ -2994,4 +3002,143 @@ test_that("the public filters still refuse phase 'zero-double' (it is for the IC
                             verbose = FALSE), "'phase' must be")
   expect_error(eeg_notch(sf_eeg(x, 256), 50, phase = "zero-double",
                          verbose = FALSE), "'phase' must be")
+})
+
+# --- a FIR filter that is longer than the signal gives ONE warning -------------
+# The reference implementation warns in the same cases: only for FIR filters,
+# only when the kernel is longer than the signal (a kernel exactly as long is
+# fine), and once per call. 29 cases (46 calls of the public functions) were
+# also run through its own filter_data() / notch_filter() (1.12.1): both sides
+# warn in the same 26 calls and stay silent in the same 20. Such a filter still
+# runs (the ends are padded); the warning says the result is likely distorted.
+
+test_that(".warn_if_filter_too_long warns only when the kernel is longer than the signal", {
+  expect_warning(.warn_if_filter_too_long(845L, 300L, 256),
+                 "845 samples (3.3 s) long, but the signal has only 300 samples (1.2 s)",
+                 fixed = TRUE)
+  expect_warning(.warn_if_filter_too_long(301L, 300L, 100), "distortion is likely")
+  expect_no_warning(.warn_if_filter_too_long(300L, 300L, 100))   # exactly as long
+  expect_no_warning(.warn_if_filter_too_long(299L, 300L, 100))
+  expect_null(.warn_if_filter_too_long(5L, 9L, 100))
+})
+
+test_that("filter_data warns once when the default FIR band-pass is longer than the signal", {
+  # 1 - 30 Hz at 256 Hz is 845 taps (3.3 s); the signal has 300 samples
+  set.seed(1)
+  w <- capture_warnings(y <- filter_data(rnorm(300), 256, 1, 30))
+  expect_length(w, 1L)
+  expect_match(w, "845 samples (3.3 s) long, but the signal has only 300 samples (1.2 s)",
+               fixed = TRUE)
+  expect_match(w, "distortion is likely", fixed = TRUE)
+  # it still filters, with exactly the numbers of the engine alone
+  spec <- .make_bandpass_filter(256, 1, 30, "fir", NULL, "auto", "auto", "auto",
+                                "hamming", "zero", "reflect_limited")
+  set.seed(1)
+  expect_equal(y, .apply_bandpass_filter(rnorm(300), spec))
+})
+
+test_that("filter_data gives one warning for a matrix, and counts the columns", {
+  # 3 rows of 300 samples: 900 numbers in all would be long enough, but the
+  # signal length is the number of columns
+  set.seed(2)
+  w <- capture_warnings(filter_data(matrix(rnorm(900), nrow = 3), 256, 1, 30))
+  expect_length(w, 1L)
+  expect_match(w, "only 300 samples", fixed = TRUE)
+})
+
+test_that("a filter exactly as long as the signal is fine, one sample less is not", {
+  set.seed(3)
+  expect_no_warning(filter_data(rnorm(845), 256, 1, 30))
+  expect_no_warning(filter_data(rnorm(846), 256, 1, 30))
+  expect_warning(filter_data(rnorm(844), 256, 1, 30), "only 844 samples")
+})
+
+test_that("the length is checked AFTER a typed even filter_length is made odd", {
+  # 8 - 12 Hz at 100 Hz with 4 Hz slopes: a typed 300 is built with 301 taps
+  set.seed(4)
+  band <- function(n, len) {
+    filter_data(rnorm(n), 100, 8, 12, l_trans_bandwidth = 4,
+                h_trans_bandwidth = 4, filter_length = len)
+  }
+  expect_warning(band(300, 300), "301 samples")
+  expect_no_warning(band(301, 300))
+  expect_warning(band(300, 301), "301 samples")
+  expect_no_warning(band(301, 301))
+})
+
+test_that("high-pass, low-pass, other windows and causal FIR filters warn as well", {
+  set.seed(5)
+  expect_warning(filter_data(rnorm(600), 250, l_freq = 1), "only 600 samples")     # 825 taps
+  expect_warning(filter_data(rnorm(60), 250, h_freq = 40), "only 60 samples")      # 83 taps
+  expect_warning(filter_data(rnorm(100), 256, h_freq = 30, phase = "minimum"),
+                 "only 100 samples")                                               # 113 taps
+  for (win in c("hann", "blackman")) {
+    expect_warning(filter_data(rnorm(400), 256, 1, 30, fir_window = win),
+                   "only 400 samples")
+  }
+  # a low-pass that is short enough for its signal stays silent
+  expect_no_warning(filter_data(rnorm(200), 250, h_freq = 40))
+})
+
+test_that("IIR filters never give the 'longer than the signal' warning", {
+  set.seed(6)
+  expect_no_warning(filter_data(rnorm(100), 250, 1, 40, method = "iir"))
+  expect_no_warning(filter_data(rnorm(50), 250, h_freq = 40, method = "iir",
+                                phase = "forward"))
+  expect_no_warning(eeg_bandpass(sf_eeg(rnorm(100), 250), 1, 40, method = "iir",
+                                 verbose = FALSE))
+})
+
+test_that("eeg_bandpass warns once for a recording shorter than its FIR filter, and still filters", {
+  set.seed(7)
+  e <- sf_eeg(matrix(rnorm(3 * 300), nrow = 3), 256)
+  w <- capture_warnings(out <- eeg_bandpass(e, 1, 30, verbose = FALSE))
+  expect_length(w, 1L)                      # not one per channel
+  expect_match(w, "845 samples (3.3 s) long, but the signal has only 300 samples (1.2 s)",
+               fixed = TRUE)
+  expect_equal(dim(out$data), c(3L, 300L))
+  expect_true(all(is.finite(out$data)))
+  # a single picked channel: still one warning
+  expect_length(capture_warnings(eeg_bandpass(e, 1, 30, channels = "Ch2",
+                                              verbose = FALSE)), 1L)
+  # long enough, and exactly long enough: silence
+  expect_no_warning(eeg_bandpass(sf_eeg(rnorm(900), 256), 1, 30, verbose = FALSE))
+  expect_no_warning(eeg_bandpass(sf_eeg(rnorm(845), 256), 1, 30, verbose = FALSE))
+})
+
+test_that("eeg_notch (FIR) warns when its kernel is longer than the recording", {
+  # 50 Hz at 500 Hz with the default trans_bandwidth of 1 Hz: 3301 taps (6.6 s)
+  set.seed(8)
+  w <- capture_warnings(out <- eeg_notch(sf_eeg(rnorm(3000), 500), 50, verbose = FALSE))
+  expect_length(w, 1L)
+  expect_match(w, "3301 samples (6.6 s) long, but the signal has only 3000 samples (6 s)",
+               fixed = TRUE)
+  expect_length(out$data, 3000L)
+  # exactly as long: silent; one sample less: warning
+  expect_no_warning(eeg_notch(sf_eeg(rnorm(3301), 500), 50, verbose = FALSE))
+  expect_warning(eeg_notch(sf_eeg(rnorm(3300), 500), 50, verbose = FALSE),
+                 "only 3300 samples")
+  # a typed length
+  expect_warning(eeg_notch(sf_eeg(rnorm(4000), 500), 50, filter_length = 4001,
+                           verbose = FALSE), "4001 samples")
+  expect_no_warning(eeg_notch(sf_eeg(rnorm(4001), 500), 50, filter_length = 4001,
+                              verbose = FALSE))
+  # several frequencies share ONE kernel, so one warning
+  expect_length(capture_warnings(eeg_notch(sf_eeg(rnorm(2000), 500), c(50, 100),
+                                           verbose = FALSE)), 1L)
+  # wider slopes make a shorter kernel (3.3 / 4 s = 413 taps): fits in 1000
+  # samples, does not fit in 300 (also with the causal kernel)
+  expect_no_warning(eeg_notch(sf_eeg(rnorm(1000), 500), 50, trans_bandwidth = 8,
+                              verbose = FALSE))
+  expect_warning(eeg_notch(sf_eeg(rnorm(300), 500), 50, trans_bandwidth = 8,
+                           phase = "minimum", verbose = FALSE), "only 300 samples")
+})
+
+test_that("eeg_notch with method 'iir' or 'spectrum_fit' never gives that warning", {
+  set.seed(9)
+  expect_no_warning(eeg_notch(sf_eeg(rnorm(100), 500), 50, method = "iir",
+                              verbose = FALSE))
+  # spectrum-fit cuts its 10 s pieces down to the signal (6 s here) by itself
+  expect_no_warning(eeg_notch(sf_eeg(rnorm(1500), 250), 50, method = "spectrum_fit",
+                              filter_length = "10s", verbose = FALSE))
 })

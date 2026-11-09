@@ -1477,6 +1477,49 @@
 }
 
 # ----------------------------------------------------------------------------
+# .warn_if_filter_too_long() - a FIR kernel longer than the signal
+# ----------------------------------------------------------------------------
+
+#' Warn when a FIR filter is longer than the signal
+#'
+#' A FIR filter that is longer than the numbers it is run on still works,
+#' because both ends of the signal are padded, but then most of what comes out
+#' is made of padding, so the result is distorted. The same case gives a warning
+#' in the reference implementation. The public filters call this function once
+#' per call, right after the filter is designed, and only for FIR filters: an
+#' IIR filter has no length of this kind, and the spectrum-fit notch cuts its
+#' pieces down to the signal by itself, so neither gives the warning there.
+#' A filter that is exactly as long as the signal is allowed.
+#'
+#' The warning has its own class, \code{"eeganalysis_filter_longer_than_signal"}
+#' (besides \code{"warning"} and \code{"condition"}), so that a function which
+#' filters a signal of its own making, such as \code{plot_filter()}, can mute
+#' exactly this warning with a calling handler and nothing else.
+#'
+#' @param n_kernel  Integer. Length of the FIR kernel in samples.
+#' @param n_samples Integer. Number of samples of the signal(s) to be filtered.
+#' @param sfreq     Numeric. Sampling rate in Hz, only to show the lengths in
+#'   seconds.
+#' @return NULL, invisibly. Gives one warning if \code{n_kernel} is larger than
+#'   \code{n_samples}.
+#' @keywords internal
+.warn_if_filter_too_long <- function(n_kernel, n_samples, sfreq) {
+  if (n_kernel > n_samples) {
+    # Built by hand instead of with warningCondition(), which needs R 3.6.
+    msg <- paste0("The FIR filter is ", n_kernel, " samples (",
+                  round(n_kernel / sfreq, 1), " s) long, but the signal has ",
+                  "only ", n_samples, " samples (", round(n_samples / sfreq, 1),
+                  " s), so distortion is likely. Use a shorter filter (wider ",
+                  "transition bandwidths or a smaller 'filter_length') or a ",
+                  "longer signal.")
+    warning(structure(class = c("eeganalysis_filter_longer_than_signal",
+                                "warning", "condition"),
+                      list(message = msg, call = NULL)))
+  }
+  invisible(NULL)
+}
+
+# ----------------------------------------------------------------------------
 # .notch_iir() - the IIR half of eeg_notch()
 # ----------------------------------------------------------------------------
 
@@ -2370,6 +2413,15 @@
 #' high-pass at 2048 Hz (67585 taps), it takes about 40 seconds and 1 GB of
 #' memory; downsampling first makes it much cheaper.
 #'
+#' \strong{A FIR filter longer than the recording.} The default 1 - 30 Hz
+#' band-pass is 845 samples long at 256 Hz, so a recording of 300 samples is too
+#' short for it. It still runs, because both ends are padded, but most of what
+#' comes out is made of padding and the result is distorted, so you get one
+#' warning (not one per channel). Use wider transition bandwidths, a smaller
+#' \code{filter_length}, or a longer recording. A filter exactly as long as the
+#' recording gives no warning. IIR filters have no such length and never give
+#' it.
+#'
 #' @references
 #' Butterworth, S. (1930). On the theory of filter amplifiers. Wireless
 #' Engineer, 7, 536-541.
@@ -2518,6 +2570,12 @@ eeg_bandpass <- function(eeg_obj,
                                 l_trans_bandwidth, h_trans_bandwidth,
                                 filter_length, fir_window, phase, pad)
 
+  # A FIR kernel longer than the recording still runs, but the result is
+  # distorted: warn once, not once per channel. (IIR has no such length.)
+  if (spec$method == "fir") {
+    .warn_if_filter_too_long(spec$N, ncol(eeg_obj$data), sfreq)
+  }
+
   # ========== VERBOSE HEADER ==========
   # What the filter is, printed before the work starts. The first lines are the
   # same for FIR and IIR; the details differ (a kernel length and window for
@@ -2647,6 +2705,9 @@ eeg_bandpass <- function(eeg_obj,
 #' so most or all of the row comes back missing. Find and deal with gaps first
 #' (see \code{\link{annotate_nan}}).
 #'
+#' A FIR filter that is longer than the rows still runs, but the result is
+#' distorted, so you get one warning per call (see \code{\link{eeg_bandpass}}).
+#'
 #' @param x Numeric vector (one signal) or numeric matrix with one row per
 #'   signal and one column per time point.
 #' @param sfreq Numeric. Sampling rate of the numbers, in Hz.
@@ -2739,6 +2800,15 @@ filter_data <- function(x,
                                 l_trans_bandwidth, h_trans_bandwidth,
                                 filter_length, fir_window, chk$phase, chk$pad)
 
+  # A FIR kernel longer than the signal still runs, but the result is
+  # distorted: warn once per call. (IIR has no such length.) The signal length
+  # is the number of columns of a matrix, or the length of a vector.
+  if (spec$method == "fir") {
+    .warn_if_filter_too_long(spec$N,
+                             if (length(dim(x)) == 2L) ncol(x) else length(x),
+                             sfreq)
+  }
+
   # Step 4: run. 'out' starts as a copy of x, so a vector stays a vector, a
   # matrix keeps its shape, and names / dimension names are kept. Whole numbers
   # (integers) become ordinary numbers when the filtered values are written in.
@@ -2778,6 +2848,14 @@ filter_data <- function(x,
 #'
 #' Multiple frequencies (e.g. harmonics) are combined into a single multi-band
 #' FIR kernel and applied in one pass.
+#'
+#' A FIR kernel that is longer than the recording still runs, but the result is
+#' distorted, so you get one warning (see \code{\link{eeg_bandpass}}). With the
+#' default Hamming window the kernel is 3.3 / (\code{trans_bandwidth} / 2)
+#' seconds long, 6.6 s for \code{trans_bandwidth = 1}, so a recording shorter
+#' than that needs a wider \code{trans_bandwidth} or a smaller
+#' \code{filter_length}. The IIR and spectrum-fit methods never give this
+#' warning.
 #'
 #' \strong{IIR filters} (\code{method = "iir"}) are Butterworth band-stop
 #' filters, built from their poles and zeros and run as a chain of
@@ -3196,6 +3274,10 @@ eeg_notch <- function(eeg_obj,
 
   # "minimum": same as in eeg_bandpass(): a causal kernel, no delay correction
   if (phase == "minimum") h <- .minimum_phase(h)
+
+  # A kernel longer than the recording still runs, but the result is distorted
+  # (same warning as eeg_bandpass(); N is the kernel length).
+  .warn_if_filter_too_long(N, ncol(filtered_data), sfreq)
 
   if (verbose) {
     for (fi in seq_along(freqs)) {

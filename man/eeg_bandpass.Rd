@@ -47,9 +47,14 @@ in Hz. "auto" uses MNE's rule:
 min(max(0.25*h_freq, 2.0), nyquist-h_freq).
 Default: "auto". Used only with method = "fir".}
 
-\item{filter_length}{Integer or "auto". FIR kernel length in samples.
-"auto" uses MNE's formula:
+\item{filter_length}{Integer, text or "auto". FIR kernel length: a
+number of samples, or a time as text such as "4s" or
+"500ms" (upper or lower case; the time times the
+sampling rate, rounded up to whole samples), made
+odd in both cases. "auto" uses MNE's formula:
 ceil(3.3 / min_trans_bw * sfreq), forced odd.
+A length that is too short for the transition
+bandwidths is an error.
 Default: "auto". Used only with method = "fir".}
 
 \item{fir_window}{Character. Window function for kernel design.

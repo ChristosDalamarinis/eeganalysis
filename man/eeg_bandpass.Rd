@@ -65,11 +65,13 @@ Any other word is an error.}
 \item{pad}{Character. Padding at both ends of the recording.
 Only "reflect_limited" (default) is implemented.}
 
-\item{channels}{Character or integer vector, or NULL. Channel names
-or indices to filter. NULL = every channel except
-those of type "status" (the trigger row; see
-Details). A status channel that is named here is
-filtered.}
+\item{channels}{NULL, a character vector, or an integer vector.
+NULL = every channel except those of type "status"
+(the trigger row; see Details). Character: channel
+names such as "Fz", or channel types such as "eeg",
+"eog" or "all" (see Details), not both in one call.
+Integer: row numbers. A status channel that is named
+or picked here is filtered.}
 
 \item{verbose}{Logical. Print filter parameters and progress.
 Default: TRUE.}
@@ -101,6 +103,18 @@ If every channel is of type "status", there is nothing to filter and the
 call stops with an error. The count printed with \code{verbose = TRUE}
 ("Channels: 2/3") and written into the preprocessing history says how many
 rows were filtered.
+
+\strong{Picking channels by type.} \code{channels} can also name channel
+types, taken from \code{eeg_obj$channel_types}: \code{"eeg"}, \code{"eog"},
+\code{"ecg"}, \code{"emg"}, \code{"resp"}, \code{"gsr"}, \code{"temp"},
+\code{"bio"}, \code{"misc"} or \code{"status"}, one or several of them
+(\code{channels = c("eeg", "eog")}), or \code{"all"} for every row, the status
+row included. \code{channels = "eeg"} filters the EEG channels only and
+leaves EOG, ECG and the other rows as they are. Bad channels of that type are
+filtered too. Names and types cannot be mixed in one call, a type that no
+channel has is an error, and a channel whose name is also a type word (a
+channel called "eog") is refused as unclear: give its row number instead. A
+channel that is listed twice is filtered once.
 
 \strong{IIR filters} (\code{method = "iir"}) are Butterworth filters, built
 from their poles and zeros and run as a chain of second-order sections, so

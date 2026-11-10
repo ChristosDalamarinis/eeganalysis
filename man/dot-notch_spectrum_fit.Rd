@@ -13,6 +13,7 @@
   p_value,
   grid_factor,
   ch_idx,
+  segments,
   verbose
 )
 }
@@ -33,6 +34,11 @@ NULL to search for the lines.}
 \item{grid_factor}{Integer. Finer-ruler factor of the automatic search.}
 
 \item{ch_idx}{Integer vector. Rows of the data to clean.}
+
+\item{segments}{The list made by \code{.skip_segments()}: the stretches
+of the recording that are cleaned, each as a recording of its own (its own
+plan of pieces). One segment that covers everything gives the plan of the
+whole recording.}
 
 \item{verbose}{Logical. Print parameters and progress.}
 }

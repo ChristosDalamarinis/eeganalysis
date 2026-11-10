@@ -1644,6 +1644,180 @@
 }
 
 # ----------------------------------------------------------------------------
+# .skip_segments() - where a filter cuts the recording
+# ----------------------------------------------------------------------------
+
+#' Cut a recording at its skipped annotations, for the filters
+#'
+#' Works out which stretches of the recording a filter runs on, from the
+#' \code{skip_by_annotation} argument of \code{eeg_bandpass()} and
+#' \code{eeg_notch()} (all three methods). An annotation is skipped when its
+#' description starts with one of the given words; upper and lower case do not
+#' matter, so \code{"bad"} matches \code{"BAD_muscle"}. The samples of a skipped
+#' annotation are left exactly as they are. Every stretch of samples between
+#' them, a "segment", is filtered as a signal of its own, with its own padding
+#' at both ends, exactly as if \code{filter_data()} had been called on that
+#' stretch alone. So an artifact cannot leak through the filter into the clean
+#' samples around it, and two recordings joined by \code{eeg_concatenate()} are
+#' filtered one by one.
+#'
+#' The samples of an annotation follow the rule of the reference
+#' implementation: the onset, counted from the first sample of the recording
+#' (\code{eeg_obj$times[1]}), and the onset plus the duration are each
+#' multiplied by the sampling rate and rounded (exact halves go to the even
+#' number); the samples from the first number up to, but not including, the
+#' second one are skipped. (The reference implementation keeps every onset to
+#' the microsecond, so for an onset that lies exactly half way between two
+#' samples it can cut one sample differently; annotations made from sample
+#' numbers never lie there.) Annotations that overlap or touch make one skipped
+#' stretch. An annotation of length 0, such as the \code{"BAD_boundary"} that
+#' \code{eeg_concatenate()} writes at each join, skips no sample but cuts the
+#' recording in two at that point (nothing happens when it lies at the very
+#' start, at the very end, or inside a skipped stretch). The \code{channel}
+#' column is not used: every channel is cut at the same samples. A segment may
+#' be shorter than the filter, even a single sample; it is still filtered.
+#' Parts of an annotation that lie outside the recording are ignored.
+#'
+#' @param eeg_obj An object of class 'eeg'.
+#' @param skip_by_annotation Character vector of annotation descriptions, or the
+#'   beginnings of them. \code{character(0)} or \code{NULL} skips nothing. No
+#'   \code{NA} and no empty string (an empty string would match every
+#'   annotation).
+#' @return A list: \code{starts} and \code{stops} (the first and the last sample
+#'   of each segment, counted from 1, in order), \code{n_segments},
+#'   \code{n_skipped} (number of samples left as they are), \code{n_stretches}
+#'   (number of skipped stretches), \code{longest} (length of the longest
+#'   segment in samples), and two short texts for the printed header
+#'   (\code{header}) and the history entry (\code{history}), both empty when
+#'   nothing is cut. When nothing matches there is one segment, the whole
+#'   recording, and the filters then run exactly as they did before this
+#'   argument existed. If every sample is skipped there is nothing to filter and
+#'   the function stops with an error.
+#' @keywords internal
+.skip_segments <- function(eeg_obj, skip_by_annotation) {
+
+  words <- skip_by_annotation
+  if (is.null(words)) words <- character(0)
+  if (!is.character(words) || anyNA(words) || any(!nzchar(words))) {
+    stop("'skip_by_annotation' must be a character vector of annotation ",
+         "descriptions (or the beginnings of them), without NA and without ",
+         "empty strings. Use character(0) to skip nothing.", call. = FALSE)
+  }
+
+  n   <- ncol(eeg_obj$data)
+  sf  <- eeg_obj$sampling_rate
+  ann <- eeg_obj$annotations
+
+  skipped <- logical(n)              # TRUE = this sample is left as it is
+  cut_at  <- numeric(0)              # cut points of the annotations of length 0
+
+  has_table <- !is.null(ann) && nrow(ann) > 0L &&
+    all(c("onset", "duration", "description") %in% names(ann))
+  if (length(words) > 0L && has_table) {
+    up  <- toupper(words)
+    hit <- vapply(toupper(as.character(ann$description)),
+                  function(d) !is.na(d) && any(startsWith(d, up)),
+                  logical(1), USE.NAMES = FALSE)
+    if (any(hit)) {
+      # The onset counted from the first sample; the end with the duration added
+      # in this order, then both to samples. Same order of the additions as the
+      # reference implementation, so that ties are rounded the same way.
+      on    <- ann$onset[hit] - eeg_obj$times[1L]
+      off   <- on + ann$duration[hit]
+      first <- round(on * sf)
+      last  <- round(off * sf)
+      ok    <- is.finite(first) & is.finite(last)
+      first <- first[ok]
+      last  <- last[ok]
+
+      # Annotations with samples: mark [first, last) as skipped.
+      lo   <- pmax(first, 0)
+      hi   <- pmin(last, n)
+      long <- first < last & hi > lo
+      if (any(long)) {
+        step <- tabulate(as.integer(lo[long]) + 1L, nbins = n + 1L) -
+          tabulate(as.integer(hi[long]) + 1L, nbins = n + 1L)
+        skipped <- cumsum(step)[seq_len(n)] > 0
+      }
+      # Annotations of length 0 (also after rounding): a cut, no sample lost.
+      cut_at <- first[first == last]
+      cut_at <- cut_at[cut_at >= 1 & cut_at <= n - 1]
+    }
+  }
+
+  # A segment starts at a good sample that follows a skipped one (or the start,
+  # or a cut point) and ends at a good sample that is followed by a skipped one
+  # (or the end, or a cut point). A cut at sample p lies between the samples p
+  # and p + 1 (counted from 1).
+  good <- !skipped
+  cut  <- logical(n)
+  cut[as.integer(cut_at) + 1L] <- TRUE
+  is_start <- good & (!c(FALSE, good[-n]) | cut)
+  is_stop  <- good & (!c(good[-1L], FALSE) | c(cut[-1L], FALSE))
+  starts   <- which(is_start)
+  stops    <- which(is_stop)
+  if (length(starts) == 0L) {
+    stop("Every sample is inside a skipped annotation (skip_by_annotation = \"",
+         paste(words, collapse = "\", \""), "\"): nothing to filter.",
+         call. = FALSE)
+  }
+
+  n_skipped   <- sum(skipped)
+  n_stretches <- sum(skipped & !c(FALSE, skipped[-n]))
+  n_segments  <- length(starts)
+  show        <- n_segments > 1L || n_skipped > 0L
+
+  header <- history <- ""
+  if (show) {
+    left_out <- if (n_skipped > 0L) {
+      paste0(n_skipped, " samples in ", n_stretches,
+             if (n_stretches == 1L) " stretch" else " stretches")
+    } else {
+      ""
+    }
+    header  <- paste0(n_segments,
+                      if (n_skipped > 0L) paste0(" (", left_out, " left as they are)")
+                      else "")
+    history <- paste0(" | segments: ", n_segments,
+                      if (n_skipped > 0L) paste0(" | skipped: ", left_out) else "")
+  }
+
+  list(starts = starts, stops = stops, n_segments = n_segments,
+       n_skipped = n_skipped, n_stretches = n_stretches,
+       longest = max(stops - starts + 1L), header = header, history = history)
+}
+
+# ----------------------------------------------------------------------------
+# .run_in_segments() - run a filter on each segment of one channel
+# ----------------------------------------------------------------------------
+
+#' Run a function on each segment of one channel
+#'
+#' Hands each segment of the channel (see \code{.skip_segments()}) to \code{fun}
+#' on its own and writes what comes back to the same place. The samples between
+#' the segments, the skipped ones, are not touched. With a single segment that
+#' covers the whole channel, \code{fun} is simply called on the whole channel,
+#' as it was before segments existed.
+#'
+#' @param x        Numeric vector. One channel.
+#' @param segments The list made by \code{.skip_segments()}.
+#' @param fun      Function of one numeric vector that returns a numeric vector
+#'   of the same length (the filtered numbers).
+#' @return Numeric vector, same length as \code{x}.
+#' @keywords internal
+.run_in_segments <- function(x, segments, fun) {
+  if (segments$n_segments == 1L && segments$starts[1L] == 1L &&
+      segments$stops[1L] == length(x)) {
+    return(fun(x))
+  }
+  for (k in seq_len(segments$n_segments)) {
+    pos    <- segments$starts[k]:segments$stops[k]
+    x[pos] <- fun(x[pos])
+  }
+  x
+}
+
+# ----------------------------------------------------------------------------
 # .notch_iir() - the IIR half of eeg_notch()
 # ----------------------------------------------------------------------------
 
@@ -1665,11 +1839,13 @@
 #'   \code{.resolve_iir_params()}).
 #' @param phase           "zero" or "forward".
 #' @param ch_idx          Integer vector. Rows of the data to filter.
+#' @param segments        The list made by \code{.skip_segments()}: the
+#'   stretches of the recording that are filtered, each as a signal of its own.
 #' @param verbose         Logical. Print parameters and progress.
 #' @return An object of class 'eeg'.
 #' @keywords internal
 .notch_iir <- function(eeg_obj, freqs, notch_widths, trans_bandwidth,
-                       iir_params, phase, ch_idx, verbose) {
+                       iir_params, phase, ch_idx, segments, verbose) {
 
   sfreq      <- eeg_obj$sampling_rate
   nyquist    <- sfreq / 2
@@ -1733,6 +1909,9 @@
     cat("  Phase:                ", phase, "\n")
     cat("  Padding:              ", pad_text, "\n")
     cat("  Channels:             ", length(ch_idx), "/", n_channels, "\n")
+    if (nzchar(segments$header)) {
+      cat("  Segments:             ", segments$header, "\n")
+    }
     cat(strrep("-", 70), "\n")
     for (fi in seq_along(freqs)) {
       cat(sprintf("  Notch %d/%d: %.1f Hz  [cutoffs %.4f - %.4f Hz, %d sections]\n",
@@ -1750,13 +1929,16 @@
                          style = 3, width = 50, char = "=")
   }
 
+  # Each segment goes through all the notches, one after the other, on its own.
+  notch_all <- function(v) {
+    for (fi in seq_along(freqs)) {
+      v <- .iir_filter(v, sos_list[[fi]], phase, padlen[fi])
+    }
+    v
+  }
   for (idx in seq_along(ch_idx)) {
     i <- ch_idx[idx]
-    x <- filtered_data[i, ]
-    for (fi in seq_along(freqs)) {
-      x <- .iir_filter(x, sos_list[[fi]], phase, padlen[fi])
-    }
-    filtered_data[i, ] <- x
+    filtered_data[i, ] <- .run_in_segments(filtered_data[i, ], segments, notch_all)
     if (verbose) setTxtProgressBar(pb, idx)
   }
 
@@ -1774,7 +1956,8 @@
     " | Butterworth order: ", iir_params$order,
     " | phase: ", phase,
     " | pad: ", pad_text,
-    " | channels: ", length(ch_idx), "/", n_channels
+    " | channels: ", length(ch_idx), "/", n_channels,
+    segments$history
   )
 
   # ========== RETURN UPDATED EEG OBJECT ==========
@@ -2372,21 +2555,41 @@
 #' @param p_value       Numeric. False-alarm level of the automatic search.
 #' @param grid_factor   Integer. Finer-ruler factor of the automatic search.
 #' @param ch_idx        Integer vector. Rows of the data to clean.
+#' @param segments      The list made by \code{.skip_segments()}: the stretches
+#'   of the recording that are cleaned, each as a recording of its own (its own
+#'   plan of pieces). One segment that covers everything gives the plan of the
+#'   whole recording.
 #' @param verbose       Logical. Print parameters and progress.
 #' @return An object of class 'eeg'.
 #' @keywords internal
 .notch_spectrum_fit <- function(eeg_obj, freqs, notch_widths, filter_length,
                                 mt_bandwidth, p_value, grid_factor, ch_idx,
-                                verbose) {
+                                segments, verbose) {
 
   sfreq      <- eeg_obj$sampling_rate
   n_channels <- nrow(eeg_obj$data)
   searching  <- is.null(freqs)
 
   # ========== DESIGN (ONCE FOR ALL CHANNELS) ==========
+  # One plan for each different segment length: the pieces and the windows
+  # depend on the length. With a single segment this is the plan of the whole
+  # recording, as before.
 
-  plan    <- .make_spectrum_fit_plan(ncol(eeg_obj$data), sfreq, filter_length,
-                                     mt_bandwidth, p_value, grid_factor, searching)
+  seg_len <- segments$stops - segments$starts + 1L
+  cut_up  <- segments$n_segments > 1L || segments$n_skipped > 0L
+  plans   <- list()
+  for (len in unique(seg_len)) {
+    plans[[as.character(len)]] <- tryCatch(
+      .make_spectrum_fit_plan(len, sfreq, filter_length, mt_bandwidth,
+                              p_value, grid_factor, searching),
+      error = function(e) {
+        # a segment too short for spectrum-fit: say which one, and why it exists
+        stop(if (cut_up) paste0("A stretch of ", len, " samples between skipped ",
+                                "annotations: ") else "",
+             conditionMessage(e), call. = FALSE)
+      })
+  }
+  plan    <- plans[[as.character(segments$longest)]]   # the longest one, for the header
   d_main  <- plan$designs[[as.character(plan$n)]]
   piece_s <- plan$n / sfreq
   band_hz <- 2 * d_main$half_nbw / piece_s
@@ -2413,22 +2616,35 @@
         if (plan$grid > 1L) paste0("(", plan$grid, " times finer than the standard ruler)")
         else "(the standard ruler)", "\n")
     cat("  Channels:             ", length(ch_idx), "/", n_channels, "\n")
+    if (nzchar(segments$header)) {
+      cat("  Segments:             ", segments$header, "\n")
+      if (length(unique(seg_len)) > 1L) {
+        cat("                         (piece length and windows above: those of the longest segment)\n")
+      }
+    }
     cat(strrep("-", 70), "\n")
     pb <- txtProgressBar(min = 0, max = length(ch_idx),
                          style = 3, width = 50, char = "=")
   }
 
-  # ========== RUN, CHANNEL BY CHANNEL ==========
+  # ========== RUN, CHANNEL BY CHANNEL, SEGMENT BY SEGMENT ==========
 
   filtered_data <- eeg_obj$data
   all_found     <- numeric(0)
   skipped       <- 0L
   for (idx in seq_along(ch_idx)) {
-    i   <- ch_idx[idx]
-    res <- .apply_spectrum_fit_plan(filtered_data[i, ], sfreq, plan, freqs, notch_widths)
-    filtered_data[i, ] <- res$x
-    all_found <- c(all_found, unlist(res$found))
-    skipped   <- skipped + res$skipped
+    i     <- ch_idx[idx]
+    x_row <- filtered_data[i, ]
+    for (k in seq_len(segments$n_segments)) {
+      pos <- segments$starts[k]:segments$stops[k]
+      res <- .apply_spectrum_fit_plan(x_row[pos], sfreq,
+                                      plans[[as.character(length(pos))]],
+                                      freqs, notch_widths)
+      x_row[pos] <- res$x
+      all_found  <- c(all_found, unlist(res$found))
+      skipped    <- skipped + res$skipped
+    }
+    filtered_data[i, ] <- x_row
     if (verbose) setTxtProgressBar(pb, idx)
   }
 
@@ -2471,7 +2687,8 @@
     " | bandwidth: ", round(band_hz, 3), " Hz",
     " | ruler: ", if (plan$grid > 1L) paste0("x", plan$grid, " finer") else "standard",
     " | found: ", found_text,
-    " | channels: ", length(ch_idx), "/", n_channels
+    " | channels: ", length(ch_idx), "/", n_channels,
+    segments$history
   )
 
   # ========== RETURN UPDATED EEG OBJECT ==========
@@ -2538,6 +2755,42 @@
 #' channel has is an error, and a channel whose name is also a type word (a
 #' channel called "eog") is refused as unclear: give its row number instead. A
 #' channel that is listed twice is filtered once.
+#'
+#' \strong{Skipping stretches of the recording.} A filter makes each output
+#' sample from the input around it, as far as half the filter length to each
+#' side (1.65 s for the default 1 - 40 Hz filter at 256 Hz). So a large
+#' artifact leaks into the clean samples next to it. With
+#' \code{skip_by_annotation} you name annotations that the filter goes around
+#' (see \code{\link{annotate_muscle}} and \code{\link{annotate_amplitude}}): an
+#' annotation is skipped when its description starts with one of your words,
+#' whatever the case, so \code{"bad"} skips every \code{"BAD_..."} annotation.
+#' The samples inside a skipped annotation are not filtered and stay exactly as
+#' they were (their DC offset too). Each stretch of the recording between them
+#' is filtered as a signal of its own, with its own padding at both ends, so it
+#' gives the same numbers as \code{\link{filter_data}} on that stretch alone.
+#' Example, on made-up data (a 1 s wave of size 300 in a clean signal of size
+#' about 8, default 1 - 40 Hz filter): the largest error among the clean samples
+#' after the artifact was 85 when the whole recording was filtered in one run,
+#' and 9 with the artifact skipped. Some error is left next to each cut, because
+#' each stretch is padded by mirroring at its ends.
+#'
+#' The default is \code{"BAD_boundary"}, the mark that
+#' \code{\link{eeg_concatenate}} writes at each join. It has length 0: it skips
+#' no sample but cuts the recording there, so the runs of a joined recording are
+#' filtered one by one, as they would be before the join, and no filter runs
+#' across a join. An annotation of length 0 cuts the recording in two wherever
+#' it is. When no annotation matches, the whole recording is filtered in one
+#' run, exactly as without this argument. \code{skip_by_annotation =
+#' character(0)} (or \code{NULL}) never cuts, whatever the annotations say; a
+#' joined recording is then filtered as one signal. All channels are cut at the
+#' same samples (the \code{channel} column of an annotation is not used). A
+#' stretch that is shorter than the filter is still filtered, but it is
+#' distorted, and you get one warning (for the longest stretch). The skipped
+#' samples stay unfiltered, so anything that reads them later (a plot,
+#' \code{\link{find_bad_channels}}) sees them as they were. Annotate first, then
+#' filter: the annotation functions that look at filtered data, such as
+#' \code{\link{annotate_muscle}}, filter inside themselves. If every sample is
+#' skipped there is nothing to filter and the call stops with an error.
 #'
 #' \strong{IIR filters} (\code{method = "iir"}) are Butterworth filters, built
 #' from their poles and zeros and run as a chain of second-order sections, so
@@ -2619,11 +2872,21 @@
 #'                         "eog" or "all" (see Details), not both in one call.
 #'                         Integer: row numbers. A status channel that is named
 #'                         or picked here is filtered.
+#' @param skip_by_annotation Character vector, or NULL. Annotations that the
+#'                         filter goes around (see Details). Any annotation
+#'                         whose description starts with one of these words, in
+#'                         upper or lower case, is left as it is, and the
+#'                         stretches between them are filtered one by one.
+#'                         \code{"bad"} skips every \code{"BAD_..."}
+#'                         annotation. \code{character(0)} or NULL skips
+#'                         nothing. Default: \code{"BAD_boundary"}, the join
+#'                         mark of \code{\link{eeg_concatenate}}.
 #' @param verbose          Logical. Print filter parameters and progress.
 #'                         Default: TRUE.
 #'
 #' @return An object of class 'eeg' with filtered data and updated
-#'   preprocessing_history.
+#'   preprocessing_history. If the recording was cut, the history entry ends
+#'   with the number of segments and the number of samples that were skipped.
 #'
 #' @seealso \code{\link{filter_data}} to run the same filter on numbers that are
 #'   not in an \code{eeg} object.
@@ -2641,6 +2904,7 @@ eeg_bandpass <- function(eeg_obj,
                          phase               = "zero",
                          pad                 = "reflect_limited",
                          channels            = NULL,
+                         skip_by_annotation  = "BAD_boundary",
                          verbose             = TRUE) {
 
   # HOW THIS FUNCTION IS BUILT
@@ -2651,9 +2915,10 @@ eeg_bandpass <- function(eeg_obj,
   # .make_bandpass_filter(). In order:
   #   1. check the input          .check_band_edges(), .check_filter_settings()
   #   2. choose the channels      (here)
+  #      and the segments         .skip_segments()
   #   3. design the filter        .make_bandpass_filter()
   #   4. print the header         (here)
-  #   5. filter each channel      .apply_bandpass_filter()
+  #   5. filter each channel      .apply_bandpass_filter(), once per segment
   #   6. write the history entry  (here)
   #   7. build the new object     (here)
 
@@ -2698,6 +2963,12 @@ eeg_bandpass <- function(eeg_obj,
   n_channels <- nrow(eeg_obj$data)
   ch_idx     <- .resolve_filter_channels(eeg_obj, channels)
 
+  # ========== CUT THE RECORDING AT THE SKIPPED ANNOTATIONS ==========
+  # The stretches that the filter runs on, each as a signal of its own. With no
+  # matching annotation this is one stretch, the whole recording.
+
+  segments <- .skip_segments(eeg_obj, skip_by_annotation)
+
   # ========== DESIGN THE FILTER ==========
   # Step 1 of the shared recipe, done once for all channels. 'spec' describes
   # the finished filter (FIR kernel or IIR sections, lengths, padding, ...); it
@@ -2709,9 +2980,10 @@ eeg_bandpass <- function(eeg_obj,
                                 filter_length, fir_window, phase, pad)
 
   # A FIR kernel longer than the recording still runs, but the result is
-  # distorted: warn once, not once per channel. (IIR has no such length.)
+  # distorted: warn once, not once per channel. (IIR has no such length.) With
+  # cuts, the signals are the segments, so the longest segment decides.
   if (spec$method == "fir") {
-    .warn_if_filter_too_long(spec$N, ncol(eeg_obj$data), sfreq)
+    .warn_if_filter_too_long(spec$N, segments$longest, sfreq)
   }
 
   # ========== VERBOSE HEADER ==========
@@ -2746,13 +3018,17 @@ eeg_bandpass <- function(eeg_obj,
       cat("  Padding:              ", spec$pad_text, "\n")
     }
     cat("  Channels:             ", length(ch_idx), "/", n_channels, "\n")
+    if (nzchar(segments$header)) {
+      cat("  Segments:             ", segments$header, "\n")
+    }
     cat(strrep("-", 70), "\n")
   }
 
   # ========== APPLY FILTER CHANNEL BY CHANNEL ==========
   # Step 2 of the shared recipe: every chosen row of the data table goes through
-  # .apply_bandpass_filter() on its own. The rows that were not chosen are left
-  # exactly as they are. filtered_data starts as a copy of the data table.
+  # .apply_bandpass_filter() on its own, once for each segment. The rows that
+  # were not chosen, and the samples that were skipped, are left exactly as they
+  # are. filtered_data starts as a copy of the data table.
 
   filtered_data <- eeg_obj$data
 
@@ -2763,7 +3039,9 @@ eeg_bandpass <- function(eeg_obj,
 
   for (idx in seq_along(ch_idx)) {
     i <- ch_idx[idx]
-    filtered_data[i, ] <- .apply_bandpass_filter(filtered_data[i, ], spec)
+    filtered_data[i, ] <- .run_in_segments(
+      filtered_data[i, ], segments,
+      function(v) .apply_bandpass_filter(v, spec))
     if (verbose) setTxtProgressBar(pb, idx)
   }
 
@@ -2783,7 +3061,8 @@ eeg_bandpass <- function(eeg_obj,
       " | length: ", spec$N, " samples",
       " | phase: ", phase,
       " | pad: ", pad,
-      " | channels: ", length(ch_idx), "/", n_channels
+      " | channels: ", length(ch_idx), "/", n_channels,
+      segments$history
     )
   } else {
     paste0(
@@ -2791,7 +3070,8 @@ eeg_bandpass <- function(eeg_obj,
       " | Butterworth order: ", spec$order,
       " | phase: ", phase,
       " | pad: ", spec$pad_text,
-      " | channels: ", length(ch_idx), "/", n_channels
+      " | channels: ", length(ch_idx), "/", n_channels,
+      segments$history
     )
   }
 
@@ -3000,6 +3280,22 @@ filter_data <- function(x,
 #' the channels of both types, \code{"all"} every row; names and types cannot be
 #' mixed in one call. A channel that is listed twice is filtered once.
 #'
+#' \strong{Skipping stretches of the recording} works as in
+#' \code{\link{eeg_bandpass}}, for all three methods. An annotation whose
+#' description starts with one of the words of \code{skip_by_annotation} (any
+#' case) is left as it is, and every stretch between such annotations is
+#' filtered as a signal of its own, with its own padding at both ends: the same
+#' numbers as running \code{eeg_notch()} on that stretch alone. The default
+#' \code{"BAD_boundary"} is the length-0 mark of \code{\link{eeg_concatenate}},
+#' so the runs of a joined recording are filtered one by one; when no annotation
+#' matches, nothing changes. \code{character(0)} or \code{NULL} never cuts.
+#' With the FIR method the warning below is about the longest stretch. With
+#' \code{method = "spectrum_fit"} each stretch gets pieces of its own and must
+#' be at least 32 samples long (shorter stretches are an error, as a recording
+#' that short is); the lines found are counted over all stretches, and the
+#' piece length and bandwidth in the printed header and the history entry are
+#' those of the longest stretch.
+#'
 #' A FIR kernel that is longer than the recording still runs, but the result is
 #' distorted, so you get one warning (see \code{\link{eeg_bandpass}}). With the
 #' default Hamming window the kernel is 3.3 / (\code{trans_bandwidth} / 2)
@@ -3153,13 +3449,24 @@ filter_data <- function(x,
 #'                         both in one call. Integer: row numbers. A status
 #'                         channel that is named or picked here is filtered.
 #'                         Default: NULL.
+#' @param skip_by_annotation Character vector, or NULL. Annotations that the
+#'                         filter goes around (see Details). Any annotation
+#'                         whose description starts with one of these words, in
+#'                         upper or lower case, is left as it is, and the
+#'                         stretches between them are filtered one by one.
+#'                         \code{"bad"} skips every \code{"BAD_..."}
+#'                         annotation. \code{character(0)} or NULL skips
+#'                         nothing. Default: \code{"BAD_boundary"}, the join
+#'                         mark of \code{\link{eeg_concatenate}}.
 #' @param verbose          Logical. Print parameters and progress.
 #'                         Default: TRUE.
 #'
 #' @return An object of class 'eeg' with filtered data and updated
 #'   preprocessing_history. With the spectrum-fit method, the lines that were
 #'   found are also printed (with \code{verbose = TRUE}) and written into the
-#'   preprocessing_history entry.
+#'   preprocessing_history entry. If the recording was cut, the history entry
+#'   ends with the number of segments and the number of samples that were
+#'   skipped.
 #'
 #' @export
 eeg_notch <- function(eeg_obj,
@@ -3176,6 +3483,7 @@ eeg_notch <- function(eeg_obj,
                       p_value          = 0.05,
                       grid_factor      = 8L,
                       channels         = NULL,
+                      skip_by_annotation = "BAD_boundary",
                       verbose          = TRUE) {
   
   # ========== INPUT VALIDATION ==========
@@ -3316,12 +3624,19 @@ eeg_notch <- function(eeg_obj,
   # parts get ch_idx handed over below).
   ch_idx <- .resolve_filter_channels(eeg_obj, channels)
 
+  # ========== CUT THE RECORDING AT THE SKIPPED ANNOTATIONS ==========
+  # The stretches that the filter runs on, each as a signal of its own. With no
+  # matching annotation this is one stretch, the whole recording. The same for
+  # all three methods (the IIR and spectrum-fit parts get it handed over below).
+
+  segments <- .skip_segments(eeg_obj, skip_by_annotation)
+
   # ========== SPECTRUM-FIT: HAND OVER TO ITS OWN FUNCTION ==========
 
   if (method == "spectrum_fit") {
     return(.notch_spectrum_fit(eeg_obj, freqs, notch_widths, filter_length,
                                mt_bandwidth, p_value, grid_factor, ch_idx,
-                               verbose))
+                               segments, verbose))
   }
 
   # ========== IIR: HAND OVER TO ITS OWN FUNCTION ==========
@@ -3329,7 +3644,7 @@ eeg_notch <- function(eeg_obj,
 
   if (method == "iir") {
     return(.notch_iir(eeg_obj, freqs, notch_widths, trans_bandwidth,
-                      iir_params, phase, ch_idx, verbose))
+                      iir_params, phase, ch_idx, segments, verbose))
   }
 
   # ========== VERBOSE HEADER ==========
@@ -3346,9 +3661,12 @@ eeg_notch <- function(eeg_obj,
     cat("  Phase:                ", phase, "\n")
     cat("  Padding:              ", pad, "\n")
     cat("  Channels:             ", length(ch_idx), "/", n_channels, "\n")
+    if (nzchar(segments$header)) {
+      cat("  Segments:             ", segments$header, "\n")
+    }
     cat(strrep("-", 70), "\n")
   }
-  
+
   # ========== BUILD ONE MULTI-BAND FREQ/GAIN ARRAY ==========
   # MNE computes lows/highs for all notch frequencies, passes them all to
   # filter_data() at once, which builds a single multi-band FIR kernel.
@@ -3420,8 +3738,9 @@ eeg_notch <- function(eeg_obj,
   if (phase == "minimum") h <- .minimum_phase(h)
 
   # A kernel longer than the recording still runs, but the result is distorted
-  # (same warning as eeg_bandpass(); N is the kernel length).
-  .warn_if_filter_too_long(N, ncol(filtered_data), sfreq)
+  # (same warning as eeg_bandpass(); N is the kernel length). With cuts, the
+  # signals are the segments, so the longest segment decides.
+  .warn_if_filter_too_long(N, segments$longest, sfreq)
 
   if (verbose) {
     for (fi in seq_along(freqs)) {
@@ -3433,14 +3752,12 @@ eeg_notch <- function(eeg_obj,
                          style = 3, width = 50, char = "=")
   }
 
-  # --- Apply the single multi-band kernel to each channel ---
+  # --- Apply the single multi-band kernel to each channel, once per segment ---
   for (idx in seq_along(ch_idx)) {
     i <- ch_idx[idx]
-    filtered_data[i, ] <- .overlap_add_filter(
-      x     = filtered_data[i, ],
-      h     = h,
-      phase = phase,
-      pad   = pad
+    filtered_data[i, ] <- .run_in_segments(
+      filtered_data[i, ], segments,
+      function(v) .overlap_add_filter(x = v, h = h, phase = phase, pad = pad)
     )
     if (verbose) setTxtProgressBar(pb, idx)
   }
@@ -3460,11 +3777,12 @@ eeg_notch <- function(eeg_obj,
     " | window: ", fir_window,
     " | phase: ", phase,
     " | pad: ", pad,
-    " | channels: ", length(ch_idx), "/", n_channels
+    " | channels: ", length(ch_idx), "/", n_channels,
+    segments$history
   )
-  
+
   # ========== RETURN UPDATED EEG OBJECT ==========
-  
+
   out <- new_eeg(
     data                  = filtered_data,
     channels              = eeg_obj$channels,

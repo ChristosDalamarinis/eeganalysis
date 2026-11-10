@@ -3578,3 +3578,550 @@ test_that("channels = 'eeg' gives the numbers of the reference implementation (p
     expect_identical(nt[ch, ], e$data[ch, ], label = ch)
   }
 })
+
+# --- skipping annotated stretches (skip_by_annotation) ----------------------------
+# eeg_bandpass() and eeg_notch() (all three methods) have an argument
+# skip_by_annotation. An annotation whose description STARTS WITH one of its
+# words (any case) is skipped: its samples stay exactly as they were, and every
+# stretch of samples between the skipped ones (a "segment") is filtered as a
+# signal of its own, with its own padding at both ends - the same numbers as
+# filtering that stretch alone. The default, "BAD_boundary", is the length-0 mark
+# that eeg_concatenate() writes at a join, so the runs of a joined recording are
+# filtered one by one. The rule for the samples is the one of the reference
+# implementation: round(onset * sfreq) up to, not including,
+# round((onset + duration) * sfreq), counted from the first sample; overlapping
+# or touching notes make one stretch; a note of length 0 cuts in two and skips
+# nothing. The cut samples of 12 scenarios and the filtered numbers next to the
+# cuts (FIR, IIR, FIR notch, IIR notch, spectrum-fit notch, and a joined
+# recording) come from its Raw.filter() / Raw.notch_filter() with
+# skip_by_annotation; a further 106 cases were run in the same way when the
+# argument was built and agreed to 3e-13 (FIR) and 2e-11 (IIR, spectrum-fit).
+# One difference: it stores every onset rounded to the microsecond, so an onset
+# that lies exactly half way between two samples can be cut one sample off there;
+# here exact halves go to the even number (tested below).
+# The fixture has no random numbers, so its numbers are the same everywhere.
+
+notes <- function(onset, duration, description, channel = NA_character_) {
+  data.frame(onset = onset, duration = duration, description = description,
+             channel = channel, stringsAsFactors = FALSE)
+}
+
+skip_fixture <- function(n = 3000, anns = NULL, sf = 256, start = 0) {
+  t <- (0:(n - 1)) / sf
+  w <- function(a, f, p) a * sin(2 * pi * f * t + p)
+  dat <- rbind(
+    Fz   = w(10, 10, 0.3) + w(4, 3.3, 1.1) + w(3, 50, 0.7) + w(2, 23.1, 2.0),
+    Cz   = w(8, 9, 0.9) + w(5, 2.4, 0.2) + w(3, 50, 1.9) + w(2, 31.7, 0.4),
+    VEOG = w(9, 0.8, 0.1) + w(5, 6.1, 2.2) + w(3, 50, 0.4) + w(2, 37.3, 0.9))
+  e <- eeganalysis::new_eeg(data = dat, channels = rownames(dat), sampling_rate = sf,
+                            times = t + start,
+                            channel_types = c("eeg", "eeg", "eog"), bads = "Cz")
+  if (!is.null(anns)) e$annotations <- anns
+  e
+}
+
+# the stretch [idx] of a fixture as a recording of its own
+stretch_eeg <- function(e, idx) {
+  eeganalysis::new_eeg(data = e$data[, idx, drop = FALSE], channels = e$channels,
+                       sampling_rate = e$sampling_rate,
+                       channel_types = e$channel_types, bads = e$bads)
+}
+
+last_entry <- function(o) o$preprocessing_history[[length(o$preprocessing_history)]]
+
+test_that("the default of skip_by_annotation is the join mark, in both public functions", {
+  expect_identical(formals(eeg_bandpass)$skip_by_annotation, "BAD_boundary")
+  expect_identical(formals(eeg_notch)$skip_by_annotation, "BAD_boundary")
+})
+
+test_that(".skip_segments cuts at the same samples as the reference implementation", {
+  S <- 1 / 256
+  cases <- list(
+    list(name = "one stretch", words = "bad",
+         onset = 4, duration = 2, desc = "BAD_a",
+         starts = c(1, 1537), stops = c(1024, 3000)),
+    list(name = "overlap", words = "bad",
+         onset = c(4, 5), duration = c(2, 2.5), desc = c("BAD_a", "BAD_b"),
+         starts = c(1, 1921), stops = c(1024, 3000)),
+    list(name = "touching", words = "bad",
+         onset = c(4, 6), duration = c(2, 1), desc = c("BAD_a", "BAD_b"),
+         starts = c(1, 1793), stops = c(1024, 3000)),
+    list(name = "off the grid", words = "bad",
+         onset = 4.004, duration = 2, desc = "BAD_a",
+         starts = c(1, 1538), stops = c(1025, 3000)),
+    list(name = "at the start and past the end", words = "bad",
+         onset = c(0, 10), duration = c(1, 5), desc = c("BAD_a", "BAD_b"),
+         starts = 257, stops = 2560),
+    list(name = "a join", words = "BAD_boundary",
+         onset = 5, duration = 0, desc = "BAD_boundary",
+         starts = c(1, 1281), stops = c(1280, 3000)),
+    list(name = "length 0 at the start, the end, inside a stretch, twice",
+         words = "bad",
+         onset = c(0, 4, 5, 3000 / 256, 8, 8), duration = c(0, 2, 0, 0, 0, 0),
+         desc = c("BAD_a", "BAD_b", "BAD_c", "BAD_d", "BAD_e", "BAD_f"),
+         starts = c(1, 1537, 2049), stops = c(1024, 2048, 3000)),
+    list(name = "two words, any case", words = c("bad_muscle", "EDGE"),
+         onset = c(2, 6, 8, 9), duration = c(1, 1, 0.5, 1),
+         desc = c("BAD_muscle", "Edge boundary", "bad_amplitude", "other"),
+         starts = c(1, 769, 1793), stops = c(512, 1536, 3000)),
+    list(name = "random decimals", words = "bad",
+         onset = c(0.5013, 1.2041, 2.0007, 3.3333, 4.4444, 6.1019, 7.5, 9.9991),
+         duration = c(0.2501, 0.0003, 0.4999, 0.0005, 1.1111, 0.7777, 0, 3),
+         desc = paste0("BAD_", letters[1:8]),
+         starts = c(1, 193, 309, 641, 854, 1423, 1762, 1921),
+         stops = c(128, 308, 512, 853, 1138, 1562, 1920, 2560)),
+    list(name = "a note so short that it rounds to a cut", words = "bad",
+         onset = 5, duration = 0.001, desc = "BAD_tiny",
+         starts = c(1, 1281), stops = c(1280, 3000)),
+    list(name = "one good sample at the start", words = "bad",
+         onset = S, duration = 2999 * S, desc = "BAD_all_but_one",
+         starts = 1, stops = 1),
+    list(name = "one good sample at the end", words = "bad",
+         onset = 0, duration = 2999 * S, desc = "BAD_all_but_last",
+         starts = 3000, stops = 3000))
+  for (cs in cases) {
+    e <- skip_fixture(anns = notes(cs$onset, cs$duration, cs$desc))
+    s <- .skip_segments(e, cs$words)
+    expect_equal(as.numeric(s$starts), cs$starts, info = cs$name)
+    expect_equal(as.numeric(s$stops), cs$stops, info = cs$name)
+  }
+  # the recording starts at 3 s: the onsets are on the times axis
+  e <- skip_fixture(anns = notes(c(7, 11), c(2, 0), c("BAD_a", "BAD_boundary")), start = 3)
+  s <- .skip_segments(e, "bad")
+  expect_equal(as.numeric(s$starts), c(1, 1537, 2049))
+  expect_equal(as.numeric(s$stops), c(1024, 2048, 3000))
+})
+
+test_that(".skip_segments: exact halves of a sample go to the even number", {
+  S <- 1 / 256
+  # 1000.5 -> 1000 and 1100.5 -> 1100 (both even); 1501.5 -> 1502 and 1601.5 -> 1602
+  e <- skip_fixture(anns = notes(c(1000.5 * S, 1501.5 * S), c(100 * S, 100 * S),
+                                 c("BAD_t1", "BAD_t2")))
+  s <- .skip_segments(e, "bad")
+  expect_equal(as.numeric(s$starts), c(1, 1101, 1603))
+  expect_equal(as.numeric(s$stops), c(1000, 1502, 3000))
+})
+
+test_that(".skip_segments matches the start of a description, in any case, and nothing else", {
+  anns <- notes(c(1, 2, 3, 4, 5), rep(0.5, 5),
+                c("BAD_muscle", "bad", "Badminton", "xBAD", "a BAD one"))
+  e <- skip_fixture(anns = anns)
+  skipped_n <- function(words) .skip_segments(e, words)$n_skipped
+  expect_equal(skipped_n("bad"), 3 * 128)                  # the first three
+  expect_equal(skipped_n("BAD_MUSCLE"), 128)
+  expect_equal(skipped_n("BAD_muscle_extra"), 0)           # the word is longer than the description
+  expect_equal(skipped_n("xbad"), 128)
+  expect_equal(skipped_n("AD"), 0)                         # the start, not a part inside
+  expect_equal(skipped_n(c("xbad", "bad_muscle")), 2 * 128)
+  expect_equal(skipped_n(c("bad", "bad")), 3 * 128)        # a word twice counts once
+  expect_equal(skipped_n("a bad"), 128)
+  # nothing is skipped
+  none <- .skip_segments(e, character(0))
+  expect_equal(none$n_segments, 1L)
+  expect_equal(c(none$starts, none$stops), c(1L, 3000L))
+  expect_identical(.skip_segments(e, NULL)[c("starts", "stops")], none[c("starts", "stops")])
+})
+
+test_that(".skip_segments does not use the channel column, and ignores what lies outside", {
+  e1 <- skip_fixture(anns = notes(4, 2, "BAD_a", channel = "Fz"))
+  e2 <- skip_fixture(anns = notes(4, 2, "BAD_a"))
+  expect_identical(.skip_segments(e1, "bad")[1:4], .skip_segments(e2, "bad")[1:4])
+  # a note that ends before the first sample, one that starts after the last one
+  e3 <- skip_fixture(anns = notes(c(-5, 20), c(2, 3), c("BAD_before", "BAD_after")))
+  expect_equal(.skip_segments(e3, "bad")$n_skipped, 0)
+  expect_equal(.skip_segments(e3, "bad")$n_segments, 1L)
+  # a note that starts before the recording and reaches into it
+  e4 <- skip_fixture(anns = notes(-1, 2, "BAD_start"))
+  expect_equal(.skip_segments(e4, "bad")$n_skipped, 256)
+  # a missing description or a missing onset is never a match
+  e5 <- skip_fixture(anns = notes(c(1, NA, 3), c(1, 1, NA), c(NA, "BAD_x", "BAD_y")))
+  expect_equal(.skip_segments(e5, "bad")$n_skipped, 0)
+  # ... also when that is the only note there is
+  e6 <- skip_fixture(anns = notes(1, 1, NA_character_))
+  expect_equal(.skip_segments(e6, "bad")$n_skipped, 0)
+  expect_equal(.skip_segments(e6, "bad")$n_segments, 1L)
+})
+
+test_that(".skip_segments gives the same segments as a slow sample-by-sample computation", {
+  set.seed(7)
+  n <- 3000; sf <- 256
+  made <- 0
+  for (rep in 1:40) {
+    k   <- sample(1:10, 1)
+    on  <- round(runif(k, -1, 12.5), sample(1:4, 1))
+    du  <- round(runif(k, 0, 1.5), sample(1:4, 1))
+    du[sample(k, 1)] <- 0                                  # at least one cut
+    e <- skip_fixture(anns = notes(on, du, rep("BAD_x", k)))
+    first <- round(on * sf); last <- round((on + du) * sf)
+    skip <- rep(FALSE, n)
+    for (j in seq_len(k)) {
+      if (last[j] > first[j]) {
+        a <- max(first[j], 0); b <- min(last[j], n)
+        if (b > a) skip[(a + 1):b] <- TRUE
+      }
+    }
+    cuts <- first[first == last]
+    good <- which(!skip)
+    if (length(good) == 0) next
+    brk  <- c(TRUE, diff(good) > 1 | good[-length(good)] %in% cuts)
+    s <- .skip_segments(e, "bad")
+    expect_equal(as.numeric(s$starts), good[brk])
+    expect_equal(as.numeric(s$stops), good[c(brk[-1], TRUE)])
+    expect_equal(s$n_skipped, sum(skip))
+    expect_equal(s$longest, max(s$stops - s$starts + 1))
+    made <- made + 1
+  }
+  expect_gt(made, 30)
+})
+
+test_that(".skip_segments writes the texts for the header and the history entry", {
+  e <- skip_fixture()
+  none <- .skip_segments(e, "bad")
+  expect_identical(none$header, "")
+  expect_identical(none$history, "")
+  expect_equal(c(none$n_skipped, none$n_stretches), c(0, 0))
+  join <- .skip_segments(skip_fixture(anns = notes(5, 0, "BAD_boundary")), "BAD_boundary")
+  expect_identical(join$header, "2")
+  expect_identical(join$history, " | segments: 2")
+  one <- .skip_segments(skip_fixture(anns = notes(4, 2, "BAD_a")), "bad")
+  expect_identical(one$header, "2 (512 samples in 1 stretch left as they are)")
+  expect_identical(one$history, " | segments: 2 | skipped: 512 samples in 1 stretch")
+  two <- .skip_segments(skip_fixture(anns = notes(c(4, 8), c(2, 1), c("BAD_a", "BAD_b"))), "bad")
+  expect_identical(two$history, " | segments: 3 | skipped: 768 samples in 2 stretches")
+  expect_equal(two$n_stretches, 2)
+  # touching notes are one stretch
+  touch <- .skip_segments(skip_fixture(anns = notes(c(4, 6), c(2, 1), c("BAD_a", "BAD_b"))), "bad")
+  expect_equal(touch$n_stretches, 1)
+  expect_equal(touch$n_skipped, 768)
+  # only a stretch at the very start: one segment, but something was skipped
+  st <- .skip_segments(skip_fixture(anns = notes(0, 1, "BAD_a")), "bad")
+  expect_identical(st$history, " | segments: 1 | skipped: 256 samples in 1 stretch")
+})
+
+test_that(".skip_segments refuses a wrong argument, and a recording that is skipped entirely", {
+  e <- skip_fixture(anns = notes(0, 20, "BAD_all"))
+  msg <- "must be a character vector of annotation descriptions"
+  expect_error(.skip_segments(e, NA_character_), msg)
+  expect_error(.skip_segments(e, c("bad", NA)), msg)
+  expect_error(.skip_segments(e, ""), msg)
+  expect_error(.skip_segments(e, c("bad", "")), msg)
+  expect_error(.skip_segments(e, 1), msg)
+  expect_error(.skip_segments(e, TRUE), msg)
+  expect_error(.skip_segments(e, list("bad")), msg)
+  expect_error(.skip_segments(e, "bad"),
+               "Every sample is inside a skipped annotation (skip_by_annotation = \"bad\")",
+               fixed = TRUE)
+  expect_error(.skip_segments(e, c("zzz", "bad")), "\"zzz\", \"bad\"", fixed = TRUE)
+  # not matching: fine
+  expect_equal(.skip_segments(e, "zzz")$n_segments, 1L)
+})
+
+test_that(".run_in_segments hands each segment to the function and leaves the rest alone", {
+  x <- as.numeric(1:20)
+  seg <- list(n_segments = 2L, starts = c(2L, 12L), stops = c(8L, 20L))
+  seen <- list()
+  out <- .run_in_segments(x, seg, function(v) { seen[[length(seen) + 1]] <<- v; v * 10 })
+  expect_equal(seen, list(as.numeric(2:8), as.numeric(12:20)))
+  expect_equal(out, c(1, (2:8) * 10, 9, 10, 11, (12:20) * 10))
+  # one segment that covers everything: the function gets the whole channel
+  whole <- list(n_segments = 1L, starts = 1L, stops = 20L)
+  got <- NULL
+  .run_in_segments(x, whole, function(v) { got <<- v; v })
+  expect_identical(got, x)
+  # one segment that does NOT cover everything: only that part
+  part <- list(n_segments = 1L, starts = 5L, stops = 9L)
+  expect_equal(.run_in_segments(x, part, function(v) -v), c(1:4, -(5:9), 10:20))
+})
+
+# Scenario of the next tests: 3 s to 5 s skipped ("BAD_muscle", samples 769 to
+# 1280) and a join at 9 s ("BAD_boundary", length 0, cut after sample 2304). The
+# stretches that are filtered: 1:768, 1281:2304 and 2305:3000.
+main_anns <- function() notes(c(3, 9), c(2, 0), c("BAD_muscle", "BAD_boundary"))
+main_segs <- list(1:768, 1281:2304, 2305:3000)
+
+skip_runs <- list(
+  bp_fir     = function(o, ...) eeg_bandpass(o, 1, 40, verbose = FALSE, ...),
+  bp_causal  = function(o, ...) eeg_bandpass(o, NULL, 40, phase = "minimum", verbose = FALSE, ...),
+  bp_iir     = function(o, ...) eeg_bandpass(o, 1, 40, method = "iir", verbose = FALSE, ...),
+  bp_iir_fwd = function(o, ...) eeg_bandpass(o, 1, 40, method = "iir", phase = "forward",
+                                             verbose = FALSE, ...),
+  notch_fir  = function(o, ...) eeg_notch(o, 50, verbose = FALSE, ...),
+  notch_iir  = function(o, ...) eeg_notch(o, 50, method = "iir", verbose = FALSE, ...),
+  notch_sfit = function(o, ...) eeg_notch(o, 50, method = "spectrum_fit", verbose = FALSE, ...),
+  notch_find = function(o, ...) eeg_notch(o, NULL, method = "spectrum_fit", grid_factor = 1L,
+                                          verbose = FALSE, ...))
+
+test_that("every stretch gets the numbers of filtering it alone, and the skipped samples stay as they were", {
+  e <- skip_fixture(anns = main_anns())
+  for (nm in names(skip_runs)) {
+    got <- suppressWarnings(skip_runs[[nm]](e, skip_by_annotation = "bad"))
+    for (idx in main_segs) {
+      alone <- suppressWarnings(skip_runs[[nm]](stretch_eeg(e, idx)))
+      expect_lt(max(abs(got$data[, idx] - alone$data)), 1e-11, label = paste(nm, idx[1]))
+    }
+    # the skipped samples are exactly as they were, to the last digit
+    expect_identical(got$data[, 769:1280], e$data[, 769:1280], info = nm)
+    # and the rest did change
+    expect_gt(max(abs(got$data[, c(1:768, 1281:3000)] - e$data[, c(1:768, 1281:3000)])), 0.1)
+  }
+  # the stretches of eeg_bandpass are those of filter_data() on plain numbers
+  got <- eeg_bandpass(e, 1, 40, skip_by_annotation = "bad", verbose = FALSE)
+  for (idx in main_segs) {
+    expect_lt(max(abs(got$data["Fz", idx] -
+                        suppressWarnings(filter_data(e$data["Fz", idx], 256, 1, 40)))), 1e-12)
+    expect_lt(max(abs(got$data["VEOG", idx] -
+                        suppressWarnings(filter_data(e$data["VEOG", idx], 256, 1, 40)))), 1e-12)
+  }
+})
+
+test_that("the numbers next to the cuts are those of the reference implementation", {
+  # Raw.filter() / Raw.notch_filter() with skip_by_annotation = "bad", picks Fz and
+  # Cz, on this fixture with the annotations of main_anns(). The samples are the
+  # last and the first ones of every stretch and of the skipped part.
+  pos <- c(1, 500, 768, 769, 1000, 1024, 1280, 1281, 1282, 1500, 2303, 2304, 2305,
+           2306, 2900, 3000)
+  ref <- list(
+    bp_fir = list(
+      Fz = c(1.63757896132e-15, -3.31822476957, -6.66133814775e-16, 5.35185924792, 9.06830800291, 0.641621224608, -6.3513491059, -1.94289029309e-15, 0.837794190826, -6.93408193302, -2.10921013657, 2.05391259556e-15, -3.33066907388e-16, 0.139938967047, 6.61709301124, -2.22044604925e-16),
+      Cz = c(1.27675647832e-15, -13.3597079806, -7.77156117238e-16, 15.7858343149, 10.4356681695, 1.41986436972, 8.33568379549, 3.66373598126e-15, -2.77620124673, -5.72403386448, -4.31520902066, 5.55111512313e-16, 1.22124532709e-15, -3.95817225226, 7.76735025776, 9.99200722163e-16)),
+    bp_iir = list(
+      Fz = c(0.0196124733638, -3.49143076559, 0.108289832668, 5.35185924792, 9.06830800291, 0.641621224608, -6.3513491059, 0.0367309283429, 1.54057017066, -7.06336043218, -2.61552169831, 0.118866231991, 0.0296053471863, 0.716103687732, 7.91846255328, 0.0742961080733),
+      Cz = c(-0.0253442324876, -14.48165584, 0.0377850049603, 15.7858343149, 10.4356681695, 1.41986436972, 8.33568379549, 0.000450423698498, -1.97191207164, -5.84008809183, -4.48874093261, -0.14535469799, -0.0614258511616, -3.56853157126, 8.66283326321, 0.150269719476)),
+    notch_fir = list(
+      Fz = c(10.265620971, -3.32288780528, 0.21440172849, 5.35185924792, 9.06830800291, 0.641621224608, -6.3513491059, -0.49556916557, 1.06118549294, -6.91586071261, -5.18798465652, -2.56951445649, 4.0151269312, 5.14063534837, 8.52035514151, 2.76238728867),
+      Cz = c(10.8745708259, -13.6279981766, 12.3150492323, 15.7858343149, 10.4356681695, 1.41986436972, 8.33568379549, 9.32002550944, 7.61036678305, -5.96503947543, 2.23807051904, 5.41170691074, 6.9219377452, 4.43155497597, 7.99587450818, 2.0254940759)),
+    notch_iir = list(
+      Fz = c(10.2772367376, -3.43308055994, 0.208317190867, 5.35185924792, 9.06830800291, 0.641621224608, -6.3513491059, -0.489406541524, 1.06833579431, -6.95321561385, -5.19871424099, -2.56832526397, 4.02568976436, 5.09957735185, 7.80982363674, 2.75872920109),
+      Cz = c(10.8865169453, -13.7657922036, 12.3134683421, 15.7858343149, 10.4356681695, 1.41986436972, 8.33568379549, 9.32931016324, 7.62763797372, -6.01288841334, 2.23425333323, 5.41181526104, 6.94262987586, 4.45766409448, 8.23642281439, 2.0326972173)),
+    notch_sfit = list(
+      Fz = c(8.33681177574, -3.33059964886, 1.72078503809, 5.35185924792, 9.06830800291, 0.641621224608, -6.3513491059, -2.42661284211, 0.404318607393, -6.91584632612, -4.67581267374, -1.06251654606, 2.58542289251, 4.33771135698, 7.70325124499, 4.72735517015),
+      Cz = c(8.04281409098, -13.8001661667, 10.4428624552, 15.7858343149, 10.4356681695, 1.41986436972, 8.33568379549, 6.48037025197, 6.63566813717, -5.96361913491, 1.61059939038, 3.54227212996, 3.97690146982, 2.89951587381, 8.76105086645, 0.669594803886)))
+  e <- skip_fixture(anns = main_anns())
+  for (nm in names(ref)) {
+    got <- suppressWarnings(skip_runs[[nm]](e, channels = c("Fz", "Cz"), skip_by_annotation = "bad"))
+    expect_lt(max(abs(got$data["Fz", pos] - ref[[nm]]$Fz)), 1e-9, label = paste(nm, "Fz"))
+    expect_lt(max(abs(got$data["Cz", pos] - ref[[nm]]$Cz)), 1e-9, label = paste(nm, "Cz"))
+    expect_identical(got$data["VEOG", ], e$data["VEOG", ], info = nm)   # not chosen
+  }
+})
+
+test_that("the default 'BAD_boundary' filters the runs of a joined recording one by one", {
+  e <- skip_fixture()
+  a <- stretch_eeg(e, 1:1500)
+  b <- stretch_eeg(e, 1501:3000)
+  j <- eeg_concatenate(a, b)
+  expect_equal(j$annotations$description, "BAD_boundary")
+  expect_equal(j$annotations$duration, 0)
+  # no argument: the join cuts; the same numbers as each run on its own
+  for (nm in c("bp_fir", "bp_iir", "notch_fir", "notch_iir", "notch_sfit")) {
+    got <- suppressWarnings(skip_runs[[nm]](j))
+    ra  <- suppressWarnings(skip_runs[[nm]](a))
+    rb  <- suppressWarnings(skip_runs[[nm]](b))
+    expect_lt(max(abs(got$data - cbind(ra$data, rb$data))), 1e-11, label = nm)
+    expect_match(last_entry(got), " | segments: 2", fixed = TRUE)
+    # skip nothing: one run over the join, a different signal near it
+    one <- suppressWarnings(skip_runs[[nm]](j, skip_by_annotation = character(0)))
+    expect_false(grepl("segments", last_entry(one), fixed = TRUE))
+    expect_gt(max(abs(one$data[, 1400:1600] - got$data[, 1400:1600])), 0.01)
+    # A FIR filter reaches only half its length (about 1.7 s for the band-pass,
+    # 3.3 s for the notch) to each side, so far from the join the two agree
+    # again. An IIR filter rings for longer, and the spectrum-fit notch looks at
+    # a whole 10 s piece, so they do not agree to the same degree.
+    if (nm %in% c("bp_fir", "notch_fir")) {
+      expect_lt(max(abs(one$data[, 1:300] - got$data[, 1:300])), 1e-9, label = nm)
+    }
+  }
+  # Raw.filter(1, 40) after concatenate_raws() in the reference implementation,
+  # which cuts at its own join marks by default (Fz and Cz, samples 1 .. 3000)
+  pos2 <- c(1, 750, 1499, 1500, 1501, 1502, 2250, 3000)
+  ref <- list(
+    Fz = c(1.7763568394e-15, 4.75269763128, 5.75334280481, -3.99680288865e-15, 1.7763568394e-15, -3.26652045075, -0.446860926992, 4.4408920985e-16),
+    Cz = c(1.7763568394e-15, 1.02807718976, -1.10176284269, -1.7763568394e-15, 1.7763568394e-15, -0.202320490342, 10.3925191962, 8.881784197e-16))
+  d <- suppressWarnings(eeg_bandpass(j, 1, 40, channels = c("Fz", "Cz"), verbose = FALSE))
+  expect_lt(max(abs(d$data["Fz", pos2] - ref$Fz)), 1e-9)
+  expect_lt(max(abs(d$data["Cz", pos2] - ref$Cz)), 1e-9)
+})
+
+test_that("when no annotation matches, the numbers are exactly those of before", {
+  e <- skip_fixture(anns = main_anns()[1, ])             # only BAD_muscle: the default does not match it
+  for (nm in names(skip_runs)) {
+    plain <- suppressWarnings(skip_runs[[nm]](e))
+    never <- suppressWarnings(skip_runs[[nm]](e, skip_by_annotation = character(0)))
+    expect_identical(plain$data, never$data, info = nm)
+    expect_identical(suppressWarnings(skip_runs[[nm]](e, skip_by_annotation = NULL))$data,
+                     never$data, info = nm)
+    expect_identical(last_entry(plain), last_entry(never), info = nm)
+    expect_false(grepl("segments", last_entry(plain), fixed = TRUE), info = nm)
+    expect_false(any(grepl("Segments:", capture.output(
+      suppressWarnings(eeg_bandpass(e, 1, 40))))))
+    # asking for "bad" does change the numbers
+    cut <- suppressWarnings(skip_runs[[nm]](e, skip_by_annotation = "bad"))
+    expect_gt(max(abs(cut$data - plain$data)), 0.01)
+  }
+  # the whole recording in one run is what filter_data() gives for the whole row
+  none <- eeg_bandpass(e, 1, 40, verbose = FALSE)
+  expect_lt(max(abs(none$data["Fz", ] - filter_data(e$data["Fz", ], 256, 1, 40))), 1e-12)
+})
+
+test_that("the stretches are the same for every channel, and channels that were not chosen stay as they are", {
+  e <- skip_fixture(anns = notes(4, 2, "BAD_a", channel = "Fz"))   # names Fz only
+  got <- eeg_bandpass(e, 1, 40, channels = "Cz", skip_by_annotation = "bad", verbose = FALSE)
+  expect_identical(got$data["Fz", ], e$data["Fz", ])
+  expect_identical(got$data["VEOG", ], e$data["VEOG", ])
+  expect_identical(got$data["Cz", 1025:1536], e$data["Cz", 1025:1536])      # cut for Cz as well
+  expect_gt(max(abs(got$data["Cz", 1:1024] - e$data["Cz", 1:1024])), 0.1)
+  # by type, with the three methods of the notch
+  for (m in c("fir", "iir", "spectrum_fit")) {
+    g <- suppressWarnings(eeg_notch(e, 50, method = m, channels = "eog",
+                                    skip_by_annotation = "bad", verbose = FALSE))
+    expect_identical(g$data[c("Fz", "Cz"), ], e$data[c("Fz", "Cz"), ], info = m)
+    expect_identical(g$data["VEOG", 1025:1536], e$data["VEOG", 1025:1536], info = m)
+    expect_gt(max(abs(g$data["VEOG", 1:1024] - e$data["VEOG", 1:1024])), 0.1)
+  }
+})
+
+test_that("the new object keeps annotations, bad channels, types and times, and adds one history entry", {
+  e <- skip_fixture(anns = main_anns())
+  for (nm in names(skip_runs)) {
+    got <- suppressWarnings(skip_runs[[nm]](e, skip_by_annotation = "bad"))
+    expect_identical(got$annotations, e$annotations, info = nm)       # the skipped note stays
+    expect_identical(got$bads, e$bads, info = nm)
+    expect_identical(got$channel_types, e$channel_types, info = nm)
+    expect_identical(got$times, e$times, info = nm)
+    expect_length(got$preprocessing_history, length(e$preprocessing_history) + 1L)
+    expect_true(endsWith(last_entry(got),
+                         " | segments: 3 | skipped: 512 samples in 1 stretch"), info = nm)
+  }
+})
+
+test_that("the printed header says how many segments there are, only when there is a cut", {
+  e <- skip_fixture(anns = main_anns())
+  shows <- function(expr) capture.output(suppressWarnings(expr))
+  text <- "Segments: +3 \\(512 samples in 1 stretch left as they are\\)"
+  expect_true(any(grepl(text, shows(eeg_bandpass(e, 1, 40, skip_by_annotation = "bad")))))
+  expect_true(any(grepl(text, shows(eeg_bandpass(e, 1, 40, method = "iir",
+                                                 skip_by_annotation = "bad")))))
+  expect_true(any(grepl(text, shows(eeg_notch(e, 50, skip_by_annotation = "bad")))))
+  expect_true(any(grepl(text, shows(eeg_notch(e, 50, method = "iir",
+                                              skip_by_annotation = "bad")))))
+  expect_true(any(grepl(text, shows(eeg_notch(e, 50, method = "spectrum_fit",
+                                              skip_by_annotation = "bad")))))
+  # a join without skipped samples: only the number of segments
+  j <- skip_fixture(anns = notes(5, 0, "BAD_boundary"))
+  expect_true(any(grepl("Segments: +2 *$", shows(eeg_bandpass(j, 1, 40)))))
+  # no cut: no line
+  for (out in list(shows(eeg_bandpass(e, 1, 40, skip_by_annotation = character(0))),
+                   shows(eeg_notch(e, 50, skip_by_annotation = character(0))),
+                   shows(eeg_notch(e, 50, method = "iir", skip_by_annotation = character(0))),
+                   shows(eeg_notch(e, 50, method = "spectrum_fit",
+                                   skip_by_annotation = character(0))))) {
+    expect_false(any(grepl("Segments:", out)))
+  }
+})
+
+test_that("a wrong skip_by_annotation stops every public function, also when it matches nothing", {
+  e <- skip_fixture(anns = main_anns())
+  for (nm in names(skip_runs)) {
+    expect_error(skip_runs[[nm]](e, skip_by_annotation = NA_character_),
+                 "must be a character vector of annotation descriptions", info = nm)
+    expect_error(skip_runs[[nm]](e, skip_by_annotation = ""), "empty strings", info = nm)
+    expect_error(skip_runs[[nm]](e, skip_by_annotation = 3), "character vector", info = nm)
+  }
+  # every sample skipped: nothing to filter
+  all_bad <- skip_fixture(anns = notes(0, 20, "BAD_all"))
+  for (nm in names(skip_runs)) {
+    expect_error(skip_runs[[nm]](all_bad, skip_by_annotation = "bad"),
+                 "Every sample is inside a skipped annotation", info = nm)
+    expect_no_error(suppressWarnings(skip_runs[[nm]](all_bad)))      # the default does not match
+  }
+})
+
+test_that("the 'longer than the signal' warning is about the longest stretch, and comes once", {
+  S <- 1 / 256
+  # stretches of 800, 800 and 1000 samples: the longest holds the 845-sample band-pass
+  e1 <- skip_fixture(anns = notes(c(800, 1800) * S, c(200, 200) * S, c("BAD_a", "BAD_b")))
+  expect_no_warning(eeg_bandpass(e1, 1, 40, skip_by_annotation = "bad", verbose = FALSE))
+  # ... but not the 1691-sample FIR notch
+  w <- testthat::capture_warnings(
+    eeg_notch(e1, 50, skip_by_annotation = "bad", verbose = FALSE))
+  expect_length(w, 1)
+  expect_match(w, "the signal has only 1000 samples", fixed = TRUE)
+  # stretches of 800, 800 and 800 samples: none holds it, one warning (not three, not six)
+  e2 <- skip_fixture(anns = notes(c(800, 1800) * S, c(200, 400) * S, c("BAD_a", "BAD_b")))
+  w <- testthat::capture_warnings(
+    eeg_bandpass(e2, 1, 40, skip_by_annotation = "bad", verbose = FALSE))
+  expect_length(w, 1)
+  expect_match(w, "the signal has only 800 samples", fixed = TRUE)
+  # the whole recording is long enough: no warning without the cuts
+  expect_no_warning(eeg_bandpass(e2, 1, 40, skip_by_annotation = character(0), verbose = FALSE))
+  # IIR and spectrum-fit never give it
+  expect_no_warning(eeg_bandpass(e2, 1, 40, method = "iir", skip_by_annotation = "bad",
+                                 verbose = FALSE))
+  expect_no_warning(eeg_notch(e2, 50, method = "iir", skip_by_annotation = "bad",
+                              verbose = FALSE))
+})
+
+test_that("a stretch of one, two or three samples is still filtered, like the reference implementation does", {
+  S <- 1 / 256
+  for (k in 1:3) {
+    e <- skip_fixture(anns = notes(k * S, (3000 - k) * S, "BAD_rest"))
+    idx <- seq_len(k)
+    for (nm in c("bp_fir", "bp_iir", "notch_fir", "notch_iir")) {
+      got   <- suppressWarnings(skip_runs[[nm]](e, skip_by_annotation = "bad"))
+      alone <- suppressWarnings(skip_runs[[nm]](stretch_eeg(e, idx)))
+      expect_lt(max(abs(got$data[, idx] - alone$data)), 1e-12, label = paste(nm, k))
+      # they did change - except the zero-phase IIR notch on ONE sample, which
+      # gives that sample back as it is (the reference implementation does too)
+      if (!(nm == "notch_iir" && k == 1)) {
+        expect_gt(max(abs(got$data[, idx] - e$data[, idx])), 1e-3, label = paste(nm, k))
+      }
+      expect_identical(got$data[, (k + 1):3000], e$data[, (k + 1):3000], info = nm)
+    }
+  }
+})
+
+test_that("a multi-frequency IIR notch with skipped stretches is one call per frequency", {
+  e <- skip_fixture(anns = main_anns())
+  once <- eeg_notch(e, c(50, 100), method = "iir", skip_by_annotation = "bad", verbose = FALSE)
+  step <- eeg_notch(eeg_notch(e, 50, method = "iir", skip_by_annotation = "bad", verbose = FALSE),
+                    100, method = "iir", skip_by_annotation = "bad", verbose = FALSE)
+  expect_lt(max(abs(once$data - step$data)), 1e-11)
+  expect_identical(once$data[, 769:1280], e$data[, 769:1280])
+})
+
+test_that("spectrum-fit: each stretch has a plan of its own, and a stretch that is too short is a clear error", {
+  e <- skip_fixture(anns = main_anns())              # stretches of 768, 1024 and 696 samples
+  expect_equal(.skip_segments(e, "bad")$stops - .skip_segments(e, "bad")$starts + 1L,
+               c(768L, 1024L, 696L))
+  # pieces of 10 s, 4 s and 1 s: the plans differ from stretch to stretch
+  for (fl in list("auto", "4s", 256)) {
+    got <- eeg_notch(e, 50, method = "spectrum_fit", filter_length = fl,
+                     skip_by_annotation = "bad", verbose = FALSE)
+    for (idx in main_segs) {
+      alone <- eeg_notch(stretch_eeg(e, idx), 50, method = "spectrum_fit",
+                         filter_length = fl, verbose = FALSE)
+      expect_lt(max(abs(got$data[, idx] - alone$data)), 1e-11)
+    }
+  }
+  # the lines found in the stretches are counted together in the history entry
+  g <- eeg_notch(e, NULL, method = "spectrum_fit", grid_factor = 1L,
+                 skip_by_annotation = "bad", verbose = FALSE)
+  count50 <- function(o) as.integer(sub(".*50\\.0 Hz \\(x([0-9]+)\\).*", "\\1", last_entry(o)))
+  per_stretch <- vapply(main_segs, function(idx) {
+    count50(eeg_notch(stretch_eeg(e, idx), NULL, method = "spectrum_fit", grid_factor = 1L,
+                      verbose = FALSE))
+  }, 1L)
+  expect_gt(sum(per_stretch), 3)                       # the 50 Hz wave of every channel, in every stretch
+  expect_equal(count50(g), sum(per_stretch))
+  # a stretch of 20 samples: too short, and the message says why it exists
+  short <- skip_fixture(anns = notes(20 / 256, 5, "BAD_rest"))
+  expect_error(eeg_notch(short, 50, method = "spectrum_fit", skip_by_annotation = "bad",
+                         verbose = FALSE),
+               "A stretch of 20 samples between skipped annotations: The pieces would be only 20 samples long",
+               fixed = TRUE)
+  # a recording of 20 samples: the old message, no talk of stretches
+  tiny <- eeganalysis::new_eeg(data = matrix(sin(1:20), nrow = 1), channels = "Fz",
+                               sampling_rate = 256)
+  expect_error(eeg_notch(tiny, 50, method = "spectrum_fit", verbose = FALSE),
+               "^The pieces would be only 20 samples long")
+})

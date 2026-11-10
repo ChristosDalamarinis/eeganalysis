@@ -948,8 +948,12 @@ eeg_crop <- function(eeg, tmin = 0, tmax = NULL, include_tmax = TRUE) {
 #' descriptions, put \code{"BAD_boundary"} in the list. Metadata, montage and
 #' the reference come from the first recording.
 #'
-#' Filter each recording before joining them: filtering after the join creates
-#' edge effects at every join.
+#' \code{\link{eeg_bandpass}} and \code{\link{eeg_notch}} cut the recording at
+#' every join (their default is \code{skip_by_annotation = "BAD_boundary"}) and
+#' filter each run on its own, so filtering after the join gives the same
+#' numbers as filtering each recording before it. Steps that filter inside
+#' themselves, such as \code{\link{downsample}}, treat the joined recording as
+#' one signal and create edge effects at every join: do them before the join.
 #'
 #' @param ... Two or more objects of class \code{eeg}, or one list of them.
 #'

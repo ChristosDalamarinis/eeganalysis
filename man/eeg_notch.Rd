@@ -19,6 +19,7 @@ eeg_notch(
   p_value = 0.05,
   grid_factor = 8L,
   channels = NULL,
+  skip_by_annotation = "BAD_boundary",
   verbose = TRUE
 )
 }
@@ -108,6 +109,16 @@ both in one call. Integer: row numbers. A status
 channel that is named or picked here is filtered.
 Default: NULL.}
 
+\item{skip_by_annotation}{Character vector, or NULL. Annotations that the
+filter goes around (see Details). Any annotation
+whose description starts with one of these words, in
+upper or lower case, is left as it is, and the
+stretches between them are filtered one by one.
+\code{"bad"} skips every \code{"BAD_..."}
+annotation. \code{character(0)} or NULL skips
+nothing. Default: \code{"BAD_boundary"}, the join
+mark of \code{\link{eeg_concatenate}}.}
+
 \item{verbose}{Logical. Print parameters and progress.
 Default: TRUE.}
 }
@@ -115,7 +126,9 @@ Default: TRUE.}
 An object of class 'eeg' with filtered data and updated
 preprocessing_history. With the spectrum-fit method, the lines that were
 found are also printed (with \code{verbose = TRUE}) and written into the
-preprocessing_history entry.
+preprocessing_history entry. If the recording was cut, the history entry
+ends with the number of segments and the number of samples that were
+skipped.
 }
 \description{
 Removes narrow frequency bands from EEG data to eliminate electrical line
@@ -146,6 +159,22 @@ too. If every channel is of type "status", the call stops with an error.
 \code{channels = "eeg"} filters the EEG channels only, \code{c("eeg", "eog")}
 the channels of both types, \code{"all"} every row; names and types cannot be
 mixed in one call. A channel that is listed twice is filtered once.
+
+\strong{Skipping stretches of the recording} works as in
+\code{\link{eeg_bandpass}}, for all three methods. An annotation whose
+description starts with one of the words of \code{skip_by_annotation} (any
+case) is left as it is, and every stretch between such annotations is
+filtered as a signal of its own, with its own padding at both ends: the same
+numbers as running \code{eeg_notch()} on that stretch alone. The default
+\code{"BAD_boundary"} is the length-0 mark of \code{\link{eeg_concatenate}},
+so the runs of a joined recording are filtered one by one; when no annotation
+matches, nothing changes. \code{character(0)} or \code{NULL} never cuts.
+With the FIR method the warning below is about the longest stretch. With
+\code{method = "spectrum_fit"} each stretch gets pieces of its own and must
+be at least 32 samples long (shorter stretches are an error, as a recording
+that short is); the lines found are counted over all stretches, and the
+piece length and bandwidth in the printed header and the history entry are
+those of the longest stretch.
 
 A FIR kernel that is longer than the recording still runs, but the result is
 distorted, so you get one warning (see \code{\link{eeg_bandpass}}). With the

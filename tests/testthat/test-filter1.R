@@ -3344,3 +3344,237 @@ test_that("the EEG rows have the numbers of the reference implementation, and th
   expect_identical(bp["Status", ], e$data["Status", ])
   expect_identical(nt["Status", ], e$data["Status", ])
 })
+
+# --- picking channels by type ----------------------------------------------------
+# 'channels' of eeg_bandpass() and eeg_notch() (all three methods) can now hold
+# channel TYPES from eeg$channel_types ("eeg", "eog", ..., "status", or "all" for
+# every row) as well as names and row numbers. The rules are those of the
+# reference implementation's picks: a type picks all channels of that type (the
+# bad ones too), types and names are not mixed in one call, a type that no
+# channel has is an error, a word that is both a name and a type is refused, and
+# a channel that is given twice is filtered once (it used to be filtered twice).
+# 7 ways of picking x 5 filters (FIR, IIR, FIR notch, IIR notch, spectrum-fit
+# notch) were also run through its filter() / notch_filter() with picks: the
+# same rows change in both, and the numbers agree to 6e-12 at the most.
+# The fixture has Fz and Pz (bad) typed "eeg", Cz and VEOG typed "eog" and
+# Status typed "status".
+
+type_fixture <- function() {
+  status_fixture(types = c("eeg", "eog", "eeg", "eog", "status"))
+}
+
+test_that(".resolve_filter_channels: NULL, names, numbers and types", {
+  e <- type_fixture()
+  expect_identical(.resolve_filter_channels(e, NULL), 1:4)            # not the status row
+  # names and numbers: in the order given, a repeated one only once
+  expect_identical(.resolve_filter_channels(e, c("VEOG", "Fz", "VEOG")), c(4L, 1L))
+  expect_identical(.resolve_filter_channels(e, c(3, 1, 3)), c(3L, 1L))
+  # types: all channels of the type (the bad Pz too), in the order of the table
+  expect_identical(.resolve_filter_channels(e, "eeg"), c(1L, 3L))
+  expect_identical(.resolve_filter_channels(e, "eog"), c(2L, 4L))
+  expect_identical(.resolve_filter_channels(e, c("eog", "eeg")), 1:4)
+  expect_identical(.resolve_filter_channels(e, c("eeg", "eeg")), c(1L, 3L))
+  expect_identical(.resolve_filter_channels(e, "status"), 5L)
+  # "all" is every row, the status row included
+  expect_identical(.resolve_filter_channels(e, "all"), 1:5)
+  expect_identical(.resolve_filter_channels(e, c("all", "eeg")), 1:5)
+  # nothing given: nothing picked (as before)
+  expect_identical(.resolve_filter_channels(e, character(0)), integer(0))
+  # an object that has no channel_types gets the default of new_eeg(): the
+  # channel called "Status" is a status channel, all others are "eeg"
+  e0 <- e
+  e0$channel_types <- NULL
+  expect_identical(.resolve_filter_channels(e0, "status"), 5L)
+  expect_identical(.resolve_filter_channels(e0, "eeg"), 1:4)
+})
+
+test_that(".resolve_filter_channels refuses unclear or impossible picks, with a clear message", {
+  e <- type_fixture()
+  # a type that no channel has
+  expect_error(.resolve_filter_channels(e, "emg"),
+               "No channel of type \"emg\" (the types in this object: eeg, eog, status)",
+               fixed = TRUE)
+  # a word that is neither a name nor a type (case matters)
+  expect_error(.resolve_filter_channels(e, "banana"),
+               "Channel(s) not found: banana. 'channels' takes channel names or channel types (eeg, eog, ecg, emg, resp, gsr, temp, bio, misc, status, all).",
+               fixed = TRUE)
+  expect_error(.resolve_filter_channels(e, c("eeg", "banana", "banana")),
+               "not found: banana.", fixed = TRUE)
+  expect_error(.resolve_filter_channels(e, "EEG"), "not found: EEG", fixed = TRUE)
+  # names and types in one call
+  expect_error(.resolve_filter_channels(e, c("eeg", "VEOG")),
+               "'channels' mixes channel names (VEOG) and channel types (eeg). Give names or types in one call, not both.",
+               fixed = TRUE)
+  # row numbers
+  expect_error(.resolve_filter_channels(e, 99L),
+               "Channel indices out of range [1, 5]", fixed = TRUE)
+  expect_error(.resolve_filter_channels(e, 0), "out of range", fixed = TRUE)
+  # another kind of value
+  expect_error(.resolve_filter_channels(e, TRUE), "'channels' must be NULL", fixed = TRUE)
+  expect_error(.resolve_filter_channels(e, list("Fz")), "'channels' must be NULL",
+               fixed = TRUE)
+  # a channel that is called like a type: unclear, so refused; the row number,
+  # the other names and "all" still work
+  e2 <- eeganalysis::new_eeg(data = e$data[1:3, ], channels = c("eog", "Cz", "Pz"),
+                             sampling_rate = 256,
+                             channel_types = c("eeg", "eeg", "eog"))
+  expect_error(.resolve_filter_channels(e2, "eog"),
+               "'eog' is both a channel name and a channel type, so 'channels' could mean either. Use row numbers instead.",
+               fixed = TRUE)
+  expect_error(.resolve_filter_channels(e2, c("eog", "Cz")), "'eog' is both", fixed = TRUE)
+  expect_identical(.resolve_filter_channels(e2, "Cz"), 2L)
+  expect_identical(.resolve_filter_channels(e2, 1L), 1L)
+  expect_identical(.resolve_filter_channels(e2, "all"), 1:3)
+  # two such words: "are"
+  e3 <- eeganalysis::new_eeg(data = e$data[1:3, ], channels = c("eog", "ecg", "Pz"),
+                             sampling_rate = 256)
+  expect_error(.resolve_filter_channels(e3, c("eog", "ecg")),
+               "'eog', 'ecg' are both a channel name and a channel type", fixed = TRUE)
+})
+
+test_that("eeg_bandpass(channels = 'eeg') filters the EEG rows only, the bad one too", {
+  e <- type_fixture()
+  out <- eeg_bandpass(e, 1, 40, channels = "eeg", verbose = FALSE)
+  for (ch in c("Fz", "Pz")) {
+    expect_gt(max(abs(out$data[ch, ] - e$data[ch, ])), 1, label = ch)
+  }
+  for (ch in c("Cz", "VEOG", "Status")) {                  # the EOG rows and the trigger row
+    expect_identical(out$data[ch, ], e$data[ch, ], label = ch)
+  }
+  # the same numbers as naming the channels or giving their rows
+  expect_identical(out$data, eeg_bandpass(e, 1, 40, channels = c("Fz", "Pz"),
+                                          verbose = FALSE)$data)
+  expect_identical(out$data, eeg_bandpass(e, 1, 40, channels = c(1, 3),
+                                          verbose = FALSE)$data)
+  # the rest of the object is carried over
+  expect_identical(out$channel_types, e$channel_types)
+  expect_identical(out$bads, e$bads)
+})
+
+test_that("the other types and 'all' pick the rows they say (eeg_bandpass)", {
+  e   <- type_fixture()
+  dflt <- eeg_bandpass(e, 1, 40, verbose = FALSE)$data              # NULL: all but status
+  changed <- function(out) {
+    rownames(e$data)[vapply(seq_len(nrow(e$data)),
+                            function(i) !identical(out$data[i, ], e$data[i, ]), logical(1))]
+  }
+  expect_identical(changed(eeg_bandpass(e, 1, 40, channels = "eog", verbose = FALSE)),
+                   c("Cz", "VEOG"))
+  expect_identical(changed(eeg_bandpass(e, 1, 40, channels = "status", verbose = FALSE)),
+                   "Status")
+  both <- eeg_bandpass(e, 1, 40, channels = c("eeg", "eog"), verbose = FALSE)
+  expect_identical(both$data, dflt)                                  # = the default
+  all5 <- eeg_bandpass(e, 1, 40, channels = "all", verbose = FALSE)
+  expect_identical(changed(all5), c("Fz", "Cz", "Pz", "VEOG", "Status"))
+  expect_identical(all5$data[1:4, ], dflt[1:4, ])                    # same as the default
+  expect_gt(max(abs(all5$data["Status", ] - e$data["Status", ])), 10)  # the ramps again
+  # IIR and the causal filter use the same rows
+  expect_identical(changed(eeg_bandpass(e, 1, 40, method = "iir", channels = "eeg",
+                                        verbose = FALSE)), c("Fz", "Pz"))
+  expect_identical(changed(eeg_bandpass(e, h_freq = 40, phase = "minimum",
+                                        channels = "eog", verbose = FALSE)),
+                   c("Cz", "VEOG"))
+})
+
+test_that("eeg_notch picks channels by type with every method", {
+  e <- type_fixture()
+  changed <- function(out) {
+    rownames(e$data)[vapply(seq_len(nrow(e$data)),
+                            function(i) !identical(out$data[i, ], e$data[i, ]), logical(1))]
+  }
+  calls <- list(
+    fir         = function(ch) eeg_notch(e, 50, channels = ch, verbose = FALSE),
+    iir         = function(ch) eeg_notch(e, 50, method = "iir", channels = ch,
+                                         verbose = FALSE),
+    sfit_freqs  = function(ch) eeg_notch(e, 50, method = "spectrum_fit",
+                                         channels = ch, verbose = FALSE),
+    sfit_search = function(ch) eeg_notch(e, method = "spectrum_fit", channels = ch,
+                                         verbose = FALSE))
+  for (nm in names(calls)) {
+    out <- calls[[nm]]("eeg")
+    expect_identical(changed(out), c("Fz", "Pz"), info = nm)
+    expect_identical(out$data, calls[[nm]](c("Fz", "Pz"))$data, info = nm)
+    expect_identical(changed(calls[[nm]]("eog")), c("Cz", "VEOG"), info = nm)
+    expect_identical(calls[[nm]](c("eeg", "eog"))$data, calls[[nm]](NULL)$data, info = nm)
+    # the status row: when the lines are searched, a row with no steady wave in
+    # it may come out unchanged, so "changed" is only asked where the frequency
+    # is given; "all" is the default plus that row in every case
+    if (nm != "sfit_search") {
+      expect_identical(changed(calls[[nm]]("status")), "Status", info = nm)
+      expect_identical(changed(calls[[nm]]("all")), rownames(e$data), info = nm)
+    }
+    expect_identical(calls[[nm]]("all")$data[1:4, ], calls[[nm]](NULL)$data[1:4, ],
+                     info = nm)
+  }
+})
+
+test_that("a channel that is given twice is filtered once, and the count says so", {
+  e <- type_fixture()
+  last <- function(o) o$preprocessing_history[[length(o$preprocessing_history)]]
+  calls <- list(
+    bp_fir     = function(ch) eeg_bandpass(e, 1, 40, channels = ch, verbose = FALSE),
+    bp_iir     = function(ch) eeg_bandpass(e, 1, 40, method = "iir", channels = ch,
+                                           verbose = FALSE),
+    notch_fir  = function(ch) eeg_notch(e, 50, channels = ch, verbose = FALSE),
+    notch_iir  = function(ch) eeg_notch(e, 50, method = "iir", channels = ch,
+                                        verbose = FALSE),
+    notch_sfit = function(ch) eeg_notch(e, 50, method = "spectrum_fit", channels = ch,
+                                        verbose = FALSE))
+  for (nm in names(calls)) {
+    once <- calls[[nm]]("Fz")
+    expect_identical(calls[[nm]](c("Fz", "Fz"))$data, once$data, info = nm)
+    expect_identical(calls[[nm]](c(1L, 1L))$data, once$data, info = nm)
+    expect_match(last(calls[[nm]](c("Fz", "Fz"))), "channels: 1/5", fixed = TRUE)
+    # a type and the same channel by number: also once each
+    expect_identical(calls[[nm]](c("eeg", "eeg"))$data, calls[[nm]]("eeg")$data, info = nm)
+    # the history count follows the type pick
+    expect_match(last(calls[[nm]]("eeg")), "channels: 2/5", fixed = TRUE)
+    expect_match(last(calls[[nm]]("all")), "channels: 5/5", fixed = TRUE)
+  }
+  # the printed header
+  shows <- function(expr, text) any(grepl(text, capture.output(expr)))
+  expect_true(shows(eeg_bandpass(e, 1, 40, channels = "eeg"), "Channels: +2 / 5"))
+  expect_true(shows(eeg_notch(e, 50, channels = "eeg"), "Channels: +2 / 5"))
+  expect_true(shows(eeg_notch(e, 50, method = "iir", channels = "eeg"), "Channels: +2 / 5"))
+  expect_true(shows(eeg_notch(e, 50, method = "spectrum_fit", channels = "eeg"),
+                    "Channels: +2 / 5"))
+})
+
+test_that("a wrong 'channels' stops the public functions with the clear message", {
+  e <- type_fixture()
+  expect_error(eeg_bandpass(e, 1, 40, channels = "emg", verbose = FALSE),
+               "No channel of type \"emg\"", fixed = TRUE)
+  expect_error(eeg_bandpass(e, 1, 40, channels = c("eeg", "Fz"), verbose = FALSE),
+               "mixes channel names", fixed = TRUE)
+  for (m in c("fir", "iir", "spectrum_fit")) {
+    expect_error(eeg_notch(e, 50, method = m, channels = "emg", verbose = FALSE),
+                 "No channel of type \"emg\"", fixed = TRUE)
+    expect_error(eeg_notch(e, 50, method = m, channels = c("eog", "Fz"), verbose = FALSE),
+                 "mixes channel names", fixed = TRUE)
+    expect_error(eeg_notch(e, 50, method = m, channels = "banana", verbose = FALSE),
+                 "Channel(s) not found: banana", fixed = TRUE)
+  }
+})
+
+test_that("channels = 'eeg' gives the numbers of the reference implementation (picks = 'eeg')", {
+  # The same fixture and the same reference numbers as the block of the status
+  # row above, now with the default types (Fz, Cz, Pz typed "eeg", VEOG typed
+  # "eog", Status typed "status"): its filter(picks = "eeg") filters Fz, Cz and Pz
+  # and leaves VEOG and Status as they are.
+  e    <- status_fixture()
+  pick <- c(1L, 2L, 1000L, 1500L, 2999L, 3000L)
+  bp   <- eeg_bandpass(e, 1, 40, channels = "eeg", verbose = FALSE)$data
+  nt   <- eeg_notch(e, 50, channels = "eeg", verbose = FALSE)$data
+  expect_lt(max(abs(bp["Fz", pick] - c(1.94289029309e-15, -0.548569491492,
+    6.09474093585, -6.90882265128, 0.473887351092, -5.3290705182e-15))), 1e-9)
+  expect_lt(max(abs(bp["Cz", pick] - c(6.60582699652e-15, -0.902244131682,
+    8.96143451741, -5.94668262436, 1.4202132487, -3.05311331772e-16))), 1e-9)
+  expect_lt(max(abs(nt["Fz", pick] - c(10.2712794222, 10.6260489725,
+    6.0907384072, -6.91005465192, 2.24208754288, 2.75426906848))), 1e-9)
+  expect_lt(max(abs(nt["Cz", pick] - c(10.8776988787, 11.2963843229,
+    8.98173632199, -5.96674641206, 3.92676927633, 2.0300386859))), 1e-9)
+  for (ch in c("VEOG", "Status")) {
+    expect_identical(bp[ch, ], e$data[ch, ], label = ch)
+    expect_identical(nt[ch, ], e$data[ch, ], label = ch)
+  }
+})

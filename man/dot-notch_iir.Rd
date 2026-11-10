@@ -12,6 +12,7 @@
   iir_params,
   phase,
   ch_idx,
+  segments,
   verbose
 )
 }
@@ -32,6 +33,9 @@ of it further out on each side of the stop band.}
 \item{phase}{"zero" or "forward".}
 
 \item{ch_idx}{Integer vector. Rows of the data to filter.}
+
+\item{segments}{The list made by \code{.skip_segments()}: the
+stretches of the recording that are filtered, each as a signal of its own.}
 
 \item{verbose}{Logical. Print parameters and progress.}
 }

@@ -54,8 +54,14 @@ two cutoffs of each notch outwards, by half of it.}
 band-stop has twice as many poles) and \code{ftype}
 (only "butter" so far).}
 
-\item{filter_length}{Integer or "auto". With method = "fir": kernel
-length in samples; "auto" uses MNE's formula. With
+\item{filter_length}{Integer, text or "auto". With method = "fir": kernel
+length, as a number of samples or as a time in text
+such as "8s" or "500ms" (the time times the sampling
+rate, rounded up to whole samples), made odd in both
+cases; "auto" uses MNE's formula. A length that is
+too short for the transition bandwidth is an error
+(6.6 s, 1691 samples at 256 Hz, for the default
+\code{trans_bandwidth = 1}). With
 method = "spectrum_fit": the length of each piece,
 as a number of samples or as text such as "5s" or
 "500ms"; "auto" is 10 seconds. Not used with

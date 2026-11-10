@@ -207,6 +207,71 @@
 }
 
 # ----------------------------------------------------------------------------
+# .filter_length_from_text() - a filter length given as a time
+# ----------------------------------------------------------------------------
+
+#' Turn a filter length given as text into samples
+#'
+#' A FIR filter length may be given as a time in text, such as \code{"10s"} or
+#' \code{"500ms"}, instead of a number of samples. The same number of samples
+#' is a different time at a different sampling rate; a time is always the same
+#' time. This function reads the text and gives the number of samples. It is the
+#' one place where that rule lives: \code{.make_bandpass_filter()} (so
+#' \code{eeg_bandpass()}, \code{filter_data()} and the ICA scoring filter) and
+#' the FIR part of \code{eeg_notch()} both call it.
+#'
+#' The text is a number followed by \code{s} (seconds) or \code{ms}
+#' (milliseconds). Upper and lower case do not matter, and spaces around the
+#' number are allowed (\code{"4S"}, \code{" 4 s"}). The number may be written
+#' like \code{4.5}, \code{.5} or \code{1e1}, but not as a negative number. The
+#' time is multiplied by the sampling rate and rounded UP to whole samples, to
+#' at least 1 sample. The multiplications are done in the order of the reference
+#' implementation (the number times 0.001 for milliseconds, then times the
+#' sampling rate), so that a time that falls exactly on a sample gives the same
+#' sample count there. Making the length odd, and the extra rule of the
+#' forward-and-backward filter, are left to the caller.
+#'
+#' @param text  Character. One text such as \code{"10s"} or \code{"500ms"}.
+#' @param sfreq Numeric. Sampling rate in Hz.
+#' @return Integer. The length in samples, 1 or more, not yet made odd. Anything
+#'   that is not one text of this shape stops with a message that names the
+#'   allowed forms ("auto", a number of samples, or text such as "10s" or
+#'   "500ms"); a time that is too long to count in samples has its own message.
+#' @keywords internal
+.filter_length_from_text <- function(text, sfreq) {
+
+  wrong <- function() {
+    stop("'filter_length' must be \"auto\", a number of samples, or text ",
+         "such as \"10s\" or \"500ms\".", call. = FALSE)
+  }
+
+  if (!is.character(text) || length(text) != 1L || is.na(text)) wrong()
+
+  # "ms" is looked for first, because "ms" also ends with an "s"
+  lower <- tolower(text)
+  if (grepl("ms$", lower)) {
+    unit   <- 0.001
+    number <- sub("ms$", "", lower)
+  } else if (grepl("s$", lower)) {
+    unit   <- 1
+    number <- sub("s$", "", lower)
+  } else {
+    wrong()
+  }
+  if (!grepl("^[[:space:]]*([0-9]+[.]?[0-9]*|[.][0-9]+)(e[+-]?[0-9]+)?[[:space:]]*$",
+             number)) {
+    wrong()
+  }
+
+  samples <- ceiling(as.numeric(number) * unit * sfreq)
+  if (!is.finite(samples) || samples > .Machine$integer.max) {
+    stop("'filter_length' (\"", text, "\") is too long to count in samples.",
+         call. = FALSE)
+  }
+  max(as.integer(samples), 1L)
+}
+
+# ----------------------------------------------------------------------------
 # .firwin_kernel() - preparation helper
 # ----------------------------------------------------------------------------
 
@@ -1354,8 +1419,9 @@
   # symmetric kernel needs a centre sample. (.firwin_kernel() stops with a clear
   # message if the length is too short for the slope.)
   # A length may also be given as a time in text, such as "10s" or "500ms": it is
-  # turned into samples (rounded up) and, for forward-and-backward filtering,
-  # rounded up again to the next power of two.
+  # turned into samples (rounded up) by .filter_length_from_text(), the one place
+  # that knows this rule (the FIR notch of eeg_notch() calls it as well), and,
+  # for forward-and-backward filtering, rounded up again to the next power of two.
 
   if (identical(filter_length, "auto")) {
     if (fir_design == "firwin2") {
@@ -1365,14 +1431,7 @@
     }
     N <- .auto_filter_length(l_trans_bw, h_trans_bw, sfreq, window = fir_window)
   } else if (is.character(filter_length)) {
-    if (length(filter_length) != 1L ||
-        !grepl("^[0-9]+([.][0-9]+)? *(s|ms)$", filter_length)) {
-      stop("'filter_length' must be \"auto\", a number of samples, or text ",
-           "such as \"10s\" or \"500ms\".", call. = FALSE)
-    }
-    seconds <- as.numeric(sub(" *(s|ms)$", "", filter_length)) *
-      if (grepl("ms$", filter_length)) 0.001 else 1
-    N <- max(as.integer(ceiling(seconds * sfreq)), 1L)
+    N <- .filter_length_from_text(filter_length, sfreq)
     if (phase == "zero-double") N <- as.integer(2^ceiling(log2(N)))
   } else {
     N <- as.integer(filter_length)
@@ -2850,9 +2909,14 @@
 #'                         in Hz. "auto" uses MNE's rule:
 #'                         min(max(0.25*h_freq, 2.0), nyquist-h_freq).
 #'                         Default: "auto". Used only with method = "fir".
-#' @param filter_length    Integer or "auto". FIR kernel length in samples.
-#'                         "auto" uses MNE's formula:
+#' @param filter_length    Integer, text or "auto". FIR kernel length: a
+#'                         number of samples, or a time as text such as "4s" or
+#'                         "500ms" (upper or lower case; the time times the
+#'                         sampling rate, rounded up to whole samples), made
+#'                         odd in both cases. "auto" uses MNE's formula:
 #'                         ceil(3.3 / min_trans_bw * sfreq), forced odd.
+#'                         A length that is too short for the transition
+#'                         bandwidths is an error.
 #'                         Default: "auto". Used only with method = "fir".
 #' @param fir_window       Character. Window function for kernel design.
 #'                         Default: "hamming". Used only with method = "fir".
@@ -3402,8 +3466,14 @@ filter_data <- function(x,
 #'                         \code{method = "iir"}: \code{order} (default 4; a
 #'                         band-stop has twice as many poles) and \code{ftype}
 #'                         (only "butter" so far).
-#' @param filter_length    Integer or "auto". With method = "fir": kernel
-#'                         length in samples; "auto" uses MNE's formula. With
+#' @param filter_length    Integer, text or "auto". With method = "fir": kernel
+#'                         length, as a number of samples or as a time in text
+#'                         such as "8s" or "500ms" (the time times the sampling
+#'                         rate, rounded up to whole samples), made odd in both
+#'                         cases; "auto" uses MNE's formula. A length that is
+#'                         too short for the transition bandwidth is an error
+#'                         (6.6 s, 1691 samples at 256 Hz, for the default
+#'                         \code{trans_bandwidth = 1}). With
 #'                         method = "spectrum_fit": the length of each piece,
 #'                         as a number of samples or as text such as "5s" or
 #'                         "500ms"; "auto" is 10 seconds. Not used with
@@ -3727,7 +3797,13 @@ eeg_notch <- function(eeg_obj,
   if (identical(filter_length, "auto")) {
     N <- .auto_filter_length(tb_2, tb_2, sfreq, window = fir_window)
   } else {
-    N <- as.integer(filter_length)
+    # a number of samples, or a time as text such as "8s" or "500ms" (the same
+    # rule as in eeg_bandpass(), from the same helper)
+    N <- if (is.character(filter_length)) {
+      .filter_length_from_text(filter_length, sfreq)
+    } else {
+      as.integer(filter_length)
+    }
     if (N %% 2L == 0L) N <- N + 1L
   }
 

@@ -4125,3 +4125,209 @@ test_that("spectrum-fit: each stretch has a plan of its own, and a stretch that 
   expect_error(eeg_notch(tiny, 50, method = "spectrum_fit", verbose = FALSE),
                "^The pieces would be only 20 samples long")
 })
+
+# --- a filter length given as text ("4s", "500ms") --------------------------------
+# A FIR filter length may be a number of samples or a time as text. eeg_bandpass()
+# and filter_data() already read text (the shared builder .make_bandpass_filter()
+# did it for the ICA scoring filter); the FIR notch of eeg_notch() did not, and
+# stopped with "missing value where TRUE/FALSE needed" (as.integer("8s") is NA).
+# Now one helper, .filter_length_from_text(), holds the rule and both places call
+# it. The rule is the one of the reference implementation: lower case or upper
+# case "s" or "ms" after a number, the number times the sampling rate rounded UP
+# to whole samples, at least 1, then made odd by the caller. 34 cases (the FIR
+# notch and the band-pass, text spellings that were refused before, fractions of a
+# sample at 250, 256, 512 and 1000 Hz, a causal filter, and lengths that are too
+# short) were run through its filter_data() / notch_filter(): the lengths are the
+# same and the numbers agree to 2.7e-12 (the others to 2.3e-13); where it refuses
+# a length as too short, so does this package.
+
+test_that(".filter_length_from_text turns a time into samples and rounds up", {
+  f <- .filter_length_from_text
+  expect_identical(f("4s", 256), 1024L)
+  expect_identical(f("500ms", 256), 128L)
+  expect_identical(f("4500ms", 256), 1152L)
+  expect_identical(f("4.5s", 256), 1152L)
+  expect_identical(f("10s", 100), 1000L)
+  expect_identical(f("10s", 2048), 20480L)
+  # a fraction of a sample is rounded UP, not to the nearest
+  expect_identical(f("4.0001s", 256), 1025L)       # 1024.0256
+  expect_identical(f("4.002s", 256), 1025L)        # 1024.512
+  expect_identical(f("4.004s", 256), 1026L)        # 1025.024
+  expect_identical(f("3.3s", 250), 825L)           # 825 exactly
+  expect_identical(f("8.0052s", 250), 2002L)       # 2001.3
+  # the products are done in the order number * 0.001 * rate: 4001 * 0.001 * 1000
+  # is 4001.0000000000005, so this is 4002 and not 4001
+  expect_identical(f("4001ms", 1000), 4002L)
+  # at least one sample
+  expect_identical(f("0s", 256), 1L)
+  expect_identical(f("0ms", 256), 1L)
+  expect_identical(f("0.001ms", 256), 1L)
+  # the answer is a whole number of type integer, and it is not made odd here
+  expect_type(f("4s", 256), "integer")
+  expect_identical(f("2s", 256) %% 2L, 0L)
+})
+
+test_that(".filter_length_from_text accepts the spellings of the reference implementation", {
+  f <- .filter_length_from_text
+  want <- f("4s", 256)
+  for (txt in c("4S", " 4s", "4 s", "  4  s", "4.s", "4.0s", "04s", "4000ms", "4000MS", "4000Ms",
+                "4000 ms", "0.4e1s", "40e-1s", "4E0s", "4e+0s")) {
+    expect_identical(f(txt, 256), want, info = txt)
+  }
+  expect_identical(f(".5s", 256), 128L)
+  expect_identical(f("1e1s", 256), 2560L)
+  expect_identical(f("1.5E1s", 256), 3840L)
+})
+
+test_that(".filter_length_from_text refuses what is not a time, with one clear message", {
+  f <- .filter_length_from_text
+  msg <- "'filter_length' must be \"auto\", a number of samples, or text such as \"10s\" or \"500ms\"."
+  for (bad in c("10", "", " ", "s", "ms", "10 minutes", "10m", "10min", "-4s", "+4s", "4,5s",
+                "4.5.5s", "0x10s", "Infs", "NaNs", "NAs", "1e1.5s", "4s ", "4 s s", "s4",
+                "four s", "e1s", "1e s", "auto")) {
+    expect_error(f(bad, 256), msg, fixed = TRUE, info = bad)
+  }
+  expect_error(f(NA_character_, 256), msg, fixed = TRUE)
+  expect_error(f(c("4s", "5s"), 256), msg, fixed = TRUE)
+  expect_error(f(character(0), 256), msg, fixed = TRUE)
+  expect_error(f(4, 256), msg, fixed = TRUE)
+  expect_error(f(NULL, 256), msg, fixed = TRUE)
+  expect_error(f(TRUE, 256), msg, fixed = TRUE)
+  # a time that is too long to count in samples has its own message
+  expect_error(f("99999999999s", 256), "too long to count in samples", fixed = TRUE)
+  expect_error(f("1e300s", 256), "too long to count in samples", fixed = TRUE)
+})
+
+test_that("eeg_bandpass() and filter_data() give the same numbers for a time as for its samples", {
+  e <- skip_fixture(n = 6000)
+  num <- eeg_bandpass(e, 1, 40, filter_length = 1024, verbose = FALSE)
+  for (txt in c("4s", "4S", " 4 s", "4000ms", "4000MS", "4.s", "0.4e1s")) {
+    got <- eeg_bandpass(e, 1, 40, filter_length = txt, verbose = FALSE)
+    expect_identical(got$data, num$data, info = txt)
+    expect_match(last_entry(got), "length: 1025 samples", fixed = TRUE)
+  }
+  x <- e$data["Fz", ]
+  for (txt in c("4s", "4S", "4000ms")) {
+    expect_identical(filter_data(x, 256, 1, 40, filter_length = txt),
+                     filter_data(x, 256, 1, 40, filter_length = 1024), info = txt)
+  }
+  # the sampling rate decides how many samples a time is
+  e250 <- skip_fixture(n = 6000, sf = 250)
+  got <- eeg_bandpass(e250, 1, 40, filter_length = "4500ms", verbose = FALSE)
+  expect_match(last_entry(got), "length: 1125 samples", fixed = TRUE)
+  expect_identical(got$data, eeg_bandpass(e250, 1, 40, filter_length = 1125, verbose = FALSE)$data)
+})
+
+test_that("the FIR notch accepts a time (it used to stop with 'missing value where TRUE/FALSE needed')", {
+  e <- skip_fixture(n = 6000)
+  num <- eeg_notch(e, 50, filter_length = 2048, verbose = FALSE)       # made odd: 2049
+  for (txt in c("8s", "8S", " 8 s", "8000ms", "8000MS", "0.8e1s")) {
+    got <- eeg_notch(e, 50, filter_length = txt, verbose = FALSE)
+    expect_identical(got$data, num$data, info = txt)
+  }
+  # the kernel that was built, from the printed header
+  kernel_of <- function(...) {
+    out <- capture.output(eeg_notch(e, 50, ..., channels = "Fz"))
+    sub(".*Combined kernel: *([0-9]+) samples.*", "\\1", out[grepl("Combined kernel", out)])
+  }
+  expect_identical(kernel_of(filter_length = "8s"), "2049")
+  expect_identical(kernel_of(filter_length = 2048), "2049")
+  expect_identical(kernel_of(filter_length = 2049), "2049")
+  expect_identical(kernel_of(filter_length = "8.5s"), "2177")       # 2176 made odd
+  expect_identical(kernel_of(filter_length = "10s"), "2561")
+  # not the automatic length: that one is 1691 samples for these settings
+  expect_identical(kernel_of(), "1691")
+  # a causal FIR notch reads the time in the same way
+  expect_identical(eeg_notch(e, 50, filter_length = "8s", phase = "minimum", verbose = FALSE)$data,
+                   eeg_notch(e, 50, filter_length = 2048, phase = "minimum", verbose = FALSE)$data)
+  # two frequencies, one kernel
+  expect_identical(eeg_notch(e, c(50, 60), filter_length = "8s", verbose = FALSE)$data,
+                   eeg_notch(e, c(50, 60), filter_length = 2048, verbose = FALSE)$data)
+})
+
+test_that("the band-pass and the FIR notch build the same length from the same text", {
+  for (cs in list(list("8s", 256), list("8.0052s", 250), list("8000ms", 512),
+                  list("8.0001s", 256), list("8001ms", 1000))) {
+    txt <- cs[[1]]; sf <- cs[[2]]
+    e <- skip_fixture(n = 9000, sf = sf)
+    N <- .filter_length_from_text(txt, sf)
+    if (N %% 2L == 0L) N <- N + 1L
+    bp <- eeg_bandpass(e, 1, 40, filter_length = txt, channels = "Fz", verbose = FALSE)
+    expect_match(last_entry(bp), paste0("length: ", N, " samples"), fixed = TRUE, info = paste(txt, sf))
+    out <- capture.output(eeg_notch(e, 50, filter_length = txt, channels = "Fz"))
+    expect_true(any(grepl(paste0("Combined kernel: ", N, " samples"), out, fixed = TRUE)),
+                info = paste(txt, sf))
+  }
+})
+
+test_that("a time as text gives the numbers of the reference implementation", {
+  # Its filter_data() and notch_filter() with the same text, on this fixture
+  # (Fz and Cz, 6000 samples), at samples 1, 2, 700, 1500, 3000, 4500, 5999, 6000.
+  pos <- c(1, 2, 700, 1500, 3000, 4500, 5999, 6000)
+  ref <- list(
+    notch_256 = list(
+      Fz = c(10.2712794222, 10.6260489725, 12.9189242853, -6.91005465192, 5.14450953193, -4.21934120067, 6.92353163682, 2.13077234283),
+      Cz = c(10.8776988787, 11.2963843229, -11.7609286946, -5.96674641206, 1.19909537161, 13.9889002867, 3.44933073909, 5.78670566735)),
+    notch_250 = list(
+      Fz = c(10.2712794222, 10.602764658, 1.69098267951, -2.23709148383, -2.60195469098, -0.702844328216, 0.33437427476, 0.531132499278),
+      Cz = c(10.8776988787, 11.2569704308, 0.607400188589, 8.85190243674, 2.20477427367, 9.45413087059, -0.483890651667, 1.32470228987)),
+    bp_256 = list(
+      Fz = c(2.44249065418e-15, -0.548569491492, 12.9044487159, -6.90882265128, 5.12379444489, -4.22166151112, 6.06588626843, -4.4408920985e-16),
+      Cz = c(-2.22044604925e-16, -0.902244131682, -11.7211327351, -5.94668262436, 1.20145508996, 13.9552683657, -1.99469428298, 2.37310171514e-15)),
+    bp_250 = list(
+      Fz = c(-2.22044604925e-15, -0.554510531655, 1.67575165949, -2.24311740009, -2.60386941413, -0.708573576654, 0.554155005478, 1.28369537222e-16),
+      Cz = c(-2.33146835171e-15, -0.918302223714, 0.605315632559, 8.83873178202, 2.20911775869, 9.43667694632, -2.26687709589, 8.881784197e-16)))
+  e256 <- skip_fixture(n = 6000)
+  e250 <- skip_fixture(n = 6000, sf = 250)
+  got <- list(
+    notch_256 = eeg_notch(e256, 50, filter_length = "8s", channels = c("Fz", "Cz"), verbose = FALSE),
+    notch_250 = eeg_notch(e250, 50, filter_length = "8.0052s", channels = c("Fz", "Cz"), verbose = FALSE),
+    bp_256    = eeg_bandpass(e256, 1, 40, filter_length = "4S", channels = c("Fz", "Cz"), verbose = FALSE),
+    bp_250    = eeg_bandpass(e250, 1, 40, filter_length = "4500ms", channels = c("Fz", "Cz"), verbose = FALSE))
+  for (nm in names(ref)) {
+    expect_lt(max(abs(got[[nm]]$data["Fz", pos] - ref[[nm]]$Fz)), 1e-9, label = paste(nm, "Fz"))
+    expect_lt(max(abs(got[[nm]]$data["Cz", pos] - ref[[nm]]$Cz)), 1e-9, label = paste(nm, "Cz"))
+  }
+})
+
+test_that("the FIR notch refuses a bad text or a length that is too short, with a clear message", {
+  e <- skip_fixture(n = 6000)
+  msg <- "text such as"
+  for (bad in list("banana", "8", "", "8 minutes", "-8s", NA_character_, c("8s", "9s"))) {
+    expect_error(eeg_notch(e, 50, filter_length = bad, verbose = FALSE), msg,
+                 info = paste(format(bad), collapse = ","))
+    # and the old, confusing stop is gone
+    r <- try(eeg_notch(e, 50, filter_length = bad, verbose = FALSE), silent = TRUE)
+    expect_false(grepl("missing value", conditionMessage(attr(r, "condition"))))
+  }
+  # the default notch needs 6.6 s (1691 samples at 256 Hz): 4 s is too short, as 1025 samples are
+  expect_error(eeg_notch(e, 50, filter_length = "4s", verbose = FALSE), "is too short for the")
+  expect_error(eeg_notch(e, 50, filter_length = 1025, verbose = FALSE), "is too short for the")
+  # a wider transition needs a shorter filter: the same 4 s is enough for 2 Hz
+  expect_no_error(eeg_notch(e, 60, trans_bandwidth = 2, filter_length = "4s", verbose = FALSE))
+  # the band-pass keeps its message for bad texts and short lengths
+  expect_error(eeg_bandpass(e, 1, 40, filter_length = "banana", verbose = FALSE), msg)
+  expect_error(eeg_bandpass(e, 1, 40, filter_length = "2s", verbose = FALSE), "is too short for the")
+})
+
+test_that("the IIR notch still does not use a length, and spectrum-fit still reads text as its piece length", {
+  e <- skip_fixture(n = 6000)
+  expect_warning(eeg_notch(e, 50, method = "iir", filter_length = "8s", verbose = FALSE),
+                 "Not used with method = \"iir\": filter_length", fixed = TRUE)
+  expect_identical(
+    suppressWarnings(eeg_notch(e, 50, method = "iir", filter_length = "8s", verbose = FALSE))$data,
+    eeg_notch(e, 50, method = "iir", verbose = FALSE)$data)
+  got <- eeg_notch(e, 50, method = "spectrum_fit", filter_length = "5s", verbose = FALSE)
+  expect_match(last_entry(got), "pieces: 5 s", fixed = TRUE)
+  expect_identical(got$data, eeg_notch(e, 50, method = "spectrum_fit", filter_length = 1280,
+                                       verbose = FALSE)$data)
+})
+
+test_that("the zero-double length of the ICA scoring filter is still read from text and made a power of two", {
+  d <- .make_bandpass_filter(256, 1, 40, "fir", NULL, "auto", "auto", "10s", "hamming",
+                             "zero-double", "reflect_limited", "firwin2")
+  expect_identical(d$N, 4096L)                     # 2560 samples, up to the next power of two
+  d2 <- .make_bandpass_filter(256, 1, 40, "fir", NULL, "auto", "auto", "4S", "hamming",
+                              "zero-double", "reflect_limited", "firwin2")
+  expect_identical(d2$N, 1024L)                    # 1024 is one already
+})

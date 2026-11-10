@@ -99,10 +99,13 @@ which misses a line that lies between two marks.
 With \code{freqs} given it has no effect (a warning
 says so if you set it). Default: 8.}
 
-\item{channels}{Character or integer vector, or NULL. Channels to
-filter. NULL = every channel except those of type
-"status" (the trigger row; see Details). A status
-channel that is named here is filtered.
+\item{channels}{NULL, a character vector, or an integer vector.
+Channels to filter. NULL = every channel except those
+of type "status" (the trigger row; see Details).
+Character: channel names such as "Fz", or channel
+types such as "eeg", "eog" or "all" (see Details), not
+both in one call. Integer: row numbers. A status
+channel that is named or picked here is filtered.
 Default: NULL.}
 
 \item{verbose}{Logical. Print parameters and progress.
@@ -138,6 +141,11 @@ FIR kernel and applied in one pass.
 other types and the channels in \code{eeg_obj$bads} are filtered as before,
 and a status channel that you name yourself in \code{channels} is filtered
 too. If every channel is of type "status", the call stops with an error.
+
+\strong{Picking channels by type} works as in \code{\link{eeg_bandpass}}:
+\code{channels = "eeg"} filters the EEG channels only, \code{c("eeg", "eog")}
+the channels of both types, \code{"all"} every row; names and types cannot be
+mixed in one call. A channel that is listed twice is filtered once.
 
 A FIR kernel that is longer than the recording still runs, but the result is
 distorted, so you get one warning (see \code{\link{eeg_bandpass}}). With the

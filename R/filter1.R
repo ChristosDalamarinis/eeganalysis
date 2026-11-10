@@ -1551,6 +1551,99 @@
 }
 
 # ----------------------------------------------------------------------------
+# .resolve_filter_channels() - what the 'channels' argument means
+# ----------------------------------------------------------------------------
+
+#' Rows that a filter works on, from its 'channels' argument
+#'
+#' Turns the \code{channels} argument of \code{eeg_bandpass()} and
+#' \code{eeg_notch()} (all three methods) into the rows of the data table that
+#' are filtered. \code{NULL} gives every channel except the status rows (see
+#' \code{.default_filter_channels()}). A character vector holds channel names
+#' (such as \code{"Fz"}) or channel types (a type of \code{eeg_obj$channel_types}
+#' such as \code{"eeg"} or \code{"eog"}, or \code{"all"} for every row), but not
+#' both in one call. A type picks every channel of that type, the bad ones too,
+#' and it is an error if no channel has it. A word that is both a channel name
+#' and a type is refused, because it could mean either; a word that is neither
+#' gives "Channel(s) not found". A numeric vector holds row numbers. A channel
+#' that is given twice is filtered once.
+#'
+#' @param eeg_obj  An object of class 'eeg'.
+#' @param channels \code{NULL}, a character vector of channel names or channel
+#'   types, or a numeric vector of row numbers.
+#' @return Integer vector of row numbers, without repeats. For names and numbers
+#'   in the order given, for types in the order of the data table.
+#' @keywords internal
+.resolve_filter_channels <- function(eeg_obj, channels) {
+
+  if (is.null(channels)) {
+    return(.default_filter_channels(eeg_obj))
+  }
+
+  n_channels <- nrow(eeg_obj$data)
+
+  if (is.character(channels)) {
+    chan_names <- eeg_obj$channels
+    types      <- .types_of(eeg_obj)
+    type_words <- c(.valid_channel_types(), "all")
+    is_name    <- channels %in% chan_names
+    is_type    <- channels %in% type_words
+
+    # A word that is a channel name AND a type word could mean either: refuse.
+    clash <- unique(channels[is_name & is_type])
+    if (length(clash) > 0L) {
+      stop("'", paste(clash, collapse = "', '"), "' ",
+           if (length(clash) == 1L) "is" else "are",
+           " both a channel name and a channel type, so 'channels' could ",
+           "mean either. Use row numbers instead.", call. = FALSE)
+    }
+
+    unknown <- unique(channels[!is_name & !is_type])
+    if (length(unknown) > 0L) {
+      stop("Channel(s) not found: ", paste(unknown, collapse = ", "),
+           ". 'channels' takes channel names or channel types (",
+           paste(type_words, collapse = ", "), ").", call. = FALSE)
+    }
+
+    # Names or types in one call, not both.
+    if (any(is_name) && any(is_type)) {
+      stop("'channels' mixes channel names (",
+           paste(unique(channels[is_name]), collapse = ", "),
+           ") and channel types (", paste(unique(channels[is_type]), collapse = ", "),
+           "). Give names or types in one call, not both.", call. = FALSE)
+    }
+
+    if (any(is_name)) {
+      return(unique(match(channels, chan_names)))        # names, in the order given
+    }
+
+    # Types: every channel of each type; "all" is every row.
+    if ("all" %in% channels) return(seq_len(n_channels))
+    ch_idx <- integer(0)
+    for (tp in unique(channels)) {
+      hit <- which(types == tp)
+      if (length(hit) == 0L) {
+        stop("No channel of type \"", tp, "\" (the types in this object: ",
+             paste(unique(types), collapse = ", "), ").", call. = FALSE)
+      }
+      ch_idx <- c(ch_idx, hit)
+    }
+    return(sort(unique(ch_idx)))
+  }
+
+  if (is.numeric(channels)) {
+    ch_idx <- as.integer(channels)
+    if (any(ch_idx < 1L) || any(ch_idx > n_channels)) {
+      stop("Channel indices out of range [1, ", n_channels, "].", call. = FALSE)
+    }
+    return(unique(ch_idx))
+  }
+
+  stop("'channels' must be NULL, channel names or channel types (a character ",
+       "vector), or row numbers (an integer vector).", call. = FALSE)
+}
+
+# ----------------------------------------------------------------------------
 # .notch_iir() - the IIR half of eeg_notch()
 # ----------------------------------------------------------------------------
 
@@ -2434,6 +2527,18 @@
 #' ("Channels: 2/3") and written into the preprocessing history says how many
 #' rows were filtered.
 #'
+#' \strong{Picking channels by type.} \code{channels} can also name channel
+#' types, taken from \code{eeg_obj$channel_types}: \code{"eeg"}, \code{"eog"},
+#' \code{"ecg"}, \code{"emg"}, \code{"resp"}, \code{"gsr"}, \code{"temp"},
+#' \code{"bio"}, \code{"misc"} or \code{"status"}, one or several of them
+#' (\code{channels = c("eeg", "eog")}), or \code{"all"} for every row, the status
+#' row included. \code{channels = "eeg"} filters the EEG channels only and
+#' leaves EOG, ECG and the other rows as they are. Bad channels of that type are
+#' filtered too. Names and types cannot be mixed in one call, a type that no
+#' channel has is an error, and a channel whose name is also a type word (a
+#' channel called "eog") is refused as unclear: give its row number instead. A
+#' channel that is listed twice is filtered once.
+#'
 #' \strong{IIR filters} (\code{method = "iir"}) are Butterworth filters, built
 #' from their poles and zeros and run as a chain of second-order sections, so
 #' they stay accurate even for slow filters (a low cutoff compared with the
@@ -2507,11 +2612,13 @@
 #'                         Any other word is an error.
 #' @param pad              Character. Padding at both ends of the recording.
 #'                         Only "reflect_limited" (default) is implemented.
-#' @param channels         Character or integer vector, or NULL. Channel names
-#'                         or indices to filter. NULL = every channel except
-#'                         those of type "status" (the trigger row; see
-#'                         Details). A status channel that is named here is
-#'                         filtered.
+#' @param channels         NULL, a character vector, or an integer vector.
+#'                         NULL = every channel except those of type "status"
+#'                         (the trigger row; see Details). Character: channel
+#'                         names such as "Fz", or channel types such as "eeg",
+#'                         "eog" or "all" (see Details), not both in one call.
+#'                         Integer: row numbers. A status channel that is named
+#'                         or picked here is filtered.
 #' @param verbose          Logical. Print filter parameters and progress.
 #'                         Default: TRUE.
 #'
@@ -2584,30 +2691,12 @@ eeg_bandpass <- function(eeg_obj,
 
   # ========== RESOLVE CHANNEL INDICES ==========
   # Which rows of the data table to filter: all of them except the status
-  # (trigger) rows (NULL), the ones with these names, or the ones at these
-  # positions. This is eeg-object work, so it stays here; filter_data() has no
-  # channels.
+  # (trigger) rows (NULL), the channels with these names, all channels of these
+  # types ("eeg", "eog", ...), or the rows at these positions. This is
+  # eeg-object work, so it stays here; filter_data() has no channels.
 
   n_channels <- nrow(eeg_obj$data)
-  chan_names <- eeg_obj$channels
-
-  if (is.null(channels)) {
-    ch_idx <- .default_filter_channels(eeg_obj)
-  } else if (is.character(channels)) {
-    ch_idx <- match(channels, chan_names)
-    if (any(is.na(ch_idx))) {
-      stop("Channel(s) not found: ",
-           paste(channels[is.na(ch_idx)], collapse = ", "), call. = FALSE)
-    }
-  } else if (is.numeric(channels)) {
-    ch_idx <- as.integer(channels)
-    if (any(ch_idx < 1L) || any(ch_idx > n_channels)) {
-      stop("Channel indices out of range [1, ", n_channels, "].", call. = FALSE)
-    }
-  } else {
-    stop("'channels' must be NULL, a character vector, or an integer vector.",
-         call. = FALSE)
-  }
+  ch_idx     <- .resolve_filter_channels(eeg_obj, channels)
 
   # ========== DESIGN THE FILTER ==========
   # Step 1 of the shared recipe, done once for all channels. 'spec' describes
@@ -2906,6 +2995,11 @@ filter_data <- function(x,
 #' and a status channel that you name yourself in \code{channels} is filtered
 #' too. If every channel is of type "status", the call stops with an error.
 #'
+#' \strong{Picking channels by type} works as in \code{\link{eeg_bandpass}}:
+#' \code{channels = "eeg"} filters the EEG channels only, \code{c("eeg", "eog")}
+#' the channels of both types, \code{"all"} every row; names and types cannot be
+#' mixed in one call. A channel that is listed twice is filtered once.
+#'
 #' A FIR kernel that is longer than the recording still runs, but the result is
 #' distorted, so you get one warning (see \code{\link{eeg_bandpass}}). With the
 #' default Hamming window the kernel is 3.3 / (\code{trans_bandwidth} / 2)
@@ -3051,10 +3145,13 @@ filter_data <- function(x,
 #'                         which misses a line that lies between two marks.
 #'                         With \code{freqs} given it has no effect (a warning
 #'                         says so if you set it). Default: 8.
-#' @param channels         Character or integer vector, or NULL. Channels to
-#'                         filter. NULL = every channel except those of type
-#'                         "status" (the trigger row; see Details). A status
-#'                         channel that is named here is filtered.
+#' @param channels         NULL, a character vector, or an integer vector.
+#'                         Channels to filter. NULL = every channel except those
+#'                         of type "status" (the trigger row; see Details).
+#'                         Character: channel names such as "Fz", or channel
+#'                         types such as "eeg", "eog" or "all" (see Details), not
+#'                         both in one call. Integer: row numbers. A status
+#'                         channel that is named or picked here is filtered.
 #'                         Default: NULL.
 #' @param verbose          Logical. Print parameters and progress.
 #'                         Default: TRUE.
@@ -3212,27 +3309,12 @@ eeg_notch <- function(eeg_obj,
   # ========== RESOLVE CHANNEL INDICES ==========
   
   n_channels <- nrow(eeg_obj$data)
-  chan_names <- eeg_obj$channels
-  
-  # NULL: every channel except the status (trigger) rows, for all three methods
-  # (the IIR and spectrum-fit parts get ch_idx handed over below).
-  if (is.null(channels)) {
-    ch_idx <- .default_filter_channels(eeg_obj)
-  } else if (is.character(channels)) {
-    ch_idx <- match(channels, chan_names)
-    if (any(is.na(ch_idx))) {
-      stop("Channel(s) not found: ",
-           paste(channels[is.na(ch_idx)], collapse = ", "), call. = FALSE)
-    }
-  } else if (is.numeric(channels)) {
-    ch_idx <- as.integer(channels)
-    if (any(ch_idx < 1L) || any(ch_idx > n_channels)) {
-      stop("Channel indices out of range [1, ", n_channels, "].", call. = FALSE)
-    }
-  } else {
-    stop("'channels' must be NULL, a character vector, or an integer vector.",
-         call. = FALSE)
-  }
+
+  # NULL: every channel except the status (trigger) rows; or the channels with
+  # these names, all channels of these types ("eeg", "eog", ...), or the rows at
+  # these positions. The same for all three methods (the IIR and spectrum-fit
+  # parts get ch_idx handed over below).
+  ch_idx <- .resolve_filter_channels(eeg_obj, channels)
 
   # ========== SPECTRUM-FIT: HAND OVER TO ITS OWN FUNCTION ==========
 

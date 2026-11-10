@@ -17,6 +17,7 @@ eeg_bandpass(
   phase = "zero",
   pad = "reflect_limited",
   channels = NULL,
+  skip_by_annotation = "BAD_boundary",
   verbose = TRUE
 )
 }
@@ -73,12 +74,23 @@ names such as "Fz", or channel types such as "eeg",
 Integer: row numbers. A status channel that is named
 or picked here is filtered.}
 
+\item{skip_by_annotation}{Character vector, or NULL. Annotations that the
+filter goes around (see Details). Any annotation
+whose description starts with one of these words, in
+upper or lower case, is left as it is, and the
+stretches between them are filtered one by one.
+\code{"bad"} skips every \code{"BAD_..."}
+annotation. \code{character(0)} or NULL skips
+nothing. Default: \code{"BAD_boundary"}, the join
+mark of \code{\link{eeg_concatenate}}.}
+
 \item{verbose}{Logical. Print filter parameters and progress.
 Default: TRUE.}
 }
 \value{
 An object of class 'eeg' with filtered data and updated
-preprocessing_history.
+preprocessing_history. If the recording was cut, the history entry ends
+with the number of segments and the number of samples that were skipped.
 }
 \description{
 Applies a zero-phase FIR filter (the default) or an IIR Butterworth filter
@@ -115,6 +127,42 @@ filtered too. Names and types cannot be mixed in one call, a type that no
 channel has is an error, and a channel whose name is also a type word (a
 channel called "eog") is refused as unclear: give its row number instead. A
 channel that is listed twice is filtered once.
+
+\strong{Skipping stretches of the recording.} A filter makes each output
+sample from the input around it, as far as half the filter length to each
+side (1.65 s for the default 1 - 40 Hz filter at 256 Hz). So a large
+artifact leaks into the clean samples next to it. With
+\code{skip_by_annotation} you name annotations that the filter goes around
+(see \code{\link{annotate_muscle}} and \code{\link{annotate_amplitude}}): an
+annotation is skipped when its description starts with one of your words,
+whatever the case, so \code{"bad"} skips every \code{"BAD_..."} annotation.
+The samples inside a skipped annotation are not filtered and stay exactly as
+they were (their DC offset too). Each stretch of the recording between them
+is filtered as a signal of its own, with its own padding at both ends, so it
+gives the same numbers as \code{\link{filter_data}} on that stretch alone.
+Example, on made-up data (a 1 s wave of size 300 in a clean signal of size
+about 8, default 1 - 40 Hz filter): the largest error among the clean samples
+after the artifact was 85 when the whole recording was filtered in one run,
+and 9 with the artifact skipped. Some error is left next to each cut, because
+each stretch is padded by mirroring at its ends.
+
+The default is \code{"BAD_boundary"}, the mark that
+\code{\link{eeg_concatenate}} writes at each join. It has length 0: it skips
+no sample but cuts the recording there, so the runs of a joined recording are
+filtered one by one, as they would be before the join, and no filter runs
+across a join. An annotation of length 0 cuts the recording in two wherever
+it is. When no annotation matches, the whole recording is filtered in one
+run, exactly as without this argument. \code{skip_by_annotation =
+character(0)} (or \code{NULL}) never cuts, whatever the annotations say; a
+joined recording is then filtered as one signal. All channels are cut at the
+same samples (the \code{channel} column of an annotation is not used). A
+stretch that is shorter than the filter is still filtered, but it is
+distorted, and you get one warning (for the longest stretch). The skipped
+samples stay unfiltered, so anything that reads them later (a plot,
+\code{\link{find_bad_channels}}) sees them as they were. Annotate first, then
+filter: the annotation functions that look at filtered data, such as
+\code{\link{annotate_muscle}}, filter inside themselves. If every sample is
+skipped there is nothing to filter and the call stops with an error.
 
 \strong{IIR filters} (\code{method = "iir"}) are Butterworth filters, built
 from their poles and zeros and run as a chain of second-order sections, so

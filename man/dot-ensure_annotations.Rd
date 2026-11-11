@@ -13,8 +13,10 @@
 \code{eeg_obj}, with \code{$annotations} guaranteed non-NULL.
 }
 \description{
-\code{eeg_obj$annotations} is not yet a field \code{\link{new_eeg}}
-initializes (see file header), so every exported function in this file
-calls this first to default it to a zero-row frame if missing.
+\code{\link{new_eeg}} already gives every new object a zero-row
+\code{eeg_obj$annotations}. This helper is a safety net for objects that
+have no such field (for example one saved before \code{new_eeg()} had it,
+or one built by hand): every exported function in this file calls it
+first, and it only acts when the field is \code{NULL}.
 }
 \keyword{internal}

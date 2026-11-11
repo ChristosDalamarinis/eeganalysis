@@ -57,11 +57,8 @@ Version 0.0.0.9000 — under active development. Currently reads BioSemi `.bdf` 
 
 - **dbscan** — Local Outlier Factor bad-channel detection
 - **akima** — spherical-spline interpolation for bad-channel repair and topography maps
-- **fastICA** — ICA decomposition for artifact removal
 - **MASS** — linear algebra support for ICA and interpolation
 - **plotly** — interactive 3D electrode and topography plots
-- **dplyr** — data manipulation
-- **ggplot2** — plotting
 
 ## Quick Start
 

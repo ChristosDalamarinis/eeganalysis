@@ -36,12 +36,12 @@
 #'   channel     - channel name, if the row is channel-specific (only
 #'                 annotate_nan() produces these); NA otherwise
 #'
-#' R/eeg_class.R does not define this field yet, so every exported function
-#' below initializes eeg_obj$annotations to a zero-row frame the first time
-#' it is touched (.ensure_annotations()) - this file works standalone. When
-#' eeg_class.R is next updated, giving new_eeg() the same empty-data-frame
-#' default it already gives `bads` would make that initialization redundant
-#' (harmless either way - it only fires when the field is NULL).
+#' new_eeg() (R/eeg_class.R) already gives every new object an empty
+#' annotations table, so eeg_obj$annotations normally exists. Every exported
+#' function below still calls .ensure_annotations() first, as a safety net
+#' for objects without the field - for example one saved before new_eeg()
+#' had it, or one built by hand. It only acts when the field is NULL, so it
+#' does nothing otherwise.
 #'
 #' Author: Christos Dalamarinis
 #' Date: Sep - 2026
@@ -70,9 +70,11 @@
 
 #' Ensure eeg_obj$annotations Exists (internal)
 #'
-#' \code{eeg_obj$annotations} is not yet a field \code{\link{new_eeg}}
-#' initializes (see file header), so every exported function in this file
-#' calls this first to default it to a zero-row frame if missing.
+#' \code{\link{new_eeg}} already gives every new object a zero-row
+#' \code{eeg_obj$annotations}. This helper is a safety net for objects that
+#' have no such field (for example one saved before \code{new_eeg()} had it,
+#' or one built by hand): every exported function in this file calls it
+#' first, and it only acts when the field is \code{NULL}.
 #'
 #' @param eeg_obj An object of class 'eeg'.
 #' @return \code{eeg_obj}, with \code{$annotations} guaranteed non-NULL.

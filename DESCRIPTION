@@ -13,10 +13,7 @@ RoxygenNote: 7.3.3
 Depends: 
     R (>= 3.5.0)
 Imports:
-    ggplot2,
-    dplyr,
     plotly,
-    fastICA,
     MASS,
     akima,
     dbscan

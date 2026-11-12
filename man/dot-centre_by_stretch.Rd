@@ -4,16 +4,22 @@
 \alias{.centre_by_stretch}
 \title{Subtract Each Channel's Own Level, Stretch by Stretch (internal)}
 \usage{
-.centre_by_stretch(data, window_samples)
+.centre_by_stretch(data, window_samples, remove_slope = FALSE)
 }
 \arguments{
 \item{data}{Numeric matrix, channels x timepoints.}
 
-\item{window_samples}{Number of samples in one stretch (at least 1).}
+\item{window_samples}{Number of samples in one stretch (at least 1; at
+least 3 when \code{remove_slope = TRUE}).}
+
+\item{remove_slope}{Logical. If \code{TRUE}, in every stretch also the
+straight line (least squares) through each channel is subtracted. Needs
+at least 3 samples in every stretch. Default \code{FALSE}: the level only.}
 }
 \value{
 A matrix of the same size and dimnames as \code{data}. In every
-stretch each row has mean 0.
+stretch each row has mean 0 (and, with \code{remove_slope = TRUE}, slope
+0).
 }
 \description{
 Cuts the recording into consecutive stretches of \code{window_samples}
@@ -25,5 +31,12 @@ mV, that also drifts slowly). As many whole stretches are used as fit into
 the recording (at least one), so a last piece shorter than one stretch
 joins the stretch before it, and a recording shorter than one stretch is a
 single stretch.
+}
+\details{
+With \code{remove_slope = TRUE} the straight line that fits the channel
+best in the stretch (its tilt) is subtracted as well, so a channel that
+creeps up or down slowly is held flat too. In a short stretch a slow wave
+is almost a straight line, so this removes drift that a level alone does
+not.
 }
 \keyword{internal}

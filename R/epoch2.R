@@ -352,7 +352,14 @@ inspect_triggers <- function(eeg_obj,                             # EEG object w
 #' @param tmax Numeric value specifying epoch end time relative to event onset
 #'   in seconds (default: 0.8)
 #' @param baseline Numeric vector c(start, end) specifying baseline correction
-#'   window in seconds. Set to NULL to skip baseline correction (default: c(-0.2, 0))
+#'   window in seconds. Set to NULL to skip baseline correction (default: c(-0.2, 0)).
+#'   The correction is applied to the rows of \code{eeg_obj$channel_types} that are
+#'   \code{"eeg"}, \code{"eog"}, \code{"ecg"}, \code{"emg"} or \code{"bio"}. Rows of
+#'   type \code{"resp"}, \code{"gsr"}, \code{"temp"}, \code{"misc"} and \code{"status"}
+#'   are left exactly as recorded; in particular the trigger (\code{"status"}) row
+#'   holds codes, not voltages, so subtracting an average from it would turn a code
+#'   1 into a number such as 0.667. Without \code{channel_types} (e.g. a hand-built
+#'   \code{eeg} object) every row is corrected.
 #' @param baseline_method Character: "mean", "median", or "none" (default: "mean")
 #' @param reject_threshold Numeric. Amplitude threshold in microV for epoch rejection.
 #'   Only checked on channels classified \code{"eeg"} in \code{eeg_obj$channel_types},
@@ -371,6 +378,12 @@ inspect_triggers <- function(eeg_obj,                             # EEG object w
 #'   of the epoch is used when checking rejection and flat thresholds. Set to NULL to use tmax (default: NULL)
 #' @param detrend Numeric or NULL. Detrending applied to each epoch per channel before baseline
 #'   correction. NULL = off (default), 0 = mean removal, 1 = linear detrending.
+#'   Only the rows of type \code{"eeg"} in \code{eeg_obj$channel_types} are detrended
+#'   (channels listed in \code{eeg_obj$bads} included, as they stay in the data);
+#'   every other row, the trigger (\code{"status"}) row and the eye
+#'   (\code{"eog"}) row among them, is left exactly as recorded. Without
+#'   \code{channel_types} (e.g. a hand-built \code{eeg} object) every row is
+#'   detrended.
 #' @param event_repeated Character. How to handle duplicate events at the same sample index.
 #'   "warn" keeps the first and warns (default), "drop" keeps the first silently, "error" stops.
 #' @param on_missing Character. What to do when requested event codes are not found in the data.
@@ -603,6 +616,27 @@ epoch_eeg <- function(eeg_obj,                                           # Loade
     reject_ch_idx <- seq_len(n_channels)
   }
 
+  # ========== ROWS THAT GET DETREND / BASELINE CORRECTION ==========
+  # Not every row of the data matrix is a voltage. Detrending subtracts a
+  # fitted line and baseline correction subtracts an average, which only
+  # means something for a measured signal. The trigger ("status") row holds
+  # codes (0, 1, 2, ...): subtracting an average from it turns a code 1 into
+  # a number such as 0.667. So, by channel type:
+  #   detrend  : "eeg" only (bad channels included - they stay in the data);
+  #   baseline : "eeg" plus the extra recordings "eog", "ecg", "emg" and
+  #              "bio", and NOT "resp", "gsr", "temp", "misc", "status".
+  # Falls back to every row when channel_types is unavailable (e.g. a
+  # hand-built eeg object, as in this package's own test fixtures), so that
+  # case behaves exactly as before this restriction existed.
+  detrend_idx  <- seq_len(n_channels)
+  baseline_idx <- seq_len(n_channels)
+  if (!is.null(eeg_obj$channel_types) &&
+      length(eeg_obj$channel_types) == n_channels) {
+    detrend_idx  <- which(eeg_obj$channel_types == "eeg")
+    baseline_idx <- which(eeg_obj$channel_types %in%
+                            c("eeg", "eog", "ecg", "emg", "bio"))
+  }
+
   # ========== EXTRACT EPOCHS ==========
   if (verbose) cat("Extracting epochs...\n")
   
@@ -669,7 +703,7 @@ epoch_eeg <- function(eeg_obj,                                           # Loade
 
       # Apply detrending
       if (!is.null(detrend)) {
-        for (ch in seq_len(n_channels)) {
+        for (ch in detrend_idx) {
           if (detrend == 0) {
             epoch_data[ch, ] <- epoch_data[ch, ] - mean(epoch_data[ch, ], na.rm = TRUE)
           } else if (detrend == 1) {
@@ -684,7 +718,7 @@ epoch_eeg <- function(eeg_obj,                                           # Loade
 
       # Apply baseline correction
       if (!is.null(baseline)) {
-        for (ch in 1:n_channels) {
+        for (ch in baseline_idx) {
           if (baseline_method == "mean") {
             baseline_value <- mean(epoch_data[ch, baseline_indices], na.rm = TRUE)
           } else if (baseline_method == "median") {

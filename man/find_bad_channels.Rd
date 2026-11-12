@@ -9,6 +9,7 @@ find_bad_channels(
   flag_flat_threshold = 0.5,
   flag_amplitude_threshold = 500,
   amplitude_window = 2,
+  neighbor_window = 2,
   flag_outlier_sd_multiplier = 3,
   k = 4,
   correlation_threshold = 0.45,
@@ -38,6 +39,22 @@ drifts, and without this step every channel would look far above
 stretch because it creeps; a last stretch shorter than the window joins
 the stretch before it. \code{Inf} measures one level for the whole
 recording. Must be at least 2 samples long. Default: 2.}
+
+\item{neighbor_window}{Numeric. Length in seconds of the stretches in
+which each channel's own level (its average) and its own straight-line
+trend (its tilt) are measured and removed before the neighbor-
+correlation check compares the channels. That check takes, at every
+moment, the middle value of a channel's neighbors. On raw data the
+channels stand on very different levels (offsets of tens of mV that also
+drift), so the middle value would always be the same neighbor, and a
+good channel could be compared with a broken one. Removing level and
+tilt in every stretch puts the channels back on the same footing. Only
+the copy of the data given to this check is changed: \code{eeg_obj$data}
+and the other checks are not affected. A last stretch shorter than the
+window joins the stretch before it. \code{Inf} removes one straight line
+from the whole recording. A short window removes more than drift (for
+example 0.2 s also removes everything slower than about 5 Hz); 1 to 5 s
+is the useful range. Must be at least 3 samples long. Default: 2.}
 
 \item{flag_outlier_sd_multiplier}{Numeric. A channel whose std exceeds
 this multiple of the median std across all EEG channels is flagged
@@ -118,12 +135,15 @@ same default thresholds \code{\link{eeg_summary}} already reports - this
 function writes them to \code{bads} instead of only printing them. The
 global LOF check also always runs.
 
-The amplitude check measures every channel from its own level, so it also
-works on raw data with large DC offsets (see \code{amplitude_window}). The
-neighbor-correlation and LOF checks use the data as it is: large offsets
-or a strong slow drift can disturb them, so for raw data a high-pass
-filter (for example 1 Hz, see \code{\link{eeg_bandpass}}) before this
-function gives the most reliable result.
+The amplitude check measures every channel from its own level (see
+\code{amplitude_window}), and the neighbor-correlation check works on a
+copy of the data from which each channel's own level and straight-line
+trend are removed in every stretch (see \code{neighbor_window}), so both
+also work on raw data with large DC offsets and a strong slow drift. The
+LOF check uses the data as it is: large offsets or a strong slow drift can
+disturb it, so for raw data a high-pass filter (for example 1 Hz, see
+\code{\link{eeg_bandpass}}) before this function gives the most reliable
+result for that check.
 
 The neighbor-correlation check only runs if \code{eeg_obj$montage} is
 attached (see \code{\link{set_montage}}); if not, it is skipped with a

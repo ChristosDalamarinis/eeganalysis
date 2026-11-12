@@ -37,7 +37,14 @@ in seconds (default: -0.2)}
 in seconds (default: 0.8)}
 
 \item{baseline}{Numeric vector c(start, end) specifying baseline correction
-window in seconds. Set to NULL to skip baseline correction (default: c(-0.2, 0))}
+window in seconds. Set to NULL to skip baseline correction (default: c(-0.2, 0)).
+The correction is applied to the rows of \code{eeg_obj$channel_types} that are
+\code{"eeg"}, \code{"eog"}, \code{"ecg"}, \code{"emg"} or \code{"bio"}. Rows of
+type \code{"resp"}, \code{"gsr"}, \code{"temp"}, \code{"misc"} and \code{"status"}
+are left exactly as recorded; in particular the trigger (\code{"status"}) row
+holds codes, not voltages, so subtracting an average from it would turn a code
+1 into a number such as 0.667. Without \code{channel_types} (e.g. a hand-built
+\code{eeg} object) every row is corrected.}
 
 \item{baseline_method}{Character: "mean", "median", or "none" (default: "mean")}
 
@@ -61,7 +68,13 @@ of the epoch is used when checking rejection and flat thresholds. Set to NULL to
 of the epoch is used when checking rejection and flat thresholds. Set to NULL to use tmax (default: NULL)}
 
 \item{detrend}{Numeric or NULL. Detrending applied to each epoch per channel before baseline
-correction. NULL = off (default), 0 = mean removal, 1 = linear detrending.}
+correction. NULL = off (default), 0 = mean removal, 1 = linear detrending.
+Only the rows of type \code{"eeg"} in \code{eeg_obj$channel_types} are detrended
+(channels listed in \code{eeg_obj$bads} included, as they stay in the data);
+every other row, the trigger (\code{"status"}) row and the eye
+(\code{"eog"}) row among them, is left exactly as recorded. Without
+\code{channel_types} (e.g. a hand-built \code{eeg} object) every row is
+detrended.}
 
 \item{event_repeated}{Character. How to handle duplicate events at the same sample index.
 "warn" keeps the first and warns (default), "drop" keeps the first silently, "error" stops.}

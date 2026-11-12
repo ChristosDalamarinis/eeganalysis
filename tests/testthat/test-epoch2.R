@@ -2198,6 +2198,184 @@ test_that("falls back to every channel, with a warning, when every eeg channel i
 })
 
 
+# ----------------------------------------------------------------------------
+# Tests 2.57 - 2.63: detrend and baseline touch only the right rows
+# ----------------------------------------------------------------------------
+# Detrending subtracts a fitted line and baseline correction subtracts an
+# average. That only means something for a measured signal, so by channel
+# type (see R/epoch2.R, "ROWS THAT GET DETREND / BASELINE CORRECTION"):
+#   detrend  : "eeg" rows only;
+#   baseline : "eeg", "eog", "ecg", "emg", "bio" rows; NOT "resp", "gsr",
+#              "temp", "misc", "status" (the trigger row holds codes).
+# The data below are straight lines, so every expected number can be worked
+# out by hand: row k holds 100 * k + k * i at sample i (slope k per sample),
+# except the trigger row, which is 0 with code 1 at sample 300 and code 2 at
+# sample 700. At 100 Hz, tmin = -0.2 and tmax = 0.4 give 61 samples per epoch;
+# sample j = 21 is time 0, and the baseline window c(-0.2, 0) is j = 1..21.
+# ----------------------------------------------------------------------------
+
+make_mixed_type_eeg <- function(with_types = TRUE) {
+  chan_names <- c("Fz", "Cz", "VEOG", "ECG", "EMG", "BIO1",
+                  "RESP", "GSR", "TEMP", "MISC", "Status")
+  chan_types <- c("eeg", "eeg", "eog", "ecg", "emg", "bio",
+                  "resp", "gsr", "temp", "misc", "status")
+  n_time <- 1000
+  data   <- t(sapply(seq_along(chan_names),
+                     function(k) 100 * k + k * seq_len(n_time)))
+  data[11, ]    <- 0
+  data[11, 300] <- 1
+  data[11, 700] <- 2
+
+  eeg <- make_mock_eeg(n_channels   = 11,
+                       n_timepoints = n_time,
+                       sr           = 100,
+                       event_onsets = c(300L, 700L),
+                       event_types  = c("1", "2"),
+                       data_values  = data)
+  eeg$channels <- chan_names
+  if (with_types) eeg$channel_types <- chan_types
+  eeg
+}
+
+epoch_mixed <- function(eeg, ...) {
+  epoch_eeg(eeg, events = "all", tmin = -0.2, tmax = 0.4, verbose = FALSE, ...)
+}
+
+# ----------------------------------------------------------------------------
+# Test 2.57: detrend = 1 flattens the "eeg" rows and leaves every other row,
+#            the trigger row and the eye row included, exactly as recorded
+# ----------------------------------------------------------------------------
+test_that("detrend = 1 changes only the eeg rows", {
+  eeg  <- make_mixed_type_eeg()
+  raw  <- epoch_mixed(eeg, baseline = NULL, detrend = NULL)
+  det  <- epoch_mixed(eeg, baseline = NULL, detrend = 1)
+
+  # straight lines -> exactly flat after removing the line
+  expect_true(max(abs(det$data[1:2, , ])) < 1e-8)
+
+  # rows 3..11 (eog ... status) are bit-for-bit what was recorded
+  expect_identical(det$data[3:11, , ], raw$data[3:11, , ])
+
+  # the trigger codes survive: code 1 at time 0 of epoch 1, code 2 of epoch 2
+  expect_identical(unname(det$data[11, 21, 1]), 1)
+  expect_identical(unname(det$data[11, 21, 2]), 2)
+})
+
+# ----------------------------------------------------------------------------
+# Test 2.58: detrend = 0 (mean removal) follows the same rule
+# ----------------------------------------------------------------------------
+test_that("detrend = 0 changes only the eeg rows", {
+  eeg  <- make_mixed_type_eeg()
+  raw  <- epoch_mixed(eeg, baseline = NULL, detrend = NULL)
+  det  <- epoch_mixed(eeg, baseline = NULL, detrend = 0)
+
+  # row k is a line with slope k: after removing the mean it is k * (j - 31)
+  expect_equal(unname(det$data[1, , 1]), 1 * (seq_len(61) - 31), tolerance = 1e-10)
+  expect_equal(unname(det$data[2, , 2]), 2 * (seq_len(61) - 31), tolerance = 1e-10)
+  expect_identical(det$data[3:11, , ], raw$data[3:11, , ])
+})
+
+# ----------------------------------------------------------------------------
+# Test 2.59: baseline correction reaches eeg/eog/ecg/emg/bio rows and skips
+#            resp/gsr/temp/misc/status rows (mean and median)
+# ----------------------------------------------------------------------------
+test_that("baseline correction skips resp, gsr, temp, misc and status rows", {
+  eeg <- make_mixed_type_eeg()
+  raw <- epoch_mixed(eeg, baseline = NULL)
+
+  for (method in c("mean", "median")) {
+    corr <- epoch_mixed(eeg, baseline = c(-0.2, 0), baseline_method = method)
+
+    # rows 1..6: value at sample j is k * (j - 11) once the baseline average
+    # is gone (the mean and the median of a straight line over j = 1..21 are
+    # both its value at j = 11, the middle sample)
+    for (k in 1:6) {
+      for (ep in 1:2) {
+        expect_equal(unname(corr$data[k, , ep]), k * (seq_len(61) - 11),
+                     tolerance = 1e-9,
+                     label = sprintf("row %d, epoch %d, %s", k, ep, method))
+      }
+    }
+
+    # rows 7..11 (resp, gsr, temp, misc, status) are what was recorded
+    expect_identical(corr$data[7:11, , ], raw$data[7:11, , ],
+                     label = paste("untouched rows,", method))
+  }
+})
+
+# ----------------------------------------------------------------------------
+# Test 2.60: a channel listed in eeg_obj$bads is still detrended and
+#            baseline corrected (it stays in the data)
+# ----------------------------------------------------------------------------
+test_that("a bad eeg channel is still detrended and baseline corrected", {
+  eeg      <- make_mixed_type_eeg()
+  eeg$bads <- "Fz"
+
+  det <- epoch_mixed(eeg, baseline = NULL, detrend = 1)
+  expect_true(max(abs(det$data[1, , ])) < 1e-8)
+
+  corr <- epoch_mixed(eeg, baseline = c(-0.2, 0))
+  expect_equal(unname(corr$data[1, , 1]), 1 * (seq_len(61) - 11), tolerance = 1e-9)
+})
+
+# ----------------------------------------------------------------------------
+# Test 2.61: without channel_types every row is cleaned, as before (a
+#            hand-built object cannot say which row is the trigger row)
+# ----------------------------------------------------------------------------
+test_that("without channel_types detrend and baseline reach every row", {
+  eeg <- make_mixed_type_eeg(with_types = FALSE)
+  expect_null(eeg$channel_types)
+
+  det <- epoch_mixed(eeg, baseline = NULL, detrend = 1)
+  expect_true(max(abs(det$data[1:10, , ])) < 1e-8)     # every line flattened
+  expect_false(isTRUE(all.equal(unname(det$data[11, , 1]),
+                                c(rep(0, 20), 1, rep(0, 40)))))
+
+  corr <- epoch_mixed(eeg, baseline = c(-0.2, 0))
+  # trigger row: the average of the baseline window is 1/21 (one code in 21 samples)
+  expect_equal(unname(corr$data[11, 1, 1]), -1 / 21, tolerance = 1e-10)
+  expect_equal(unname(corr$data[11, 21, 1]), 1 - 1 / 21, tolerance = 1e-10)
+})
+
+# ----------------------------------------------------------------------------
+# Test 2.62: the "eeg" rows come out bit-for-bit the same with and without
+#            channel_types, so the brain data never depend on this rule
+# ----------------------------------------------------------------------------
+test_that("eeg rows are identical with and without channel_types", {
+  with_types    <- make_mixed_type_eeg(with_types = TRUE)
+  without_types <- make_mixed_type_eeg(with_types = FALSE)
+
+  a <- epoch_mixed(with_types,    baseline = c(-0.2, 0), detrend = 1)
+  b <- epoch_mixed(without_types, baseline = c(-0.2, 0), detrend = 1)
+  expect_identical(a$data[1:2, , ], b$data[1:2, , ])
+})
+
+# ----------------------------------------------------------------------------
+# Test 2.63: a type that is not in either list (here "external") is left
+#            alone by both detrend and baseline
+# ----------------------------------------------------------------------------
+test_that("an unlisted channel type is left as recorded", {
+  eeg <- make_mixed_type_eeg()
+  eeg$channel_types[3] <- "external"                  # row 3 was "eog"
+  raw  <- epoch_mixed(eeg, baseline = NULL)
+  both <- epoch_mixed(eeg, baseline = c(-0.2, 0), detrend = 1)
+
+  expect_identical(both$data[3, , ], raw$data[3, , ])
+})
+
+# ----------------------------------------------------------------------------
+# Test 2.64: a channel_types vector that does not have one entry per row is
+#            not trusted: every row is cleaned, as without channel_types
+# ----------------------------------------------------------------------------
+test_that("channel_types of the wrong length is ignored", {
+  eeg <- make_mixed_type_eeg()
+  eeg$channel_types <- c("eeg", "eeg", "status")      # 3 entries for 11 rows
+
+  det <- epoch_mixed(eeg, baseline = NULL, detrend = 1)
+  expect_true(max(abs(det$data[1:10, , ])) < 1e-8)    # rows 3..10 flattened too
+})
+
+
 # ============================================================================
 # TEST SUITE 3: plot_epochs() — Epoch Visualisation
 # ============================================================================

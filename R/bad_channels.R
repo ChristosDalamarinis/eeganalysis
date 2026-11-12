@@ -52,6 +52,22 @@
 #'   the stretch before it. \code{Inf} measures one level for the whole
 #'   recording. Must be at least 2 samples long. Default: 2.
 #'
+#' @param neighbor_window Numeric. Length in seconds of the stretches in
+#'   which each channel's own level (its average) and its own straight-line
+#'   trend (its tilt) are measured and removed before the neighbor-
+#'   correlation check compares the channels. That check takes, at every
+#'   moment, the middle value of a channel's neighbors. On raw data the
+#'   channels stand on very different levels (offsets of tens of mV that also
+#'   drift), so the middle value would always be the same neighbor, and a
+#'   good channel could be compared with a broken one. Removing level and
+#'   tilt in every stretch puts the channels back on the same footing. Only
+#'   the copy of the data given to this check is changed: \code{eeg_obj$data}
+#'   and the other checks are not affected. A last stretch shorter than the
+#'   window joins the stretch before it. \code{Inf} removes one straight line
+#'   from the whole recording. A short window removes more than drift (for
+#'   example 0.2 s also removes everything slower than about 5 Hz); 1 to 5 s
+#'   is the useful range. Must be at least 3 samples long. Default: 2.
+#'
 #' @param flag_outlier_sd_multiplier Numeric. A channel whose std exceeds
 #'   this multiple of the median std across all EEG channels is flagged
 #'   as an outlier. Default: 3.
@@ -99,12 +115,15 @@
 #' function writes them to \code{bads} instead of only printing them. The
 #' global LOF check also always runs.
 #'
-#' The amplitude check measures every channel from its own level, so it also
-#' works on raw data with large DC offsets (see \code{amplitude_window}). The
-#' neighbor-correlation and LOF checks use the data as it is: large offsets
-#' or a strong slow drift can disturb them, so for raw data a high-pass
-#' filter (for example 1 Hz, see \code{\link{eeg_bandpass}}) before this
-#' function gives the most reliable result.
+#' The amplitude check measures every channel from its own level (see
+#' \code{amplitude_window}), and the neighbor-correlation check works on a
+#' copy of the data from which each channel's own level and straight-line
+#' trend are removed in every stretch (see \code{neighbor_window}), so both
+#' also work on raw data with large DC offsets and a strong slow drift. The
+#' LOF check uses the data as it is: large offsets or a strong slow drift can
+#' disturb it, so for raw data a high-pass filter (for example 1 Hz, see
+#' \code{\link{eeg_bandpass}}) before this function gives the most reliable
+#' result for that check.
 #'
 #' The neighbor-correlation check only runs if \code{eeg_obj$montage} is
 #' attached (see \code{\link{set_montage}}); if not, it is skipped with a
@@ -147,6 +166,7 @@ find_bad_channels <- function(eeg_obj,
                                flag_flat_threshold         = 0.5,
                                flag_amplitude_threshold    = 500,
                                amplitude_window            = 2,
+                               neighbor_window             = 2,
                                flag_outlier_sd_multiplier  = 3,
                                k                           = 4,
                                correlation_threshold       = 0.45,
@@ -163,6 +183,26 @@ find_bad_channels <- function(eeg_obj,
   if (!is.matrix(eeg_obj$data)) {
     stop("ERROR: eeg_obj$data must be a numeric matrix (channels x timepoints).",
          call. = FALSE)
+  }
+
+  # The window for removing each channel's own level and trend before the
+  # neighbor-correlation check (checked first, so a wrong value is reported
+  # even when no montage is attached)
+  if (!is.numeric(neighbor_window) || length(neighbor_window) != 1L ||
+      is.na(neighbor_window) || neighbor_window <= 0) {
+    stop("ERROR: 'neighbor_window' must be a single number above 0 (the ",
+         "length in seconds of the stretches in which each channel's own ",
+         "level and trend are removed before the neighbor-correlation ",
+         "check), or Inf.", call. = FALSE)
+  }
+  neighbor_window_samples <- if (is.infinite(neighbor_window)) {
+    ncol(eeg_obj$data)
+  } else {
+    round(neighbor_window * eeg_obj$sampling_rate)
+  }
+  if (neighbor_window_samples < 3) {
+    stop("ERROR: 'neighbor_window' (", neighbor_window, " s) is shorter ",
+         "than 3 samples at ", eeg_obj$sampling_rate, " Hz.", call. = FALSE)
   }
 
   eeg_idx <- which(eeg_obj$channel_types == "eeg" &
@@ -223,8 +263,19 @@ find_bad_channels <- function(eeg_obj,
       neighbor_map <- find_channel_neighbors(positions_sub, k = k)
 
       data_idx <- match(montage_eligible, eeg_obj$channels)
+
+      # The neighbor reference is the middle value (median) of the neighbors
+      # at every moment. That only means something when the channels stand at
+      # the same level, so the check works on a copy from which every
+      # channel's own level and straight-line trend are removed in every
+      # stretch (see .centre_by_stretch()). eeg_obj$data itself is not changed.
+      neighbor_data <- .centre_by_stretch(
+        eeg_obj$data[data_idx, , drop = FALSE],
+        neighbor_window_samples,
+        remove_slope = TRUE)
+
       corr_flags <- flag_low_neighbor_correlation(
-        data                  = eeg_obj$data[data_idx, , drop = FALSE],
+        data                  = neighbor_data,
         channels              = montage_eligible,
         neighbor_map          = neighbor_map,
         correlation_threshold = correlation_threshold,
@@ -413,12 +464,23 @@ flag_channel_quality <- function(eeg_obj,
 #' joins the stretch before it, and a recording shorter than one stretch is a
 #' single stretch.
 #'
+#' With \code{remove_slope = TRUE} the straight line that fits the channel
+#' best in the stretch (its tilt) is subtracted as well, so a channel that
+#' creeps up or down slowly is held flat too. In a short stretch a slow wave
+#' is almost a straight line, so this removes drift that a level alone does
+#' not.
+#'
 #' @param data Numeric matrix, channels x timepoints.
-#' @param window_samples Number of samples in one stretch (at least 1).
+#' @param window_samples Number of samples in one stretch (at least 1; at
+#'   least 3 when \code{remove_slope = TRUE}).
+#' @param remove_slope Logical. If \code{TRUE}, in every stretch also the
+#'   straight line (least squares) through each channel is subtracted. Needs
+#'   at least 3 samples in every stretch. Default \code{FALSE}: the level only.
 #' @return A matrix of the same size and dimnames as \code{data}. In every
-#'   stretch each row has mean 0.
+#'   stretch each row has mean 0 (and, with \code{remove_slope = TRUE}, slope
+#'   0).
 #' @keywords internal
-.centre_by_stretch <- function(data, window_samples) {
+.centre_by_stretch <- function(data, window_samples, remove_slope = FALSE) {
 
   n <- ncol(data)
   if (n == 0L) {
@@ -433,7 +495,17 @@ flag_channel_quality <- function(eeg_obj,
     last  <- if (s == n_stretch) n else s * window_samples
     idx   <- first:last
     block <- data[, idx, drop = FALSE]
-    out[, idx] <- block - rowMeans(block)
+    block <- block - rowMeans(block)
+    if (isTRUE(remove_slope)) {
+      if (length(idx) < 3) {
+        stop("a straight line needs at least 3 samples in a stretch, got ",
+             length(idx), ".", call. = FALSE)
+      }
+      time  <- seq_along(idx) - mean(seq_along(idx))
+      slope <- as.numeric(block %*% time) / sum(time^2)
+      block <- block - outer(slope, time)
+    }
+    out[, idx] <- block
   }
 
   out

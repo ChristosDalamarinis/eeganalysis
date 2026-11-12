@@ -8,7 +8,9 @@
 #' @importFrom grDevices rainbow
 #' @importFrom grid grid 
 #' @importFrom stats fft setNames
+#' @importFrom stats lm rnorm
 #' @importFrom utils txtProgressBar setTxtProgressBar
+#' @importFrom utils modifyList
 #' @importFrom graphics grid
 
 NULL

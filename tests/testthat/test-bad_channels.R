@@ -10,6 +10,7 @@
 #   5. flag_lof_outlier_channels()     - Internal: global Local Outlier Factor
 #   6. .column_medians()               - Internal: middle value of every column at once
 #   7. .centre_by_stretch()            - Internal: subtract each channel's own level
+#                                        (and, on request, its straight-line trend)
 #
 # Test suites:
 #   1. flag_channel_quality()
@@ -25,6 +26,7 @@
 #  11. .centre_by_stretch()
 #  12. The amplitude check measures from each channel's own level
 #  13. Raw BioSemi-style data, end to end
+#  14. The neighbor check on raw data: offsets and slow drift
 #
 # Author: Christos Dalamarinis
 # Date: Sep 2026
@@ -1027,20 +1029,25 @@ test_that("find_bad_channels passes amplitude_window on to the amplitude check",
 # WHAT THIS TESTS: Taking all the middle values at once instead of one moment at
 # a time must not change any result. The correlations below were recorded from
 # the previous code on the existing problem fixture (robust = TRUE uses the
-# median, FALSE the mean). Also: a missing value in a neighbour still gives a
-# flagged "correlation = NA".
+# median, FALSE the mean). They are checked on the helper itself, which gets
+# the data as they are: find_bad_channels() now hands it a cleaned copy (see
+# Suite 14), so its own numbers move in the third decimal. Also: a missing
+# value in a neighbour still gives a flagged "correlation = NA".
 test_that("the neighbor-correlation check gives the same correlations as before", {
   eeg <- .make_problem_eeg_with_montage()
+  neighbor_map <- find_channel_neighbors(eeg$montage$positions, k = 4)
+  check <- function(robust) {
+    suppressWarnings(eeganalysis:::flag_low_neighbor_correlation(
+      eeg$data, eeg$channels, neighbor_map, robust = robust))
+  }
 
-  med <- suppressWarnings(find_bad_channels(eeg, robust = TRUE, return_details = TRUE))$flags
-  med <- med[grepl("correlation", med$reason), ]
+  med <- check(TRUE)
   expect_equal(med$channel, c("F3", "Pz", "O1"))
   expect_match(med$value[1], "^correlation = -0.031 ")
   expect_match(med$value[2], "^correlation = 0.074 ")
   expect_match(med$value[3], "^correlation = NA ")
 
-  avg <- suppressWarnings(find_bad_channels(eeg, robust = FALSE, return_details = TRUE))$flags
-  avg <- avg[grepl("correlation", avg$reason), ]
+  avg <- check(FALSE)
   expect_equal(avg$channel, c("F3", "Cz", "P3", "P4", "Pz", "O1", "O2"))
   expect_equal(sub(" .*", "", sub("^correlation = ", "", avg$value)),
                c("-0.031", "0.282", "0.213", "0.276", "0.076", "NA", "0.218"))
@@ -1056,6 +1063,287 @@ test_that("a missing value in the neighbors still makes the check report NA", {
   flags <- eeganalysis:::flag_low_neighbor_correlation(data, lay, neighbor_map, robust = TRUE)
   expect_equal(flags$channel, "Cz")
   expect_match(flags$value, "^correlation = NA ")
+})
+
+
+
+# ============================================================================
+# TEST SUITE 14: the neighbor check on raw data (offsets and slow drift)
+# ============================================================================
+#
+# The neighbor check compares a channel with the middle value (median) of its
+# neighbors at every moment. On raw data the channels stand at very different
+# levels (offsets of tens of mV that also drift), so the middle value is
+# always the same neighbor - a good channel can end up compared with a broken
+# one. find_bad_channels() therefore hands the check a copy of the data from
+# which every channel's own level and straight-line trend are removed in every
+# stretch of neighbor_window seconds (.centre_by_stretch(remove_slope = TRUE)).
+# Tests 14.1-14.4 check that helper by hand; 14.5 is the worked example of the
+# problem; 14.6-14.11 run find_bad_channels() on 64 BioSemi electrodes.
+
+.neighbor_flagged <- function(flags) {
+  flags$channel[grepl("correlation", flags$reason)]
+}
+
+# ----------------------------------------------------------------------------
+# Test 14.1: removing the straight line, worked by hand
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: A row that is a perfect straight line (10, 12, 14, 16) has
+# nothing left once its line is removed; with the level only, its tilt
+# (-3, -1, 1, 3) stays. A line plus the wiggle (1, -1, 1, -1) leaves the wiggle
+# minus its own tiny tilt: time is (-1.5, -0.5, 0.5, 1.5), the slope of the
+# wiggle is -2 / 5 = -0.4, so what is left is (0.4, -1.2, 1.2, -0.4).
+test_that(".centre_by_stretch(remove_slope = TRUE) removes the straight line, by hand", {
+  m <- rbind(a = c(10, 12, 14, 16))
+  expect_equal(eeganalysis:::.centre_by_stretch(m, 4, remove_slope = TRUE),
+               rbind(a = c(0, 0, 0, 0)))
+  expect_equal(eeganalysis:::.centre_by_stretch(m, 4),
+               rbind(a = c(-3, -1, 1, 3)))
+
+  w <- rbind(w = 100 + 2 * c(-1.5, -0.5, 0.5, 1.5) + c(1, -1, 1, -1))
+  expect_equal(eeganalysis:::.centre_by_stretch(w, 4, remove_slope = TRUE),
+               rbind(w = c(0.4, -1.2, 1.2, -0.4)))
+})
+
+# ----------------------------------------------------------------------------
+# Test 14.2: every stretch gets its own line; the leftover joins the last one
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Two stretches of 3 samples, (1, 2, 3) and (10, 20, 30): each
+# is its own straight line, so both end at zero (the level only would leave
+# -1 0 1 and -10 0 10). Seven samples with a window of 3 are two stretches,
+# 1:3 and 4:7 (the leftover sample joins the last), here (1, 2, 3) and
+# (5, 4, 3, 2), both straight. A recording shorter than one window is a single
+# stretch.
+test_that(".centre_by_stretch(remove_slope = TRUE) works stretch by stretch", {
+  m <- rbind(a = c(1, 2, 3, 10, 20, 30))
+  expect_equal(eeganalysis:::.centre_by_stretch(m, 3, remove_slope = TRUE),
+               rbind(a = rep(0, 6)))
+  expect_equal(eeganalysis:::.centre_by_stretch(m, 3),
+               rbind(a = c(-1, 0, 1, -10, 0, 10)))
+
+  m7 <- rbind(a = c(1, 2, 3, 5, 4, 3, 2))
+  expect_equal(eeganalysis:::.centre_by_stretch(m7, 3, remove_slope = TRUE),
+               rbind(a = rep(0, 7)))
+
+  m5 <- rbind(a = c(1, 3, 5, 7, 9))
+  expect_equal(eeganalysis:::.centre_by_stretch(m5, 100, remove_slope = TRUE),
+               rbind(a = rep(0, 5)))
+})
+
+# ----------------------------------------------------------------------------
+# Test 14.3: properties, and the level-only call is the old call
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: On random data every stretch of every row ends with level 0
+# and slope 0, shape and row names are kept, and remove_slope = FALSE gives
+# exactly what the call without the argument gives (the amplitude check, which
+# never passes the argument, is therefore unchanged).
+test_that("level and tilt are zero in every stretch of every row", {
+  set.seed(3)
+  m   <- matrix(rnorm(4 * 50, 1000, 30), 4, 50, dimnames = list(paste0("c", 1:4), NULL))
+  out <- eeganalysis:::.centre_by_stretch(m, 10, remove_slope = TRUE)
+  expect_identical(dim(out), dim(m))
+  expect_identical(rownames(out), rownames(m))
+  for (s in 1:5) {
+    idx <- ((s - 1) * 10 + 1):(s * 10)
+    tc  <- seq_along(idx) - mean(seq_along(idx))
+    expect_equal(unname(rowMeans(out[, idx])), rep(0, 4), tolerance = 1e-9)
+    expect_equal(as.numeric(out[, idx] %*% tc), rep(0, 4), tolerance = 1e-9)
+  }
+  expect_identical(eeganalysis:::.centre_by_stretch(m, 10, remove_slope = FALSE),
+                   eeganalysis:::.centre_by_stretch(m, 10))
+})
+
+# ----------------------------------------------------------------------------
+# Test 14.4: a line needs 3 samples; a missing value spoils only its stretch
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Two samples fit any line exactly and would leave zeros, so
+# stretches of fewer than 3 samples are refused (a recording of 2 samples too).
+# A missing value makes the stretch it sits in missing for that row only.
+test_that(".centre_by_stretch(remove_slope = TRUE) needs 3 samples and keeps NA local", {
+  m <- matrix(rnorm(2 * 20), 2)
+  expect_error(eeganalysis:::.centre_by_stretch(m, 2, remove_slope = TRUE),
+               "at least 3 samples")
+  expect_no_error(eeganalysis:::.centre_by_stretch(m, 3, remove_slope = TRUE))
+  expect_error(eeganalysis:::.centre_by_stretch(matrix(c(1, 2), 1), 5, remove_slope = TRUE),
+               "at least 3 samples")
+
+  m[1, 2] <- NA
+  out <- eeganalysis:::.centre_by_stretch(m, 5, remove_slope = TRUE)
+  expect_true(all(is.na(out[1, 1:5])))
+  expect_false(anyNA(out[1, 6:20]))
+  expect_false(anyNA(out[2, ]))
+})
+
+# ----------------------------------------------------------------------------
+# Test 14.5: the worked example - a good channel, a broken neighbor, other levels
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: FT8 and its neighbors FC6 (good, level 0), T8 (broken: noise,
+# level 100) and C6 (good, level 200) over 6 moments. Raw, the middle value of
+# the three neighbors is T8's own numbers at every moment (105 101 104 102 106
+# 100), FT8 is compared with noise (correlation -0.717) and flagged. With each
+# channel's own level removed the middle value is FC6's wiggle
+# (-1.9 -0.1 -0.9 0.9 0.1 1.9); with level and tilt removed it is no longer
+# flagged either. The helper itself still works on the numbers it is given.
+test_that("a good channel next to a broken neighbor at another level is not flagged once the levels agree", {
+  s <- c(1, 3, 2, 4, 3, 5)
+  d <- rbind(FT8 = s + 1000,
+             FC6 = s + c(0.1, -0.1, 0.1, -0.1, 0.1, -0.1),
+             T8  = c(5, 1, 4, 2, 6, 0) + 100,
+             C6  = s + 200 + c(-0.1, 0.1, -0.1, 0.1, -0.1, 0.1))
+  nmap <- data.frame(channel = "FT8", neighbor = c("FC6", "T8", "C6"),
+                     rank = 1:3, distance = 1, stringsAsFactors = FALSE)
+  neighbors <- c("FC6", "T8", "C6")
+
+  expect_equal(unname(eeganalysis:::.column_medians(d[neighbors, ])),
+               c(105, 101, 104, 102, 106, 100))
+  raw <- eeganalysis:::flag_low_neighbor_correlation(d, rownames(d), nmap)
+  expect_equal(raw$channel, "FT8")
+  expect_match(raw$value, "^correlation = -0.717 ")
+
+  level <- eeganalysis:::.centre_by_stretch(d, 6)
+  expect_equal(unname(eeganalysis:::.column_medians(level[neighbors, ])),
+               c(-1.9, -0.1, -0.9, 0.9, 0.1, 1.9), tolerance = 1e-9)
+  expect_equal(nrow(eeganalysis:::flag_low_neighbor_correlation(level, rownames(d), nmap)), 0)
+
+  tilt <- eeganalysis:::.centre_by_stretch(d, 6, remove_slope = TRUE)
+  expect_equal(nrow(eeganalysis:::flag_low_neighbor_correlation(tilt, rownames(d), nmap)), 0)
+})
+
+# ----------------------------------------------------------------------------
+# Test 14.6: 64 electrodes on offsets: the neighbor check flags the broken one only
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: 64 BioSemi electrodes, every one on an offset of up to +-30000
+# uV, T8 broken. Before the cleaning the neighbor check flagged F7, Fz, FCz and
+# C6 as well (good channels compared with a copy of one neighbor); now it flags
+# T8 only.
+test_that("with offsets the neighbor check flags the broken channel and nothing else", {
+  eeg <- .make_biosemi_eeg()
+  res <- suppressMessages(find_bad_channels(eeg, return_details = TRUE))
+  expect_equal(.neighbor_flagged(res$flags), "T8")
+  expect_true("T8" %in% res$eeg_obj$bads)
+})
+
+# ----------------------------------------------------------------------------
+# Test 14.7: the same with a strong slow drift on top of the offsets
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Offsets plus a 0.02 Hz drift of 800 uV on every channel (its
+# own phase each). Before the cleaning the check flagged 22 good channels as
+# well; now T8 only. The level alone would not have been enough here.
+test_that("with offsets and a strong slow drift the neighbor check still flags only the broken channel", {
+  eeg <- .make_biosemi_eeg(drift = 800)
+  res <- suppressMessages(find_bad_channels(eeg, return_details = TRUE))
+  expect_equal(.neighbor_flagged(res$flags), "T8")
+})
+
+# ----------------------------------------------------------------------------
+# Test 14.8: neighbor_window reaches the check
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: 10 s with a 2000 uV drift. With 2 s stretches the neighbor
+# check has no false alarms beyond the 2 this made-up recording gives anyway;
+# with one straight line for the whole recording (Inf) it flags many good
+# channels, and a window longer than the recording is the same as Inf.
+test_that("neighbor_window is passed on: 2 s stretches follow a strong drift, one line does not", {
+  eeg <- .make_biosemi_eeg(seconds = 10, drift = 2000)
+  extra <- function(w) {
+    res <- suppressMessages(find_bad_channels(eeg, neighbor_window = w, return_details = TRUE))
+    length(setdiff(.neighbor_flagged(res$flags), "T8"))
+  }
+  expect_lte(extra(2), 3)
+  expect_gt(extra(Inf), 10)
+  expect_identical(extra(100), extra(Inf))
+})
+
+# ----------------------------------------------------------------------------
+# Test 14.9: neighbor_window: default and checks
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: 2 is the default; wrong values are refused with a clear
+# message, also when no montage is attached (the check would not run); the
+# shortest window is 3 samples.
+test_that("neighbor_window defaults to 2 s and is validated", {
+  eeg <- .make_biosemi_eeg()
+  expect_identical(
+    suppressMessages(find_bad_channels(eeg, return_details = TRUE)),
+    suppressMessages(find_bad_channels(eeg, neighbor_window = 2, return_details = TRUE)))
+
+  bad_values <- list(0, -1, NA, NA_real_, NaN, "a", c(2, 3), numeric(0), NULL, TRUE)
+  for (v in bad_values) {
+    expect_error(suppressMessages(find_bad_channels(eeg, neighbor_window = v)),
+                 "'neighbor_window' must be a single number above 0", info = deparse(v))
+  }
+
+  no_montage <- .make_clean_eeg()                              # 256 Hz, no montage
+  for (v in bad_values) {
+    expect_error(suppressMessages(find_bad_channels(no_montage, neighbor_window = v)),
+                 "'neighbor_window' must be a single number above 0", info = deparse(v))
+  }
+  expect_error(suppressMessages(find_bad_channels(no_montage, neighbor_window = 2 / 256)),
+               "shorter than 3 samples at 256 Hz")
+  expect_error(suppressMessages(find_bad_channels(no_montage, neighbor_window = 0.001)),
+               "shorter than 3 samples at 256 Hz")
+  # 3 samples is the shortest window that is accepted (the LOF check may warn
+  # that this small recording has few channels - not what is tested here)
+  expect_no_error(suppressWarnings(suppressMessages(
+    find_bad_channels(no_montage, neighbor_window = 3 / 256))))
+})
+
+# ----------------------------------------------------------------------------
+# Test 14.10: only a copy is cleaned
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: The data come back exactly as they went in, and the other
+# checks (flat, amplitude, noise, LOF) do not depend on neighbor_window: their
+# flags are the same with 2 s stretches and with one line.
+test_that("the cleaned copy is used by the neighbor check only", {
+  eeg <- .make_biosemi_eeg(drift = 800)
+  res <- suppressMessages(find_bad_channels(eeg, return_details = TRUE))
+  expect_identical(res$eeg_obj$data, eeg$data)
+
+  without_neighbor <- function(w) {
+    f <- suppressMessages(find_bad_channels(eeg, neighbor_window = w, return_details = TRUE))$flags
+    f <- f[!grepl("correlation", f$reason), ]
+    rownames(f) <- NULL
+    f
+  }
+  expect_identical(without_neighbor(2), without_neighbor(Inf))
+})
+
+# ----------------------------------------------------------------------------
+# Test 14.11: robust = FALSE sees the cleaned copy too
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: With the plain average of the neighbors as reference the
+# broken T8 spoils its own neighbors (that is what robust = TRUE is for), but
+# the drift no longer floods the result: a handful of channels, not the 30 or
+# so the raw data gave.
+test_that("robust = FALSE also works on the cleaned copy", {
+  eeg <- .make_biosemi_eeg(drift = 800)
+  res <- suppressMessages(find_bad_channels(eeg, robust = FALSE, return_details = TRUE))
+  flagged <- .neighbor_flagged(res$flags)
+  expect_true("T8" %in% flagged)
+  expect_lt(length(flagged), 8)
+})
+
+# ----------------------------------------------------------------------------
+# Test 14.12: numbers through find_bad_channels()
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: On the existing problem fixture (13 channels, no offsets,
+# 400 samples = one stretch) the same channels are flagged as before; the
+# correlations, taken on the cleaned copy, move in the third decimal (Test 13.3
+# keeps the numbers of the helper on the data as they are). Recorded from this
+# code.
+test_that("through find_bad_channels() the neighbor check flags the same channels, on the cleaned copy", {
+  eeg <- .make_problem_eeg_with_montage()
+
+  med <- suppressWarnings(find_bad_channels(eeg, robust = TRUE, return_details = TRUE))$flags
+  med <- med[grepl("correlation", med$reason), ]
+  expect_equal(med$channel, c("F3", "Pz", "O1"))
+  expect_match(med$value[1], "^correlation = -0.032 ")
+  expect_match(med$value[2], "^correlation = 0.076 ")
+  expect_match(med$value[3], "^correlation = NA ")
+
+  avg <- suppressWarnings(find_bad_channels(eeg, robust = FALSE, return_details = TRUE))$flags
+  avg <- avg[grepl("correlation", avg$reason), ]
+  expect_equal(avg$channel, c("F3", "Cz", "P3", "P4", "Pz", "O1", "O2"))
+  expect_equal(sub(" .*", "", sub("^correlation = ", "", avg$value)),
+               c("-0.031", "0.284", "0.215", "0.28", "0.079", "NA", "0.221"))
 })
 
 
@@ -1083,4 +1371,8 @@ test_that("a missing value in the neighbors still makes the check report NA", {
 #   and noise checks unchanged, flag wording, amplitude_window default and
 #   validation, end to end on 64 BioSemi electrodes, neighbor-check numbers
 #   identical to the previous implementation
+# - neighbor check on raw data: straight-line removal by hand, a good channel
+#   next to a broken neighbor at another level, 64 BioSemi electrodes with
+#   offsets and with slow drift, neighbor_window default/validation/effect,
+#   data and the other checks untouched, numbers through find_bad_channels()
 # ============================================================================

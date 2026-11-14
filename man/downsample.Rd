@@ -101,7 +101,8 @@ The function performs the following steps:
 \item Validates input parameters and data quality
 \item Calculates downsampling factor (must result in integer ratio)
 \item Applies anti-aliasing low-pass Butterworth filter at cutoff frequency
-\item Decimates the signal by selecting every nth sample
+(to every row except the trigger rows, see below)
+\item Decimates the signal by selecting every nth sample (trigger rows: see below)
 \item Updates time vector and event onset times accordingly
 \item Validates and adjusts events for new sampling rate
 }
@@ -114,6 +115,18 @@ IIR filter of \code{\link{eeg_bandpass}} (a chain of second-order sections),
 and the signal is padded at both ends first, so the first and last moments of
 the recording are not distorted, also when the data carry a large offset (as
 raw BioSemi data often do).
+
+\strong{Trigger (status) rows:}
+A row of type \code{"status"} in \code{eeg_obj$channel_types} holds trigger
+codes, not voltages, so it is never filtered: a filter rounds off the steps
+between codes and overshoots (a code 255 can come out as any number from
+about -20 to 275), and a pulse of one or two samples can disappear. Such a row
+is shortened the way MNE-Python shortens its stimulus channels: every new
+sample takes the first non-zero value among the original samples it replaces,
+and 0 when they are all zero. The codes therefore stay exact, and a pulse
+shorter than the downsampling factor is kept. This is done for both methods,
+\code{"decimate"} and \code{"simple"}. A row is a trigger row because of its
+type, not its name.
 
 \strong{Frequency Preservation:}
 The cutoff frequency determines what frequencies are preserved:

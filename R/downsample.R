@@ -73,7 +73,8 @@
 #' 1. Validates input parameters and data quality
 #' 2. Calculates downsampling factor (must result in integer ratio)
 #' 3. Applies anti-aliasing low-pass Butterworth filter at cutoff frequency
-#' 4. Decimates the signal by selecting every nth sample
+#'    (to every row except the trigger rows, see below)
+#' 4. Decimates the signal by selecting every nth sample (trigger rows: see below)
 #' 5. Updates time vector and event onset times accordingly
 #' 6. Validates and adjusts events for new sampling rate
 #'
@@ -85,6 +86,18 @@
 #' and the signal is padded at both ends first, so the first and last moments of
 #' the recording are not distorted, also when the data carry a large offset (as
 #' raw BioSemi data often do).
+#'
+#' \strong{Trigger (status) rows:}
+#' A row of type \code{"status"} in \code{eeg_obj$channel_types} holds trigger
+#' codes, not voltages, so it is never filtered: a filter rounds off the steps
+#' between codes and overshoots (a code 255 can come out as any number from
+#' about -20 to 275), and a pulse of one or two samples can disappear. Such a row
+#' is shortened the way MNE-Python shortens its stimulus channels: every new
+#' sample takes the first non-zero value among the original samples it replaces,
+#' and 0 when they are all zero. The codes therefore stay exact, and a pulse
+#' shorter than the downsampling factor is kept. This is done for both methods,
+#' \code{"decimate"} and \code{"simple"}. A row is a trigger row because of its
+#' type, not its name.
 #'
 #' \strong{Frequency Preservation:}
 #' The cutoff frequency determines what frequencies are preserved:
@@ -283,7 +296,16 @@ downsample <- function(eeg_obj,
   
   n_channels <- nrow(eeg_obj$data)
   n_timepoints <- ncol(eeg_obj$data)
-  
+
+  # Trigger (status) rows hold codes, not voltages: they are not filtered, and
+  # are shortened with .decimate_status_row() instead (see below)
+  status_rows <- integer(0)
+  if (!is.null(eeg_obj$channel_types) &&
+      length(eeg_obj$channel_types) == n_channels) {
+    status_rows <- which(eeg_obj$channel_types == "status")
+  }
+  filter_rows <- setdiff(seq_len(n_channels), status_rows)
+
   # Check for very short recordings
   if (n_timepoints < downsample_factor * 10) {
     warning("Very short recording (", n_timepoints, " samples). ",
@@ -320,9 +342,10 @@ downsample <- function(eeg_obj,
 
     # Apply filter to each channel: forward and backward (zero phase), with the
     # signal padded at both ends, so the first and last moments of the
-    # recording are not distorted
+    # recording are not distorted. Trigger rows are left out (they stay 0 here
+    # and are filled in below)
     filtered_data <- matrix(0, nrow = n_channels, ncol = n_timepoints)
-    for (ch in 1:n_channels) {
+    for (ch in filter_rows) {
       filtered_data[ch, ] <- .iir_filter(eeg_obj$data[ch, ], sos, "zero", padlen)
     }
     
@@ -347,7 +370,16 @@ downsample <- function(eeg_obj,
     decimate_indices <- seq(1, n_timepoints, by = downsample_factor)
     downsampled_data <- eeg_obj$data[, decimate_indices, drop = FALSE]
   }
-  
+
+  # ========== TRIGGER (STATUS) ROWS ==========
+
+  # Same for both methods: no filter, and the first non-zero value of each
+  # window of original samples, so codes stay exact and short pulses are kept
+  for (ch in status_rows) {
+    downsampled_data[ch, ] <- .decimate_status_row(eeg_obj$data[ch, ],
+                                                   downsample_factor)
+  }
+
   # ========== UPDATE TIME VECTOR ==========
   
   new_times <- eeg_obj$times[decimate_indices]
@@ -452,12 +484,54 @@ downsample <- function(eeg_obj,
       cat("  Filter order:            ", filter_order, "\n")
       cat("  Filter cutoff:           ", round(filter_cutoff, 1), " Hz\n")
     }
+    if (length(status_rows) > 0) {
+      cat("  Trigger rows (unfiltered):", length(status_rows), "\n")
+    }
     cat("  Event strategy:          ", event_strategy, "\n")
     cat("  Events retained:         ", nrow(new_events), " / ", nrow(eeg_obj$events), "\n")
     cat(strrep("=", 70), "\n\n")
   }
   
   return(downsampled_eeg)
+}
+
+#' Shorten a Trigger (Status) Row Without Filtering (internal)
+#'
+#' Keeps every \code{factor}-th sample of a trigger row, but looks at the whole
+#' stretch of original samples that each new sample replaces: a new sample takes
+#' the first non-zero value of its stretch, and 0 when the whole stretch is
+#' zero. So the trigger codes stay exact (a filter would turn a code 255 into
+#' numbers from about -20 to 275), and a pulse that is shorter than
+#' \code{factor} samples is still found. This is the rule of MNE-Python's
+#' \code{_resample_stim_channels}. Stretch \code{k} is the original samples
+#' \code{(k - 1) * factor + 1} to \code{k * factor}; the last stretch can be
+#' shorter. The number of new samples is the same as the one that
+#' \code{seq(1, length(x), by = factor)} gives for the other rows.
+#'
+#' @param x Numeric vector, one trigger row (codes, 0 meaning no trigger).
+#' @param factor Positive whole number, the downsampling factor.
+#'
+#' @return Numeric vector of \code{length(seq(1, length(x), by = factor))}
+#'   trigger values.
+#'
+#' @seealso \code{\link{downsample}}
+#' @keywords internal
+.decimate_status_row <- function(x, factor) {
+
+  factor <- as.integer(factor)
+  n_new  <- length(seq(1L, length(x), by = factor))
+
+  # One column per stretch of `factor` original samples; the last stretch is
+  # filled up with zeros, which are never picked before a real value
+  padded  <- c(x, rep(0, n_new * factor - length(x)))
+  windows <- matrix(padded, nrow = factor)
+
+  # Row of the first non-zero value in each column (row 1 when all are zero, and
+  # then row 1 is 0 anyway). A missing value counts as non-zero, as in numpy.
+  nonzero <- is.na(windows) | windows != 0
+  first   <- max.col(t(nonzero), ties.method = "first")
+
+  windows[cbind(first, seq_len(n_new))]
 }
 
 # End of downsample.R

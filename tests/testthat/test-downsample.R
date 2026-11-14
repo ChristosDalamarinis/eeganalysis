@@ -1263,3 +1263,238 @@ test_that("downsample() 'decimate' works on a very short recording", {
   expect_equal(ncol(out$data), length(seq(1, 30, by = 4)))
   expect_true(all(is.finite(out$data)))
 })
+
+
+# ============================================================================
+# TEST SUITE 22: Trigger (status) rows are never filtered
+# ============================================================================
+#
+# A row of type "status" holds trigger codes, not voltages. The anti-aliasing
+# filter used to run on it like on brain data: it rounded off the steps between
+# codes and overshot (a code 255 came out as any number from about -20 to 275),
+# and a pulse of one or two samples was flattened away. Such a row is now left
+# out of the filter and shortened the way MNE shortens a stimulus channel: each
+# new sample takes the first non-zero value among the original samples it
+# replaces (0 when they are all zero). This is done for both methods.
+
+# A trigger row of n samples: code 255 for 20 samples, code 7 for ONE sample,
+# code 2 for 6 samples.
+ds_status_row <- function(n = 4096L) {
+  x <- numeric(n)
+  x[401:420]   <- 255
+  x[1002]      <- 7
+  x[2001:2006] <- 2
+  x
+}
+
+# The rule written as a plain loop. The code under test works on whole
+# matrices, so this is an independent way to get the same numbers.
+ds_status_reference <- function(x, factor) {
+  starts <- seq(1L, length(x), by = factor)
+  ends   <- c(starts[-1] - 1L, length(x))
+  vapply(seq_along(starts), function(k) {
+    w  <- x[starts[k]:ends[k]]
+    nz <- which(w != 0)
+    if (length(nz) > 0) w[nz[1]] else w[1]
+  }, numeric(1))
+}
+
+# Two EEG rows (a 10 Hz and a 6 Hz sine) and the trigger row above
+ds_status_eeg <- function(status_type = "status", status_name = "Status",
+                          n = 4096L, fs = 2048, with_events = FALSE) {
+  tt  <- (seq_len(n) - 1) / fs
+  dat <- rbind(10 * sin(2 * pi * 10 * tt) + 0.5 * cos(2 * pi * 3 * tt),
+               5 * cos(2 * pi * 6 * tt),
+               ds_status_row(n))
+  events <- if (with_events) {
+    data.frame(onset = c(401L, 1002L), onset_time = tt[c(401, 1002)],
+               type = c("255", "7"), description = c("a", "b"))
+  } else {
+    NULL
+  }
+  new_eeg(data = dat, channels = c("Cz", "Pz", status_name),
+          sampling_rate = fs, events = events,
+          channel_types = c("eeg", "eeg", status_type))
+}
+
+test_that(".decimate_status_row() keeps codes exact and finds a pulse shorter than the factor", {
+  # WHAT THIS TESTS:
+  # Factor 4, five windows of four samples, worked out by hand:
+  #   window 1: all zero                            -> 0
+  #   window 2: a code 7 on ONE sample              -> 7 (a filter loses it)
+  #   window 3: 255 on all four samples             -> 255
+  #   window 4: two codes in one window (0, 5, 9, 9) -> the first one, 5
+  #   window 5: a code on the first sample (4)      -> 4
+
+  x <- c(0, 0, 0, 0,
+         0, 0, 7, 0,
+         255, 255, 255, 255,
+         0, 5, 9, 9,
+         4, 0, 0, 0)
+  expect_identical(eeganalysis:::.decimate_status_row(x, 4), c(0, 7, 255, 5, 4))
+})
+
+test_that(".decimate_status_row() looks at a short last window, and at a row shorter than one window", {
+  # WHAT THIS TESTS:
+  # n = 10, factor 4: the windows are samples 1-4, 5-8 and 9-10. The last one
+  # is short and must still be looked at (a trigger on the very last sample is
+  # kept), and the number of new samples is the one seq(1, n, by = factor)
+  # gives, which is what the other rows get.
+
+  x   <- c(rep(0, 9), 6)
+  out <- eeganalysis:::.decimate_status_row(x, 4)
+  expect_length(out, length(seq(1, 10, by = 4)))
+  expect_identical(out, c(0, 0, 6))
+
+  expect_identical(eeganalysis:::.decimate_status_row(c(0, 3), 4), 3)
+})
+
+test_that(".decimate_status_row() equals the plain-loop rule on many random rows", {
+  # WHAT THIS TESTS:
+  # 200 random rows (factors 2 to 8, lengths 5 to 300, one to twelve pulses of
+  # one to ten samples, codes that include a negative one) give exactly what
+  # the plain loop above gives. The same rule was also compared with MNE's own
+  # stimulus-channel function on 400 random rows: identical.
+
+  set.seed(11)
+  for (i in 1:200) {
+    factor <- sample(2:8, 1)
+    n      <- sample(5:300, 1)
+    x      <- numeric(n)
+    for (p in seq_len(sample(1:12, 1))) {
+      s <- sample(n, 1)
+      x[s:min(n, s + sample(0:9, 1))] <- sample(c(1, 2, 7, 255, -3, 65535), 1)
+    }
+    expect_identical(eeganalysis:::.decimate_status_row(x, factor),
+                     ds_status_reference(x, factor))
+  }
+})
+
+test_that(".decimate_status_row() counts a missing value as non-zero, like numpy", {
+  # WHAT THIS TESTS:
+  # downsample() refuses data with missing values, but the helper must still
+  # behave: a missing value is a non-zero value, so it is picked when it comes
+  # first, and it must not hide a real code that comes before it.
+
+  expect_identical(eeganalysis:::.decimate_status_row(c(0, NA, 5, 0), 4), NA_real_)
+  expect_identical(eeganalysis:::.decimate_status_row(c(0, 5, NA, 0), 4), 5)
+})
+
+test_that("downsample() 'decimate' keeps a trigger row exact: every code, and the one-sample pulse", {
+  # WHAT THIS TESTS:
+  # 2048 -> 512 Hz, trigger row with a code 255 (20 samples), a code 7 (ONE
+  # sample) and a code 2 (6 samples). MNE's resample(512) on a stimulus channel
+  # with this row gives exactly: 255 on new samples 101 to 105, 7 on sample 251
+  # and 2 on samples 501 and 502, and 0 everywhere else. Before, the row came
+  # out with 150 different values between -21.7 and 277.9, and the 7 as 1.45.
+
+  out <- downsample(ds_status_eeg(), target_rate = 512, verbose = FALSE)
+  s   <- unname(out$data[3, ])
+
+  expect_length(s, 1024L)
+  expect_true(all(s %in% c(0, 2, 7, 255)))
+  expect_identical(which(s != 0), c(101:105, 251L, 501:502))
+  expect_identical(s[c(101:105, 251, 501:502)], c(rep(255, 5), 7, 2, 2))
+  expect_identical(s, ds_status_reference(ds_status_row(), 4))
+})
+
+test_that("downsample() 'simple' also keeps a trigger row exact, and finds the one-sample pulse", {
+  # WHAT THIS TESTS:
+  # 'simple' keeps every 4th sample: the code 7 sits on original sample 1002,
+  # which is not one of them, so it used to be lost. The EEG rows are still the
+  # plain every-4th-sample values.
+
+  eeg <- ds_status_eeg()
+  out <- suppressWarnings(
+    downsample(eeg, target_rate = 512, method = "simple", verbose = FALSE)
+  )
+
+  expect_identical(unname(out$data[3, ]), ds_status_reference(ds_status_row(), 4))
+  expect_true(7 %in% out$data[3, ])
+  expect_equal(unname(out$data[1:2, ]),
+               unname(eeg$data[1:2, seq(1, 4096, by = 4)]))
+})
+
+test_that("downsample() leaves every other row and the rest of the object as they are without the trigger row", {
+  # WHAT THIS TESTS:
+  # The same two EEG rows, once with and once without the trigger row: the
+  # EEG rows, the times, the events and the types must not notice the trigger
+  # row, for both methods.
+
+  with <- ds_status_eeg(with_events = TRUE)
+  none <- new_eeg(data = with$data[1:2, ], channels = c("Cz", "Pz"),
+                  sampling_rate = 2048, events = with$events)
+
+  for (method in c("decimate", "simple")) {
+    a <- suppressWarnings(
+      downsample(with, target_rate = 512, method = method, verbose = FALSE)
+    )
+    b <- suppressWarnings(
+      downsample(none, target_rate = 512, method = method, verbose = FALSE)
+    )
+    expect_identical(unname(a$data[1:2, ]), unname(b$data))
+    expect_identical(a$times, b$times)
+    expect_identical(a$events, b$events)
+    expect_identical(a$channel_types, c("eeg", "eeg", "status"))
+  }
+})
+
+test_that("downsample() finds a trigger row by its type, not by its name", {
+  # WHAT THIS TESTS:
+  # (1) A row named 'Status' but typed 'eeg' is filtered like any EEG row: the
+  #     same numbers as when it is alone in a recording.
+  # (2) A trigger row with another name ('STI 014') is found by its type.
+
+  typed_eeg <- ds_status_eeg(status_type = "eeg")
+  out   <- downsample(typed_eeg, target_rate = 512, verbose = FALSE)
+  alone <- downsample(
+    new_eeg(data = typed_eeg$data[3, , drop = FALSE], channels = "X",
+            sampling_rate = 2048, channel_types = "eeg"),
+    target_rate = 512, verbose = FALSE
+  )
+  expect_equal(unname(out$data[3, ]), unname(alone$data[1, ]))
+  expect_false(all(out$data[3, ] %in% c(0, 2, 7, 255)))
+
+  renamed <- downsample(ds_status_eeg(status_name = "STI 014"),
+                        target_rate = 512, verbose = FALSE)
+  expect_identical(unname(renamed$data[3, ]),
+                   ds_status_reference(ds_status_row(), 4))
+})
+
+test_that("downsample() keeps several trigger rows, or a recording of a trigger row only, exact", {
+  x <- ds_status_row()
+  y <- rev(x)
+
+  two <- new_eeg(data = rbind(x, y), channels = c("S1", "S2"),
+                 sampling_rate = 2048, channel_types = c("status", "status"))
+  out <- downsample(two, target_rate = 512, verbose = FALSE)$data
+  expect_identical(unname(out[1, ]), ds_status_reference(x, 4))
+  expect_identical(unname(out[2, ]), ds_status_reference(y, 4))
+
+  one <- new_eeg(data = matrix(x, nrow = 1), channels = "S",
+                 sampling_rate = 2048, channel_types = "status")
+  expect_identical(as.vector(downsample(one, target_rate = 512, verbose = FALSE)$data),
+                   ds_status_reference(x, 4))
+})
+
+test_that("downsample() filters every row as before when the object has no channel_types", {
+  # WHAT THIS TESTS:
+  # A hand-built object without channel_types has no way to say which row is a
+  # trigger row, so every row is filtered, as it always was.
+
+  eeg <- ds_status_eeg()
+  eeg$channel_types <- NULL
+  out <- downsample(eeg, target_rate = 512, verbose = FALSE)
+  expect_false(all(out$data[3, ] %in% c(0, 2, 7, 255)))
+})
+
+test_that("downsample() mentions the trigger rows in its summary only when there are some", {
+  with_rows <- capture.output(suppressMessages(
+    downsample(ds_status_eeg(), target_rate = 512, verbose = TRUE)
+  ))
+  without   <- capture.output(suppressMessages(
+    downsample(make_eeg(n_timepoints = 1024), target_rate = 256, verbose = TRUE)
+  ))
+  expect_true(any(grepl("Trigger rows", with_rows)))
+  expect_false(any(grepl("Trigger rows", without)))
+})

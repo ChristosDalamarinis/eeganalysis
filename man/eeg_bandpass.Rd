@@ -121,6 +121,16 @@ call stops with an error. The count printed with \code{verbose = TRUE}
 ("Channels: 2/3") and written into the preprocessing history says how many
 rows were filtered.
 
+\strong{Why the EOG channels are filtered too.} Removing blinks by
+regression (\code{\link{fit_eog_regression}}) compares the EEG with the EOG
+channels, so both must have gone through the same filter. If only the EEG
+were filtered, the slow drift left in the EOG would distort the weights, and
+nothing would warn you. ICA does not need this: \code{\link{fit_ica}} leaves
+the EOG channels out of the decomposition, and \code{\link{find_bads_eog}}
+filters its own copy of the EOG row. To keep the EOG channels untouched, use
+\code{channels = "eeg"}. (MNE's own filter leaves EOG channels alone by
+default; this package does not.)
+
 \strong{Picking channels by type.} \code{channels} can also name channel
 types, taken from \code{eeg_obj$channel_types}: \code{"eeg"}, \code{"eog"},
 \code{"ecg"}, \code{"emg"}, \code{"resp"}, \code{"gsr"}, \code{"temp"},

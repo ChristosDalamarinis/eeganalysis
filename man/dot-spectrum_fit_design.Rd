@@ -4,7 +4,7 @@
 \alias{.spectrum_fit_design}
 \title{Slepian windows and score threshold for one piece length}
 \usage{
-.spectrum_fit_design(len, sfreq, mt_bandwidth, p_value, grid)
+.spectrum_fit_design(len, sfreq, mt_bandwidth, p_value, grid, zones = NULL)
 }
 \arguments{
 \item{len}{Integer. Piece length in samples.}
@@ -17,10 +17,17 @@
 
 \item{grid}{Integer. The finer-ruler factor that is in use (1 when
 the frequencies are given).}
+
+\item{zones}{NULL (the whole spectrum may be searched), or a list
+with \code{centres} (Hz) and \code{half_widths} (Hz, same length): the
+closed intervals \code{[centre - half_width, centre + half_width]} in
+which a line may be found. A zone that holds no mark of the ruler is an
+error.}
 }
 \value{
-A list with the \code{tapers} (K by len), \code{K}, \code{half_nbw}
-and the \code{threshold}.
+A list with the \code{tapers} (K by len), \code{K},
+\code{half_nbw}, the \code{threshold} and \code{allowed} (a logical
+vector over the marks of the ruler, or NULL when there are no zones).
 }
 \description{
 The windows depend only on the piece length and the bandwidth, so they are
@@ -30,5 +37,16 @@ is given, or \code{NW = mt_bandwidth * len / (2 * sfreq)}. The threshold is
 the F value that a score must exceed: the upper \code{p_value / (len * grid)}
 point of the F distribution with 2 and \code{2K - 2} degrees of freedom,
 i.e. \code{p_value} shared over all \code{len * grid} marks that are tested.
+}
+\details{
+When the search is limited to zones, the same rule is used with the number
+of marks scaled by the share of the ruler that the zones cover:
+\code{len * grid * (marks in the zones / marks in the whole ruler)}, and at
+least 1. Zones that cover the whole ruler therefore give exactly the
+threshold of the search over the whole spectrum, and smaller zones give a
+lower one (fewer marks to be lucky on). The design also says which marks
+may be called a line (\code{allowed}); the marks are the ones of the ruler
+of \code{.spectrum_fit_piece()}: \code{len * grid / 2 + 1} of them, from
+0 Hz to the Nyquist frequency.
 }
 \keyword{internal}

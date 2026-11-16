@@ -2134,13 +2134,74 @@
 #   is NOT used (grid_factor is ignored): every extra mark inside the zone would
 #   subtract the same hum once more (the error was 6 to 7 times the hum).
 #   p_value is not used either. If the user typed grid_factor or p_value
-#   together with freqs, eeg_notch() warns that they have no effect.
+#   together with freqs (and no search_width), eeg_notch() warns that they
+#   have no effect.
+#
+# SEARCHING ONLY WHERE YOU SAY (search_width)
+#   The search over the whole spectrum asks one question of every mark: is
+#   there a steady wave here? It cannot ask what the wave is. Mains hum, a
+#   steady flicker response and a tagging frequency are all perfectly steady,
+#   so all of them are subtracted:
+#
+#      60 s, noise 5 uV         7 Hz tag    60 Hz tag    50 Hz hum
+#      before                     1.48         2.10         3.08   (uV)
+#      search, whole spectrum     0.01         0.02         0.01
+#      freqs = 50, no search      1.48         2.10         0.01..0.08
+#
+#   A steady wave of any frequency goes the same way (4 uV at 20 or 35 Hz: the
+#   band around it fell from 2.9 to the 0.55 that noise alone leaves), a
+#   wandering one (size +-50 percent, drifting timing) stays. grid_factor does
+#   not help (it only finds waves that lie between two marks too) and a
+#   stricter p_value only spares waves below some height, hum included.
+#
+#   The fix is a fence. With freqs AND search_width given, the search is run
+#   as above, but a line is kept only if its strongest mark lies inside a
+#   zone: [freq - width, freq + width] for each of the freqs (closed
+#   intervals, they may overlap). Everything outside the zones can never be
+#   removed. The rules:
+#   * The fence is applied AFTER the neighbouring marks of one line have been
+#     merged into their strongest one, so a line whose peak is outside a zone
+#     is ignored completely and never half-subtracted at the edge of a zone.
+#   * The p_value is shared over the marks of the ruler that lie in the zones,
+#     counted as the length of the ruler times the share of it that the zones
+#     cover (at least 1). Zones that cover the whole ruler give exactly the
+#     threshold of the search without zones (a test checks that the two give
+#     the same numbers); smaller zones give a lower threshold, so false alarms
+#     inside them stay about as rare as p_value says.
+#   * grid_factor and p_value work as in the search; notch_widths is not used
+#     (the zone is search_width).
+#   * A zone that holds no mark of the ruler is an error (the spacing of the
+#     marks is sfreq / (piece length x grid_factor)); search_width of at least
+#     half that spacing always holds a mark.
+#   * The hum is followed from piece to piece, so a drifting hum is removed
+#     too. On made-up data (120 s, a 3 uV hum that drifts, a 7 Hz and a 60 Hz
+#     tag, noise 5 uV) the error is the rms distance of the output from the
+#     signal without the hum (doing nothing = 2.12; the zones are +-1 Hz for
+#     the small drift and +-2 Hz for the large one):
+#
+#          error, uV                         hum 49.8-50.5   hum 48.8-51.2
+#          FIR notch, usual width                 0.75            1.72
+#          IIR notch, usual width                 0.37            1.39
+#          FIR notch, widened (1.5 / 3 Hz)        0.45            0.60
+#          IIR notch, widened (1.5 / 3 Hz)        0.49            0.62
+#          search, whole spectrum (tags lost)     2.22            2.19
+#          search in zones, 10 s pieces           1.31            1.27
+#          search in zones,  5 s pieces           0.23            0.33
+#
+#     Both tags are kept in every row except the whole-spectrum search. Short
+#     pieces follow a drift better than long ones, and a widened notch is a
+#     real alternative (it also cuts out a whole band); a real recording with
+#     a drifting hum has not been tried.
 #
 # LIMITS
 #   * One steady wave per mark and piece. A hum whose frequency moves during a
 #     piece is smeared and only partly removed: use shorter pieces.
 #   * Any wave that is steady for a whole piece is a "line", mains or not (a
-#     very regular rhythm too). Look at the frequencies that were reported.
+#     very regular rhythm too). Look at the frequencies that were reported,
+#     or limit the search to the zones where the hum is (search_width).
+#   * With search_width: a hum that leaves its zone is not found, and a steady
+#     wave INSIDE a zone is removed like hum. The verbose report shows, for
+#     every zone, in how many channel-pieces a line was found.
 #   * A piece that contains missing values (NA) is left unchanged, and the
 #     user is told how many.
 #   * It is slower than a notch filter (about 0.2 s per minute of one channel
@@ -2149,8 +2210,8 @@
 #
 # HOW THE CODE IS SPLIT (the same two steps as the band-pass recipe)
 #   DESIGN  .make_spectrum_fit_plan(): piece length, cross-fade window, the
-#           Slepian windows and the score threshold, worked out ONCE for all
-#           channels.
+#           Slepian windows, the score threshold and (with search_width) the
+#           marks that lie in the zones, worked out ONCE for all channels.
 #   RUN     .apply_spectrum_fit_plan(): runs the plan on one channel, using
 #           .spectrum_fit_piece() for each piece.
 #   TOP     .notch_spectrum_fit(): called by eeg_notch(); loops over the
@@ -2350,16 +2411,33 @@
 #' point of the F distribution with 2 and \code{2K - 2} degrees of freedom,
 #' i.e. \code{p_value} shared over all \code{len * grid} marks that are tested.
 #'
+#' When the search is limited to zones, the same rule is used with the number
+#' of marks scaled by the share of the ruler that the zones cover:
+#' \code{len * grid * (marks in the zones / marks in the whole ruler)}, and at
+#' least 1. Zones that cover the whole ruler therefore give exactly the
+#' threshold of the search over the whole spectrum, and smaller zones give a
+#' lower one (fewer marks to be lucky on). The design also says which marks
+#' may be called a line (\code{allowed}); the marks are the ones of the ruler
+#' of \code{.spectrum_fit_piece()}: \code{len * grid / 2 + 1} of them, from
+#' 0 Hz to the Nyquist frequency.
+#'
 #' @param len          Integer. Piece length in samples.
 #' @param sfreq        Numeric. Sampling rate in Hz.
 #' @param mt_bandwidth Numeric or NULL. Bandwidth in Hz.
 #' @param p_value      Numeric. See \code{eeg_notch()}.
 #' @param grid         Integer. The finer-ruler factor that is in use (1 when
 #'   the frequencies are given).
-#' @return A list with the \code{tapers} (K by len), \code{K}, \code{half_nbw}
-#'   and the \code{threshold}.
+#' @param zones        NULL (the whole spectrum may be searched), or a list
+#'   with \code{centres} (Hz) and \code{half_widths} (Hz, same length): the
+#'   closed intervals \code{[centre - half_width, centre + half_width]} in
+#'   which a line may be found. A zone that holds no mark of the ruler is an
+#'   error.
+#' @return A list with the \code{tapers} (K by len), \code{K},
+#'   \code{half_nbw}, the \code{threshold} and \code{allowed} (a logical
+#'   vector over the marks of the ruler, or NULL when there are no zones).
 #' @keywords internal
-.spectrum_fit_design <- function(len, sfreq, mt_bandwidth, p_value, grid) {
+.spectrum_fit_design <- function(len, sfreq, mt_bandwidth, p_value, grid,
+                                 zones = NULL) {
   half_nbw <- if (is.null(mt_bandwidth)) 4 else mt_bandwidth * len / (2 * sfreq)
   K <- as.integer(floor(2 * half_nbw))
   if (K < 3L) {
@@ -2372,11 +2450,37 @@
     stop("'mt_bandwidth' is too large for pieces of ", round(len / sfreq, 3),
          " s. Use a smaller bandwidth or longer pieces.", call. = FALSE)
   }
+
+  # The zones: which marks of the ruler may be called a line, and how many
+  # marks the p_value is shared over. Without zones nothing changes.
+  allowed <- NULL
+  n_tests <- len * grid
+  if (!is.null(zones)) {
+    nfft    <- len * as.integer(grid)            # as in .spectrum_fit_piece()
+    nf      <- nfft %/% 2L + 1L
+    fr      <- (0:(nf - 1L)) * sfreq / nfft
+    in_zone <- Map(function(f0, w) fr >= f0 - w & fr <= f0 + w,
+                   zones$centres, zones$half_widths)
+    empty   <- !vapply(in_zone, any, TRUE)
+    if (any(empty)) {
+      stop("'search_width' is too small: the zone around ",
+           paste(zones$centres[empty], collapse = ", "), " Hz holds no mark of ",
+           "the ruler. With pieces of ", round(len / sfreq, 3), " s and ",
+           "grid_factor ", grid, " there is a mark every ",
+           signif(sfreq / nfft, 3), " Hz, so use a 'search_width' of at least ",
+           signif(sfreq / nfft / 2, 3), " Hz (or longer pieces, or a larger ",
+           "'grid_factor').", call. = FALSE)
+    }
+    allowed <- Reduce(`|`, in_zone)
+    n_tests <- max(1, as.numeric(nfft) * sum(allowed) / nf)
+  }
+
   list(tapers    = .dpss_tapers(len, half_nbw, K),
        K         = K,
        half_nbw  = half_nbw,
-       threshold = stats::qf(p_value / (len * grid), 2, 2 * K - 2,
-                             lower.tail = FALSE))
+       threshold = stats::qf(p_value / n_tests, 2, 2 * K - 2,
+                             lower.tail = FALSE),
+       allowed   = allowed)
 }
 
 #' Cross-fade weights of one piece
@@ -2426,14 +2530,18 @@
 #' @param mt_bandwidth  Numeric or NULL. Bandwidth in Hz.
 #' @param p_value       Numeric. See \code{eeg_notch()}.
 #' @param grid_factor   Integer. The finer-ruler factor asked for.
-#' @param searching     Logical. TRUE for the automatic search (\code{freqs} =
-#'   NULL). Only then is the finer ruler used.
+#' @param searching     Logical. TRUE when the lines are searched (the whole
+#'   spectrum, or only the zones). Only then is the finer ruler used.
+#' @param zones         NULL (search the whole spectrum), or the list of zones
+#'   described in \code{.spectrum_fit_design()}; handed to the design of every
+#'   piece length. Only with \code{searching = TRUE}.
 #' @return A list: \code{n}, \code{step}, \code{win}, \code{starts},
 #'   \code{stops}, \code{designs} (one per piece length), \code{grid},
 #'   \code{searching}.
 #' @keywords internal
 .make_spectrum_fit_plan <- function(n_total, sfreq, filter_length, mt_bandwidth,
-                                    p_value, grid_factor, searching) {
+                                    p_value, grid_factor, searching,
+                                    zones = NULL) {
   n    <- .piece_length_samples(filter_length, sfreq, n_total)
   grid <- if (searching) as.integer(grid_factor) else 1L
 
@@ -2467,7 +2575,7 @@
   designs <- list()
   for (len in unique(lens)) {
     designs[[as.character(len)]] <- .spectrum_fit_design(len, sfreq, mt_bandwidth,
-                                                         p_value, grid)
+                                                         p_value, grid, zones)
   }
   list(n = n, step = step, win = win, starts = starts, stops = stops,
        designs = designs, grid = grid, searching = searching)
@@ -2483,7 +2591,10 @@
 #' @param freqs        Numeric or NULL. Given frequencies (zone removal) or
 #'   NULL (automatic search).
 #' @param notch_widths Numeric, same length as \code{freqs}, or NULL.
-#' @param design       List from \code{.spectrum_fit_design()}.
+#' @param design       List from \code{.spectrum_fit_design()}. When it holds
+#'   zones (\code{design$allowed}), a line found by the automatic search is
+#'   subtracted only if the mark with the strongest score of that line lies in
+#'   a zone; a line whose strongest mark is outside is left alone.
 #' @param grid         Integer. Ruler factor (1 = standard ruler).
 #' @return A list: \code{x} (the cleaned piece), \code{found} (the frequencies,
 #'   in Hz, of the lines that were subtracted), \code{freq} (the marks of the
@@ -2535,6 +2646,8 @@
       run <- cumsum(c(1L, diff(idx) > 1L))
       idx <- vapply(split(idx, run), function(g) g[which.max(fstat[g])], 1L)
     }
+    # limited to zones: a line counts only if its strongest mark is inside one
+    if (!is.null(design$allowed)) idx <- idx[design$allowed[idx]]
   } else {
     # given frequencies: the mark nearest to each, plus every mark strictly
     # inside the notch width
@@ -2612,7 +2725,11 @@
 #' @param filter_length See \code{.piece_length_samples()}.
 #' @param mt_bandwidth  Numeric or NULL. Bandwidth in Hz.
 #' @param p_value       Numeric. False-alarm level of the automatic search.
-#' @param grid_factor   Integer. Finer-ruler factor of the automatic search.
+#' @param grid_factor   Integer. Finer-ruler factor of the search.
+#' @param search_width  NULL, or numeric (one number, or one per frequency of
+#'   \code{freqs}). With \code{freqs} given and \code{search_width} not NULL
+#'   the lines are searched, but only inside the zones \code{freqs} plus or
+#'   minus \code{search_width} (Hz); \code{notch_widths} is not used then.
 #' @param ch_idx        Integer vector. Rows of the data to clean.
 #' @param segments      The list made by \code{.skip_segments()}: the stretches
 #'   of the recording that are cleaned, each as a recording of its own (its own
@@ -2622,12 +2739,28 @@
 #' @return An object of class 'eeg'.
 #' @keywords internal
 .notch_spectrum_fit <- function(eeg_obj, freqs, notch_widths, filter_length,
-                                mt_bandwidth, p_value, grid_factor, ch_idx,
-                                segments, verbose) {
+                                mt_bandwidth, p_value, grid_factor,
+                                search_width, ch_idx, segments, verbose) {
 
   sfreq      <- eeg_obj$sampling_rate
   n_channels <- nrow(eeg_obj$data)
-  searching  <- is.null(freqs)
+
+  # Three ways to work: the lines are searched in the whole spectrum (freqs =
+  # NULL), or only inside zones around freqs (search_width given), or the
+  # frequencies are removed without a search (freqs given, no search_width).
+  zones <- NULL
+  if (!is.null(search_width)) {
+    zones <- list(centres     = as.numeric(freqs),
+                  half_widths = rep(as.numeric(search_width),
+                                    length.out = length(freqs)))
+  }
+  searching  <- is.null(freqs) || !is.null(zones)
+  # what the piece function gets: NULL means "search" there
+  run_freqs  <- if (searching) NULL else freqs
+  run_widths <- if (searching) NULL else notch_widths
+  zone_text  <- if (!is.null(zones)) {
+    paste0(zones$centres, " Hz \u00B1", zones$half_widths, collapse = ", ")
+  }
 
   # ========== DESIGN (ONCE FOR ALL CHANNELS) ==========
   # One plan for each different segment length: the pieces and the windows
@@ -2640,7 +2773,7 @@
   for (len in unique(seg_len)) {
     plans[[as.character(len)]] <- tryCatch(
       .make_spectrum_fit_plan(len, sfreq, filter_length, mt_bandwidth,
-                              p_value, grid_factor, searching),
+                              p_value, grid_factor, searching, zones),
       error = function(e) {
         # a segment too short for spectrum-fit: say which one, and why it exists
         stop(if (cut_up) paste0("A stretch of ", len, " samples between skipped ",
@@ -2660,7 +2793,11 @@
     cat("\n", strrep("=", 70), "\n", sep = "")
     cat("EEG Spectrum-Fit Notch Filtering\n")
     cat(strrep("=", 70), "\n")
-    if (searching) {
+    if (!is.null(zones)) {
+      cat("  Lines:                 searched inside ", zone_text, " (F test)\n",
+          sep = "")
+      cat("  p_value:              ", p_value, "\n")
+    } else if (searching) {
       cat("  Lines:                 searched automatically (F test)\n")
       cat("  p_value:              ", p_value, "\n")
     } else {
@@ -2691,6 +2828,8 @@
   filtered_data <- eeg_obj$data
   all_found     <- numeric(0)
   skipped       <- 0L
+  zone_hits     <- numeric(length(zones$centres))  # channel-pieces with a line
+  zone_total    <- 0                               # channel-pieces looked at
   for (idx in seq_along(ch_idx)) {
     i     <- ch_idx[idx]
     x_row <- filtered_data[i, ]
@@ -2698,10 +2837,19 @@
       pos <- segments$starts[k]:segments$stops[k]
       res <- .apply_spectrum_fit_plan(x_row[pos], sfreq,
                                       plans[[as.character(length(pos))]],
-                                      freqs, notch_widths)
+                                      run_freqs, run_widths)
       x_row[pos] <- res$x
       all_found  <- c(all_found, unlist(res$found))
       skipped    <- skipped + res$skipped
+      if (!is.null(zones)) {
+        # a piece with missing values was not looked at: it does not count
+        zone_total <- zone_total + length(res$found) - res$skipped
+        zone_hits  <- zone_hits + vapply(seq_along(zones$centres), function(z) {
+          sum(vapply(res$found, function(f) {
+            any(abs(f - zones$centres[z]) <= zones$half_widths[z])
+          }, TRUE))
+        }, 0)
+      }
     }
     filtered_data[i, ] <- x_row
     if (verbose) setTxtProgressBar(pb, idx)
@@ -2725,6 +2873,13 @@
     cat("\n")
     cat(if (searching) "  Lines found" else "  Waves removed",
         " (frequency, number of channel-pieces): ", found_text, "\n", sep = "")
+    if (!is.null(zones) && zone_total > 0) {
+      # so that a zone that misses the hum shows at once
+      cat("  Share of the channel-pieces with a line, per zone: ",
+          paste0(zones$centres, " Hz: ",
+                 sprintf("%.0f", 100 * zone_hits / zone_total), " %",
+                 collapse = ", "), "\n", sep = "")
+    }
     cat(strrep("=", 70), "\n")
   }
   if (skipped > 0L) {
@@ -2734,7 +2889,9 @@
 
   # ========== BUILD PREPROCESSING HISTORY ENTRY ==========
 
-  what <- if (searching) {
+  what <- if (!is.null(zones)) {
+    paste0("lines searched inside ", zone_text, " (p = ", p_value, ")")
+  } else if (searching) {
     paste0("lines searched (p = ", p_value, ")")
   } else {
     paste0(paste0(freqs, " Hz (\u00B1", round(notch_widths / 2, 4), " Hz)",
@@ -3422,7 +3579,9 @@ filter_data <- function(x,
 #' the lines are searched automatically, harmonics included, and the
 #' frequencies that were found are reported. With \code{freqs} given no test is
 #' made: in every piece, the frequencies of the ruler that lie inside
-#' \code{notch_widths} around each of them are removed.
+#' \code{notch_widths} around each of them are removed. (With \code{freqs}
+#' and \code{search_width} given the lines are searched, but only around the
+#' \code{freqs}: see below.)
 #'
 #' \strong{The finer ruler.} The standard ruler has one mark every 1/T Hz, T
 #' being the piece length (0.1 Hz for 10 s pieces), and a line that falls
@@ -3435,18 +3594,49 @@ filter_data <- function(x,
 #' 4.2 percent. Of every run of neighbouring marks that pass the test only the
 #' strongest one is used, and \code{p_value} is shared over all marks, so false
 #' alarms stay as rare as with the standard ruler. The finer ruler is used only
-#' when the lines are searched (\code{freqs = NULL}); with \code{freqs} given
-#' \code{grid_factor} has no effect (a warning says so if you set it). It costs time: about 0.2 s per minute of
+#' when the lines are searched (\code{freqs = NULL}, or \code{freqs} together
+#' with \code{search_width}); with \code{freqs} given and no
+#' \code{search_width} \code{grid_factor} has no effect (a warning says so if
+#' you set it). It costs time: about 0.2 s per minute of
 #' one channel at 512 Hz (0.02 s with \code{grid_factor = 1}), plus about 0.3 s
 #' once for the windows, so downsample first if the sampling rate is higher.
 #'
+#' \strong{Searching only where you say.} The search over the whole spectrum
+#' (\code{freqs = NULL}) does not know what a steady wave is: mains hum, a
+#' steady flicker response and a tagging frequency all look the same to it,
+#' and all of them are removed. With \code{freqs} given and
+#' \code{search_width} set, the lines are searched in the same way, but a line
+#' is removed only if its strongest mark lies inside a zone, that is within
+#' \code{search_width} Hz of one of the \code{freqs} (\code{freqs = 50} with
+#' \code{search_width = 1} means 49 to 51 Hz). A steady wave anywhere else, a
+#' tagging frequency at 7 Hz or 60 Hz for example, is never touched. Inside a
+#' zone the hum is followed from piece to piece, so a hum that wanders a
+#' little, say between 49.8 and 50.5 Hz, is removed too. A notch of the usual
+#' width may remove such a hum only in part; a wider notch
+#' (\code{notch_widths}) also covers it, but cuts out a whole band, while the
+#' search subtracts only the hum. Choose a width that covers how far the hum
+#' can wander and stays away from the frequencies you want to keep: a steady
+#' wave inside a zone is removed too. A harmonic wanders further than the
+#' mains, so it needs a wider zone (for example \code{freqs = c(50, 100, 150)}
+#' with \code{search_width = c(1, 2, 3)}). A hum that leaves its zone is not
+#' found; with \code{verbose = TRUE} the share of the channel-pieces with a
+#' line is printed for every zone, so a zone that misses the hum shows at
+#' once. For a hum that wanders, shorter pieces follow it better (for example
+#' \code{filter_length = "5s"}). The ruler has a mark every
+#' sfreq / (piece length x \code{grid_factor}) Hz, and a zone that holds no
+#' mark is an error that says how wide the zone must be at least.
+#' \code{p_value} is shared over the marks inside the zones, so zones that
+#' cover the whole spectrum give the same result as the search without zones.
+#'
 #' Limits of spectrum-fit: a hum whose frequency moves during a piece is only
 #' partly removed (use shorter pieces, for example \code{filter_length =
-#' "5s"}); any wave that stays steady for a whole piece counts as a line, so
-#' look at the frequencies that are reported; a piece that contains missing
-#' values is left unchanged, with a warning. A longer explanation with figures
-#' is in the file \code{notes/finer-ruler-spectrum-fit.pdf} of the package
-#' sources.
+#' "5s"}); in the search over the whole spectrum any wave that stays steady
+#' for a whole piece counts as a line, a steady tagging frequency or flicker
+#' response included, so look at the frequencies that are reported, or limit
+#' the search to where the hum is with \code{search_width}; a piece that
+#' contains missing values is left unchanged, with a warning. A longer
+#' explanation with figures is in the file
+#' \code{notes/finer-ruler-spectrum-fit.pdf} of the package sources.
 #'
 #' @references
 #' Butterworth, S. (1930). On the theory of filter amplifiers. Wireless
@@ -3468,9 +3658,11 @@ filter_data <- function(x,
 #' @param freqs            Numeric vector or NULL. Frequencies to notch in Hz.
 #'                         E.g. c(50, 100, 150) for line noise + harmonics.
 #'                         NULL, only with \code{method = "spectrum_fit"},
-#'                         searches for the lines automatically; for that
-#'                         method it is also what you get when you leave
-#'                         \code{freqs} out. Default: 50.
+#'                         searches the whole spectrum for the lines
+#'                         automatically; for that method it is also what you
+#'                         get when you leave \code{freqs} out. With
+#'                         \code{search_width} the search looks only around
+#'                         these frequencies. Default: 50.
 #' @param notch_widths     Numeric or NULL. Width of the stop band in Hz
 #'                         centred at each freq. NULL uses:
 #'                         freq / 200. Give one number for all frequencies or
@@ -3478,7 +3670,8 @@ filter_data <- function(x,
 #'                         else is an error). With \code{method =
 #'                         "spectrum_fit"} it is the width of the zone that is
 #'                         removed, and it is used only when \code{freqs} is
-#'                         given. Default: NULL.
+#'                         given and \code{search_width} is not.
+#'                         Default: NULL.
 #' @param trans_bandwidth  Numeric. Width of each transition band in Hz.
 #'                         Default: 1. With method = "iir" it only moves the
 #'                         two cutoffs of each notch outwards, by half of it.
@@ -3520,19 +3713,39 @@ filter_data <- function(x,
 #'                         bandwidth cannot be told apart. NULL = 8 windows,
 #'                         which is 0.8 Hz for 10 s pieces. Default: NULL.
 #' @param p_value          Numeric between 0 and 1. Only for \code{method =
-#'                         "spectrum_fit"} with \code{freqs = NULL}. How easily
-#'                         a frequency is called a line: roughly the chance that
-#'                         a piece of pure noise gets a false line. Lower is
-#'                         stricter (fewer false lines, weak lines are missed
-#'                         more often). With \code{freqs} given it has no effect
-#'                         (a warning says so if you set it). Default: 0.05.
+#'                         "spectrum_fit"} when the lines are searched
+#'                         (\code{freqs = NULL}, or \code{search_width}
+#'                         given). How easily a frequency is called a line:
+#'                         roughly the chance that a piece of pure noise gets
+#'                         a false line. Lower is stricter (fewer false lines,
+#'                         weak lines are missed more often). With
+#'                         \code{freqs} given and no \code{search_width} it
+#'                         has no effect (a warning says so if you set it).
+#'                         Default: 0.05.
 #' @param grid_factor      Whole number of 1 or more. Only for \code{method =
-#'                         "spectrum_fit"} with \code{freqs = NULL}. How many
-#'                         times finer than the standard ruler the frequencies
-#'                         are tested (see Details). 1 is the standard ruler,
-#'                         which misses a line that lies between two marks.
-#'                         With \code{freqs} given it has no effect (a warning
+#'                         "spectrum_fit"} when the lines are searched
+#'                         (\code{freqs = NULL}, or \code{search_width}
+#'                         given). How many times finer than the standard
+#'                         ruler the frequencies are tested (see Details). 1
+#'                         is the standard ruler, which misses a line that
+#'                         lies between two marks. With \code{freqs} given and
+#'                         no \code{search_width} it has no effect (a warning
 #'                         says so if you set it). Default: 8.
+#' @param search_width     Numeric or NULL. Only for \code{method =
+#'                         "spectrum_fit"}, and only together with
+#'                         \code{freqs}. Limits the search to zones: the lines
+#'                         are searched only within \code{search_width} Hz on
+#'                         each side of every frequency in \code{freqs}, so
+#'                         \code{freqs = 50} with \code{search_width = 1}
+#'                         means 49 to 51 Hz. A steady wave outside the zones
+#'                         is never removed, whatever it is. One number for
+#'                         all frequencies or one per frequency (a harmonic
+#'                         wanders further than the mains: for example
+#'                         \code{c(1, 2, 3)} for \code{c(50, 100, 150)}); each
+#'                         must be more than 0. \code{notch_widths} is not
+#'                         used then. A zone that holds no mark of the ruler
+#'                         is an error (see Details). NULL: no zones.
+#'                         Default: NULL.
 #' @param channels         NULL, a character vector, or an integer vector.
 #'                         Channels to filter. NULL = every channel except those
 #'                         of type "status" (the trigger row; see Details).
@@ -3574,6 +3787,7 @@ eeg_notch <- function(eeg_obj,
                       mt_bandwidth     = NULL,
                       p_value          = 0.05,
                       grid_factor      = 8L,
+                      search_width     = NULL,
                       channels         = NULL,
                       skip_by_annotation = "BAD_boundary",
                       verbose          = TRUE) {
@@ -3616,16 +3830,36 @@ eeg_notch <- function(eeg_obj,
                 fir_window      = !missing(fir_window),
                 phase           = !missing(phase),
                 pad             = !missing(pad))
-    if (is.null(freqs)) unused <- c(unused, notch_widths = !is.null(notch_widths))
+    # (notch_widths is the width of a zone that is removed; when the lines are
+    # searched, with freqs = NULL or inside the zones of search_width, there is
+    # no such zone.)
+    if (is.null(freqs) || !is.null(search_width)) {
+      unused <- c(unused, notch_widths = !is.null(notch_widths))
+    }
     if (any(unused)) {
       warning("Not used with method = \"spectrum_fit\"",
-              if (is.null(freqs)) " and freqs = NULL" else "", ": ",
-              paste(names(unused)[unused], collapse = ", "), ".",
+              if (is.null(freqs)) " and freqs = NULL"
+              else if (!is.null(search_width)) " and search_width" else "",
+              ": ", paste(names(unused)[unused], collapse = ", "), ".",
               call. = FALSE)
     }
-    # The finer ruler and the p-value belong to the automatic search. With
-    # freqs given there is no search, so if the user typed one of them, say so.
-    if (!is.null(freqs)) {
+    # search_width: how far the search may look around each of the freqs
+    if (!is.null(search_width)) {
+      if (is.null(freqs)) {
+        stop("'search_width' needs 'freqs': the frequencies to look around.",
+             call. = FALSE)
+      }
+      if (!is.numeric(search_width) || length(search_width) == 0L ||
+          !all(is.finite(search_width)) || any(search_width <= 0) ||
+          !(length(search_width) %in% c(1L, length(freqs)))) {
+        stop("'search_width' must be NULL, one positive number (Hz), or one ",
+             "positive number per frequency in 'freqs'.", call. = FALSE)
+      }
+    }
+    # The finer ruler and the p-value belong to the search. With freqs given
+    # and no search_width there is no search, so if the user typed one of
+    # them, say so.
+    if (!is.null(freqs) && is.null(search_width)) {
       search_only <- c(grid_factor = !missing(grid_factor),
                        p_value     = !missing(p_value))
       if (any(search_only)) {
@@ -3654,7 +3888,8 @@ eeg_notch <- function(eeg_obj,
   } else {
     sf_only <- c(mt_bandwidth = !is.null(mt_bandwidth),
                  p_value      = !missing(p_value),
-                 grid_factor  = !missing(grid_factor))
+                 grid_factor  = !missing(grid_factor),
+                 search_width = !is.null(search_width))
     if (any(sf_only)) {
       warning("Only used with method = \"spectrum_fit\": ",
               paste(names(sf_only)[sf_only], collapse = ", "), ".",
@@ -3727,8 +3962,8 @@ eeg_notch <- function(eeg_obj,
 
   if (method == "spectrum_fit") {
     return(.notch_spectrum_fit(eeg_obj, freqs, notch_widths, filter_length,
-                               mt_bandwidth, p_value, grid_factor, ch_idx,
-                               segments, verbose))
+                               mt_bandwidth, p_value, grid_factor,
+                               search_width, ch_idx, segments, verbose))
   }
 
   # ========== IIR: HAND OVER TO ITS OWN FUNCTION ==========

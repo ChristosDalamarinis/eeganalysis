@@ -2843,6 +2843,292 @@ test_that("p_value controls how easily a weak hum is called a line", {
   expect_equal(hits(1e-12), 0L)                   # very strict: not found
 })
 
+
+# --- spectrum-fit notch: searching only where you say (search_width) ---------
+#
+# With freqs AND search_width the lines are searched, but only inside the zones
+# freqs +- search_width; a steady wave anywhere else is never touched. The
+# recording is 30 s at 128 Hz (10 s pieces, a mark every 0.0125 Hz with the
+# default ruler): noise of 5 uV, a 20 uV hum, and two steady waves of 12 uV
+# ("tags", at 10 and 45 Hz) that must survive.
+
+sw_make <- function(hum_f = 30, hum_amp = 20, tags = c(10, 45), tag_amp = 12,
+                    n = 3840L, fs = 128, seed = 41, hum_to = NULL) {
+  set.seed(seed)
+  t     <- (0:(n - 1)) / fs
+  noise <- as.numeric(stats::filter(rnorm(n), 0.9, "recursive"))
+  noise <- noise / stats::sd(noise) * 5
+  f_t   <- if (is.null(hum_to)) rep(hum_f, n) else hum_f + (hum_to - hum_f) * t / max(t)
+  hum   <- hum_amp * sin(2 * pi * cumsum(f_t) / fs)
+  tag   <- numeric(n)
+  for (i in seq_along(tags)) tag <- tag + tag_amp * sin(2 * pi * tags[i] * t + i)
+  list(x = noise + tag + hum, clean = noise + tag, n = n, fs = fs)
+}
+# distance of the output from the signal without the hum (0 = a perfect removal)
+sw_err <- function(out, h) sqrt(mean((out - h$clean)^2))
+# height (peak) of the wave of one frequency in a signal
+sw_height <- function(out, f, fs = 128) {
+  t <- (0:(length(out) - 1)) / fs
+  sqrt(sum(qr.coef(qr(cbind(sin(2 * pi * f * t), cos(2 * pi * f * t))), out)^2))
+}
+sw_run <- function(h, ...) {
+  eeg_notch(sf_eeg(h$x, h$fs), method = "spectrum_fit", verbose = FALSE, ...)$data[1, ]
+}
+
+test_that("search_width = NULL changes nothing (the zones are off by default)", {
+  h <- sw_make()
+  for (fl in c("auto", "5s")) {
+    expect_identical(sw_run(h, filter_length = fl),
+                     sw_run(h, filter_length = fl, search_width = NULL))
+    expect_identical(sw_run(h, freqs = 30, filter_length = fl),
+                     sw_run(h, freqs = 30, filter_length = fl, search_width = NULL))
+  }
+  # no zones: no marks are fenced off, and the threshold is the one it always was
+  d <- .spectrum_fit_design(400L, 100, NULL, 0.05, 1L)
+  expect_null(d$allowed)
+  expect_equal(d$threshold, 18.274485513485757, tolerance = 1e-8)
+  expect_null(.spectrum_fit_design(400L, 100, NULL, 0.05, 8L, zones = NULL)$allowed)
+})
+
+test_that("zones that cover the whole spectrum give exactly the search without zones", {
+  h <- sw_make(hum_f = 30.037)
+  whole <- sw_run(h)                                   # the whole spectrum
+  zoned <- sw_run(h, freqs = 32, search_width = 32)    # 0 to 64 Hz: all of it
+  expect_identical(whole, zoned)
+  # the same threshold, and every mark may be a line
+  d_all  <- .spectrum_fit_design(1280L, 128, NULL, 0.05, 8L,
+                                 list(centres = 32, half_widths = 32))
+  d_none <- .spectrum_fit_design(1280L, 128, NULL, 0.05, 8L)
+  expect_identical(d_all$threshold, d_none$threshold)
+  expect_true(all(d_all$allowed))
+  expect_length(d_all$allowed, 5121L)
+  # a smaller zone has fewer marks to be lucky on: a lower threshold
+  d_small <- .spectrum_fit_design(1280L, 128, NULL, 0.05, 8L,
+                                  list(centres = 30, half_widths = 1))
+  expect_lt(d_small$threshold, d_none$threshold)
+})
+
+test_that("tags outside the zones are never touched; the same search without zones removes them", {
+  h     <- sw_make()
+  zoned <- sw_run(h, freqs = 30, search_width = 1)
+  whole <- sw_run(h)                                   # lines searched in the whole spectrum
+  # the hum (14 uV rms) is gone, and nothing else changed much
+  expect_lt(sw_err(zoned, h), 2)
+  # both tags (12 uV) keep their size
+  expect_gt(sw_height(zoned, 10), 11)
+  expect_gt(sw_height(zoned, 45), 11)
+  # without zones the search takes them away too: this is why the zones exist
+  expect_lt(sw_height(whole, 10), 1)
+  expect_lt(sw_height(whole, 45), 1)
+  # the standard ruler (grid_factor = 1) has the same fence
+  std <- sw_run(h, freqs = 30, search_width = 1, grid_factor = 1)
+  expect_gt(sw_height(std, 10), 11)
+  expect_gt(sw_height(std, 45), 11)
+})
+
+test_that("a hum between two marks is found inside a zone with the finer ruler, and only in part with the standard one", {
+  h    <- sw_make(hum_f = 30.037, tags = numeric(0))     # marks of the standard ruler: 30.0 and 30.1
+  fine <- sw_run(h, freqs = 30, search_width = 1)
+  std  <- sw_run(h, freqs = 30, search_width = 1, grid_factor = 1)
+  expect_equal(sw_err(h$x, h), 14.14, tolerance = 0.01)   # nothing done: the whole hum (14 uV rms)
+  expect_lt(sw_err(fine, h), 1)                           # measured 0.08
+  # the standard ruler finds it in some pieces only (the zone has a lower
+  # threshold than the whole spectrum, which finds it in none): measured 6.0
+  expect_gt(sw_err(std, h), 4)
+  expect_gt(sw_err(sw_run(h, grid_factor = 1), h), 14)    # the whole-spectrum search with the standard ruler
+})
+
+test_that("a hum that drifts is followed inside its zone, better with short pieces, and the tags stay", {
+  h     <- sw_make(n = 7680L, hum_f = 29.8, hum_to = 30.5)   # 60 s, 29.8 -> 30.5 Hz
+  long  <- sw_run(h, freqs = 30, search_width = 1.5)
+  short <- sw_run(h, freqs = 30, search_width = 1.5, filter_length = "3s")
+  usual <- eeg_notch(sf_eeg(h$x, h$fs), freqs = 30, verbose = FALSE)$data[1, ]
+  expect_lt(sw_err(short, h), sw_err(long, h))
+  expect_lt(sw_err(short, h), 0.5 * sw_err(usual, h))    # clearly better than a notch of the usual width
+  expect_lt(sw_err(short, h), 4)
+  expect_gt(sw_height(short, 10), 11)
+  expect_gt(sw_height(short, 45), 11)
+})
+
+test_that("a steady wave INSIDE a zone is removed like hum, one just outside is kept", {
+  h   <- sw_make(hum_amp = 0, tags = c(29.5, 31.6), tag_amp = 12)   # the zone is 29 to 31 Hz
+  out <- sw_run(h, freqs = 30, search_width = 1)
+  expect_lt(sw_height(out, 29.5), 1)                     # inside: gone (the price of a zone)
+  expect_gt(sw_height(out, 31.6), 11)                    # outside: kept
+})
+
+test_that("a steady wave far from the zones keeps its size", {
+  h     <- sw_make(tags = 20, tag_amp = 12)
+  zoned <- sw_run(h, freqs = 30, search_width = 1)
+  expect_equal(sw_height(zoned, 20), sw_height(h$x, 20), tolerance = 0.01)
+})
+
+test_that("one width per frequency, overlapping zones, and zones that reach past 0 Hz or the Nyquist frequency", {
+  h <- sw_make()
+  a <- sw_run(h, freqs = c(30, 60), search_width = c(1, 0.5))
+  expect_lt(sw_err(a, h), 2)
+  # each width belongs to its own frequency: a wave at 41.5 Hz is inside the
+  # zone 40 +- 3, and outside the zone 40 +- 0.5
+  w <- sw_make(hum_amp = 0, tags = 41.5, tag_amp = 12)
+  expect_lt(sw_height(sw_run(w, freqs = c(30, 40), search_width = c(0.5, 3)), 41.5), 1)
+  expect_gt(sw_height(sw_run(w, freqs = c(30, 40), search_width = c(3, 0.5)), 41.5), 11)
+  # overlapping zones are their union: 29 to 31 and 29.5 to 31.5 = 29 to 31.5
+  b  <- sw_run(h, freqs = c(30, 30.5), search_width = 1)
+  b2 <- sw_run(h, freqs = c(30, 30.5), search_width = c(1, 1))
+  b3 <- sw_run(h, freqs = 30.25, search_width = 1.25)
+  expect_identical(b, b2)
+  expect_identical(b, b3)
+  # the ruler of 10 s pieces at 128 Hz with grid_factor 8 has a mark every
+  # 0.0125 Hz, from 0 Hz to 64 Hz: a zone is cut at both ends of it
+  d1 <- .spectrum_fit_design(1280L, 128, NULL, 0.05, 8L,
+                             list(centres = 1, half_widths = 3))     # -2 to 4 Hz
+  expect_equal(sum(d1$allowed), 321L)                                # 0 to 4 Hz
+  d2 <- .spectrum_fit_design(1280L, 128, NULL, 0.05, 8L,
+                             list(centres = 63, half_widths = 5))    # 58 to 68 Hz
+  expect_equal(sum(d2$allowed), 481L)                                # 58 to 64 Hz
+  expect_error(sw_run(h, freqs = 1, search_width = 3), NA)
+  expect_error(sw_run(h, freqs = 63, search_width = 5), NA)
+})
+
+test_that(".spectrum_fit_design() with zones: the marks that may be lines, and the shared threshold", {
+  z <- list(centres = 10, half_widths = 1)
+  d <- .spectrum_fit_design(400L, 100, NULL, 0.05, 1L, z)    # a mark every 0.25 Hz, 201 of them
+  expect_length(d$allowed, 201L)
+  expect_equal(which(d$allowed), 37:45)                      # 9.00 to 11.00 Hz, both edges included
+  # p_value shared over 400 x 9 / 201 marks; the number is from SciPy
+  expect_equal(d$threshold, 9.217155244151135, tolerance = 1e-8)
+  expect_lt(d$threshold, .spectrum_fit_design(400L, 100, NULL, 0.05, 1L)$threshold)
+  # two zones are their union
+  d2 <- .spectrum_fit_design(400L, 100, NULL, 0.05, 1L,
+                             list(centres = c(10, 30), half_widths = c(1, 0.5)))
+  expect_equal(which(d2$allowed), c(37:45, 119:123))         # and 29.5 to 30.5 Hz
+  # a zone that holds no mark is an error that says how wide a zone must be
+  expect_error(.spectrum_fit_design(400L, 100, NULL, 0.05, 1L,
+                                    list(centres = 10.1, half_widths = 0.01)),
+               "holds no mark.*every 0.25 Hz.*at least 0.125 Hz")
+  # one empty zone among good ones is still an error, and it names that zone
+  expect_error(.spectrum_fit_design(400L, 100, NULL, 0.05, 1L,
+                                    list(centres = c(10, 10.1), half_widths = c(1, 0.01))),
+               "around 10.1 Hz holds no mark")
+  # the plan hands the zones to the design of every piece length
+  plan <- .make_spectrum_fit_plan(1250L, 100, "4s", NULL, 0.05, 1L, TRUE, z)
+  for (dd in plan$designs) expect_true(any(dd$allowed) && !all(dd$allowed))
+  expect_null(.make_spectrum_fit_plan(1250L, 100, "4s", NULL, 0.05, 1L, TRUE)$designs[[1]]$allowed)
+})
+
+test_that("search_width stops, with a clear message, for values that make no sense", {
+  e <- sf_eeg(sw_make()$x, 128)
+  f <- function(...) eeg_notch(e, method = "spectrum_fit", verbose = FALSE, ...)
+  expect_error(f(search_width = 1), "'search_width' needs 'freqs'")
+  expect_error(f(freqs = NULL, search_width = 1), "'search_width' needs 'freqs'")
+  expect_error(f(freqs = 30, search_width = 0), "'search_width'")
+  expect_error(f(freqs = 30, search_width = -1), "'search_width'")
+  expect_error(f(freqs = 30, search_width = NA_real_), "'search_width'")
+  expect_error(f(freqs = 30, search_width = Inf), "'search_width'")
+  expect_error(f(freqs = 30, search_width = "1"), "'search_width'")
+  expect_error(f(freqs = 30, search_width = numeric(0)), "'search_width'")
+  expect_error(f(freqs = c(30, 40), search_width = c(1, 2, 3)), "'search_width'")
+  expect_error(f(freqs = c(30, 40), search_width = c(1, NA)), "'search_width'")
+  # a zone that holds no mark of the ruler: 10 s pieces, grid_factor 8, a mark
+  # every 0.0125 Hz; 30.00625 lies halfway between two of them
+  expect_error(f(freqs = 30.00625, search_width = 0.001),
+               "'search_width' is too small.*30.00625 Hz holds no mark")
+  expect_error(f(freqs = 30.00625, search_width = 0.001),
+               "every 0.0125 Hz.*at least 0.00625 Hz")
+  expect_error(f(freqs = 30.00625, search_width = 0.007), NA)
+  # the frequencies themselves are checked as before
+  expect_error(f(freqs = 64, search_width = 1), "Nyquist")
+  expect_error(f(freqs = -5, search_width = 1), "'freqs'")
+})
+
+test_that("search_width: the arguments it makes unused are named, the ones it makes used are not", {
+  e <- sf_eeg(sw_make()$x, 128)
+  f <- function(...) eeg_notch(e, method = "spectrum_fit", verbose = FALSE, ...)
+  # only meant for spectrum-fit: FIR and IIR say so and go on as before
+  expect_warning(eeg_notch(e, freqs = 30, search_width = 1, verbose = FALSE),
+                 "Only used with method = \"spectrum_fit\": search_width\\.")
+  expect_warning(eeg_notch(e, freqs = 30, method = "iir", search_width = 1, verbose = FALSE),
+                 "search_width")
+  expect_identical(suppressWarnings(eeg_notch(e, freqs = 30, search_width = 1, verbose = FALSE)$data),
+                   eeg_notch(e, freqs = 30, verbose = FALSE)$data)
+  # the zone is search_width: notch_widths is not used then
+  expect_warning(f(freqs = 30, search_width = 1, notch_widths = 0.5),
+                 "Not used with method = \"spectrum_fit\" and search_width: notch_widths\\.")
+  # the finer ruler and the p_value belong to the search, and the search is on
+  expect_warning(f(freqs = 30, search_width = 1, grid_factor = 4, p_value = 0.01), NA)
+  expect_warning(f(freqs = 30, search_width = 1), NA)
+  # ... but with freqs and no search_width there is none, as before
+  expect_warning(f(freqs = 30, grid_factor = 4), "not when 'freqs' is given: grid_factor\\.")
+})
+
+test_that("the history entry and the printed header name the zones, with the share of channel-pieces per zone", {
+  pm <- intToUtf8(177L)
+  h  <- sw_make()
+  e  <- sf_eeg(h$x, h$fs)
+  out   <- eeg_notch(e, freqs = c(30, 60), method = "spectrum_fit", search_width = c(1, 2),
+                     verbose = FALSE)
+  entry <- out$preprocessing_history[[length(out$preprocessing_history)]]
+  expect_match(entry, paste0("lines searched inside 30 Hz ", pm, "1, 60 Hz ", pm, "2 \\(p = 0.05\\)"))
+  expect_match(entry, "found: 30\\.0 Hz")
+  shown <- capture.output(eeg_notch(e, freqs = c(30, 60), method = "spectrum_fit",
+                                    search_width = c(1, 2), verbose = TRUE))
+  expect_true(any(grepl(paste0("Lines: +searched inside 30 Hz ", pm, "1, 60 Hz ", pm, "2 \\(F test\\)"), shown)))
+  expect_true(any(grepl("Share of the channel-pieces with a line, per zone: 30 Hz: 100 %, 60 Hz: [0-9]+ %", shown)))
+  # without zones the old texts are kept, and there is no share
+  shown0 <- capture.output(eeg_notch(e, method = "spectrum_fit", verbose = TRUE))
+  expect_true(any(grepl("searched automatically", shown0)))
+  expect_false(any(grepl("Share of the channel-pieces", shown0)))
+  out0 <- eeg_notch(e, method = "spectrum_fit", verbose = FALSE)
+  expect_match(out0$preprocessing_history[[length(out0$preprocessing_history)]],
+               "lines searched \\(p = 0.05\\)")
+})
+
+test_that("a line exactly at the edge of a zone counts for that zone (the edges are included)", {
+  # 8 s pieces at 128 Hz with grid_factor 8: a mark every 2^-6 = 0.015625 Hz, so
+  # the upper edge of the zone 30 +- 0.015625 is exactly a mark, with no rounding
+  h <- sw_make(hum_f = 30.015625, tags = numeric(0))
+  shown <- capture.output(eeg_notch(sf_eeg(h$x, h$fs), freqs = 30, method = "spectrum_fit",
+                                    search_width = 0.015625, filter_length = "8s",
+                                    verbose = TRUE))
+  expect_true(any(grepl("per zone: 30 Hz: 100 %", shown)))
+})
+
+test_that("zones work on the selected channels only, on a one-piece recording, and a piece with missing values does not count", {
+  h   <- sw_make()
+  two <- sf_eeg(rbind(h$x, h$x), h$fs)
+  out <- eeg_notch(two, freqs = 30, method = "spectrum_fit", search_width = 1,
+                   channels = "Ch2", verbose = FALSE)
+  expect_identical(out$data[1, ], two$data[1, ])         # Ch1 was not asked for
+  expect_lt(sw_err(out$data[2, ], h), 2)
+  h1 <- sw_make(n = 1280L)                                # 10 s: one piece
+  expect_lt(sw_err(sw_run(h1, freqs = 30, search_width = 1), h1), 3)
+  # sample 100 is only in the first of the 5 pieces: that piece is left alone,
+  # and the share is counted over the 4 pieces that were looked at (4 of 4, not 4 of 5)
+  x <- h$x; x[100] <- NA
+  expect_warning(
+    shown <- capture.output(eeg_notch(sf_eeg(x, h$fs), freqs = 30, method = "spectrum_fit",
+                                      search_width = 1, verbose = TRUE)),
+    "1 piece\\(s\\) contained missing values")
+  expect_true(any(grepl("per zone: 30 Hz: 100 %", shown)))
+})
+
+test_that("false lines inside a zone are about as rare as p_value says, on pure noise", {
+  z <- list(centres = 30, half_widths = 1)
+  n <- 128L * 120L                                        # 120 s: 23 pieces of 10 s
+  hits <- 0; pieces <- 0
+  for (seed in 1:6) {
+    set.seed(seed)
+    x <- as.numeric(stats::filter(rnorm(n), 0.9, "recursive")); x <- x / stats::sd(x) * 5
+    plan <- .make_spectrum_fit_plan(n, 128, "auto", NULL, 0.05, 8L, TRUE, z)
+    res  <- .apply_spectrum_fit_plan(x, 128, plan, NULL, NULL)
+    hits   <- hits + sum(vapply(res$found, function(f) any(abs(f - 30) <= 1), TRUE))
+    pieces <- pieces + length(res$found)
+  }
+  expect_equal(pieces, 6L * 23L)
+  # measured on 12 seeds of 59 pieces: 0.016 on average, 0.034 at worst
+  expect_lt(hits / pieces, 0.05)
+})
+
 # ============================================================================
 #   THE PIECES OF THE ICA SCORING FILTER: firwin2, "10s" lengths, zero-double
 # ============================================================================
@@ -4124,6 +4410,21 @@ test_that("spectrum-fit: each stretch has a plan of its own, and a stretch that 
                                sampling_rate = 256)
   expect_error(eeg_notch(tiny, 50, method = "spectrum_fit", verbose = FALSE),
                "^The pieces would be only 20 samples long")
+})
+
+test_that("spectrum-fit with search_width: each stretch is searched on its own, like a recording of its own", {
+  e <- skip_fixture(anns = main_anns())              # stretches of 768, 1024 and 696 samples
+  for (fl in list("auto", "4s")) {
+    got <- eeg_notch(e, 50, method = "spectrum_fit", search_width = 1, filter_length = fl,
+                     skip_by_annotation = "bad", verbose = FALSE)
+    for (idx in main_segs) {
+      alone <- eeg_notch(stretch_eeg(e, idx), 50, method = "spectrum_fit", search_width = 1,
+                         filter_length = fl, verbose = FALSE)
+      expect_lt(max(abs(got$data[, idx] - alone$data)), 1e-11)
+    }
+  }
+  # the samples inside the skipped annotation are as they came in
+  expect_identical(got$data[, 769:1280], e$data[, 769:1280])
 })
 
 # --- a filter length given as text ("4s", "500ms") --------------------------------

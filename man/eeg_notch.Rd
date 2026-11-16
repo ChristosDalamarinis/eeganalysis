@@ -18,6 +18,7 @@ eeg_notch(
   mt_bandwidth = NULL,
   p_value = 0.05,
   grid_factor = 8L,
+  search_width = NULL,
   channels = NULL,
   skip_by_annotation = "BAD_boundary",
   verbose = TRUE
@@ -29,9 +30,11 @@ eeg_notch(
 \item{freqs}{Numeric vector or NULL. Frequencies to notch in Hz.
 E.g. c(50, 100, 150) for line noise + harmonics.
 NULL, only with \code{method = "spectrum_fit"},
-searches for the lines automatically; for that
-method it is also what you get when you leave
-\code{freqs} out. Default: 50.}
+searches the whole spectrum for the lines
+automatically; for that method it is also what you
+get when you leave \code{freqs} out. With
+\code{search_width} the search looks only around
+these frequencies. Default: 50.}
 
 \item{notch_widths}{Numeric or NULL. Width of the stop band in Hz
 centred at each freq. NULL uses:
@@ -40,7 +43,8 @@ one per frequency; each must be 0 or more (anything
 else is an error). With \code{method =
                         "spectrum_fit"} it is the width of the zone that is
 removed, and it is used only when \code{freqs} is
-given. Default: NULL.}
+given and \code{search_width} is not.
+Default: NULL.}
 
 \item{trans_bandwidth}{Numeric. Width of each transition band in Hz.
 Default: 1. With method = "iir" it only moves the
@@ -91,20 +95,41 @@ bandwidth cannot be told apart. NULL = 8 windows,
 which is 0.8 Hz for 10 s pieces. Default: NULL.}
 
 \item{p_value}{Numeric between 0 and 1. Only for \code{method =
-                        "spectrum_fit"} with \code{freqs = NULL}. How easily
-a frequency is called a line: roughly the chance that
-a piece of pure noise gets a false line. Lower is
-stricter (fewer false lines, weak lines are missed
-more often). With \code{freqs} given it has no effect
-(a warning says so if you set it). Default: 0.05.}
+"spectrum_fit"} when the lines are searched
+(\code{freqs = NULL}, or \code{search_width}
+given). How easily a frequency is called a line:
+roughly the chance that a piece of pure noise gets
+a false line. Lower is stricter (fewer false lines,
+weak lines are missed more often). With
+\code{freqs} given and no \code{search_width} it
+has no effect (a warning says so if you set it).
+Default: 0.05.}
 
 \item{grid_factor}{Whole number of 1 or more. Only for \code{method =
-                        "spectrum_fit"} with \code{freqs = NULL}. How many
-times finer than the standard ruler the frequencies
-are tested (see Details). 1 is the standard ruler,
-which misses a line that lies between two marks.
-With \code{freqs} given it has no effect (a warning
+"spectrum_fit"} when the lines are searched
+(\code{freqs = NULL}, or \code{search_width}
+given). How many times finer than the standard
+ruler the frequencies are tested (see Details). 1
+is the standard ruler, which misses a line that
+lies between two marks. With \code{freqs} given and
+no \code{search_width} it has no effect (a warning
 says so if you set it). Default: 8.}
+
+\item{search_width}{Numeric or NULL. Only for \code{method =
+"spectrum_fit"}, and only together with
+\code{freqs}. Limits the search to zones: the lines
+are searched only within \code{search_width} Hz on
+each side of every frequency in \code{freqs}, so
+\code{freqs = 50} with \code{search_width = 1}
+means 49 to 51 Hz. A steady wave outside the zones
+is never removed, whatever it is. One number for
+all frequencies or one per frequency (a harmonic
+wanders further than the mains: for example
+\code{c(1, 2, 3)} for \code{c(50, 100, 150)}); each
+must be more than 0. \code{notch_widths} is not
+used then. A zone that holds no mark of the ruler
+is an error (see Details). NULL: no zones.
+Default: NULL.}
 
 \item{channels}{NULL, a character vector, or an integer vector.
 Channels to filter. NULL = every channel except those
@@ -222,7 +247,9 @@ which is also what you get when you leave \code{freqs} out for this method,
 the lines are searched automatically, harmonics included, and the
 frequencies that were found are reported. With \code{freqs} given no test is
 made: in every piece, the frequencies of the ruler that lie inside
-\code{notch_widths} around each of them are removed.
+\code{notch_widths} around each of them are removed. (With \code{freqs}
+and \code{search_width} given the lines are searched, but only around the
+\code{freqs}: see below.)
 
 \strong{The finer ruler.} The standard ruler has one mark every 1/T Hz, T
 being the piece length (0.1 Hz for 10 s pieces), and a line that falls
@@ -235,18 +262,49 @@ made-up noise with a 20 uV hum: a hum at 50.37 Hz, between two marks, was
 4.2 percent. Of every run of neighbouring marks that pass the test only the
 strongest one is used, and \code{p_value} is shared over all marks, so false
 alarms stay as rare as with the standard ruler. The finer ruler is used only
-when the lines are searched (\code{freqs = NULL}); with \code{freqs} given
-\code{grid_factor} has no effect (a warning says so if you set it). It costs time: about 0.2 s per minute of
+when the lines are searched (\code{freqs = NULL}, or \code{freqs} together
+with \code{search_width}); with \code{freqs} given and no
+\code{search_width} \code{grid_factor} has no effect (a warning says so if
+you set it). It costs time: about 0.2 s per minute of
 one channel at 512 Hz (0.02 s with \code{grid_factor = 1}), plus about 0.3 s
 once for the windows, so downsample first if the sampling rate is higher.
 
+\strong{Searching only where you say.} The search over the whole spectrum
+(\code{freqs = NULL}) does not know what a steady wave is: mains hum, a
+steady flicker response and a tagging frequency all look the same to it,
+and all of them are removed. With \code{freqs} given and
+\code{search_width} set, the lines are searched in the same way, but a line
+is removed only if its strongest mark lies inside a zone, that is within
+\code{search_width} Hz of one of the \code{freqs} (\code{freqs = 50} with
+\code{search_width = 1} means 49 to 51 Hz). A steady wave anywhere else, a
+tagging frequency at 7 Hz or 60 Hz for example, is never touched. Inside a
+zone the hum is followed from piece to piece, so a hum that wanders a
+little, say between 49.8 and 50.5 Hz, is removed too. A notch of the usual
+width may remove such a hum only in part; a wider notch
+(\code{notch_widths}) also covers it, but cuts out a whole band, while the
+search subtracts only the hum. Choose a width that covers how far the hum
+can wander and stays away from the frequencies you want to keep: a steady
+wave inside a zone is removed too. A harmonic wanders further than the
+mains, so it needs a wider zone (for example \code{freqs = c(50, 100, 150)}
+with \code{search_width = c(1, 2, 3)}). A hum that leaves its zone is not
+found; with \code{verbose = TRUE} the share of the channel-pieces with a
+line is printed for every zone, so a zone that misses the hum shows at
+once. For a hum that wanders, shorter pieces follow it better (for example
+\code{filter_length = "5s"}). The ruler has a mark every
+sfreq / (piece length x \code{grid_factor}) Hz, and a zone that holds no
+mark is an error that says how wide the zone must be at least.
+\code{p_value} is shared over the marks inside the zones, so zones that
+cover the whole spectrum give the same result as the search without zones.
+
 Limits of spectrum-fit: a hum whose frequency moves during a piece is only
 partly removed (use shorter pieces, for example \code{filter_length =
-"5s"}); any wave that stays steady for a whole piece counts as a line, so
-look at the frequencies that are reported; a piece that contains missing
-values is left unchanged, with a warning. A longer explanation with figures
-is in the file \code{notes/finer-ruler-spectrum-fit.pdf} of the package
-sources.
+"5s"}); in the search over the whole spectrum any wave that stays steady
+for a whole piece counts as a line, a steady tagging frequency or flicker
+response included, so look at the frequencies that are reported, or limit
+the search to where the hum is with \code{search_width}; a piece that
+contains missing values is left unchanged, with a warning. A longer
+explanation with figures is in the file
+\code{notes/finer-ruler-spectrum-fit.pdf} of the package sources.
 }
 \references{
 Butterworth, S. (1930). On the theory of filter amplifiers. Wireless

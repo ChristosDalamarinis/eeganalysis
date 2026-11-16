@@ -81,6 +81,8 @@ eeg_data <- downsample(eeg_data, target_rate = 256)
 eeg_data <- eeg_bandpass(eeg_data, l_freq = 0.1, h_freq = 40)
 eeg_data <- eeg_notch(eeg_data, freqs = 50)
 eeg_data <- eeg_notch(eeg_data, method = "spectrum_fit")   # alternative: finds the line noise itself and subtracts it
+eeg_data <- eeg_notch(eeg_data, freqs = c(50, 100, 150), method = "spectrum_fit",
+                      search_width = c(1, 2, 3), filter_length = "5s")   # same, but only looks within 1, 2 and 3 Hz of the mains and its harmonics: follows a wandering hum, never touches a tagging frequency
 ```
 
 ### Find and repair bad channels

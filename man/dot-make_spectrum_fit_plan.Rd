@@ -11,7 +11,8 @@
   mt_bandwidth,
   p_value,
   grid_factor,
-  searching
+  searching,
+  zones = NULL
 )
 }
 \arguments{
@@ -27,8 +28,12 @@
 
 \item{grid_factor}{Integer. The finer-ruler factor asked for.}
 
-\item{searching}{Logical. TRUE for the automatic search (\code{freqs} =
-NULL). Only then is the finer ruler used.}
+\item{searching}{Logical. TRUE when the lines are searched (the whole
+spectrum, or only the zones). Only then is the finer ruler used.}
+
+\item{zones}{NULL (search the whole spectrum), or the list of zones
+described in \code{.spectrum_fit_design()}; handed to the design of every
+piece length. Only with \code{searching = TRUE}.}
 }
 \value{
 A list: \code{n}, \code{step}, \code{win}, \code{starts},

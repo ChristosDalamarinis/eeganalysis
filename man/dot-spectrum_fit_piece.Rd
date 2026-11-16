@@ -16,7 +16,10 @@ NULL (automatic search).}
 
 \item{notch_widths}{Numeric, same length as \code{freqs}, or NULL.}
 
-\item{design}{List from \code{.spectrum_fit_design()}.}
+\item{design}{List from \code{.spectrum_fit_design()}. When it holds
+zones (\code{design$allowed}), a line found by the automatic search is
+subtracted only if the mark with the strongest score of that line lies in
+a zone; a line whose strongest mark is outside is left alone.}
 
 \item{grid}{Integer. Ruler factor (1 = standard ruler).}
 }

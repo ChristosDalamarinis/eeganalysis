@@ -12,6 +12,7 @@
   mt_bandwidth,
   p_value,
   grid_factor,
+  search_width,
   ch_idx,
   segments,
   verbose
@@ -31,7 +32,12 @@ NULL to search for the lines.}
 
 \item{p_value}{Numeric. False-alarm level of the automatic search.}
 
-\item{grid_factor}{Integer. Finer-ruler factor of the automatic search.}
+\item{grid_factor}{Integer. Finer-ruler factor of the search.}
+
+\item{search_width}{NULL, or numeric (one number, or one per frequency of
+\code{freqs}). With \code{freqs} given and \code{search_width} not NULL
+the lines are searched, but only inside the zones \code{freqs} plus or
+minus \code{search_width} (Hz); \code{notch_widths} is not used then.}
 
 \item{ch_idx}{Integer vector. Rows of the data to clean.}
 

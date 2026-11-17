@@ -293,6 +293,9 @@ eeganalysis
 │   ├── test-interpolate.R
 │   └── ...R                                 ← Remaining test files
 │
+├── vignettes/                               ← Long-form guides (they run on simulated data)
+│   └── getting-started.Rmd                  ← A first full pipeline: filter, clean, epoch, map
+│
 ├── NAMESPACE                                ← Exported functions (auto-generated)
 ├── DESCRIPTION                              ← Package metadata
 ├── LICENSE                                  ← License information

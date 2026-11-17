@@ -24,7 +24,8 @@
 #       - "average"  → ref_idx = contrib_idx
 #       - character  → match() to chan_names; stops on NA → Suite 1.
 #       - integer    → used directly
-#     ref_idx = intersect(ref_idx, contrib_idx); stops if empty → Suite 1.
+#     ref_idx = intersect(ref_idx, contrib_idx); warns if a named channel was
+#     left out because it is bad or excluded (Suite 11); stops if empty→ Suite 1.
 #  6. Computes ref_signal = colMeans(data[ref_idx,], na.rm=TRUE)
 #     → vector of length ncol (one value per time point) → Suite 9.
 #  7. Subtracts ref_signal from all channels in apply_idx (= contrib_idx)
@@ -811,7 +812,8 @@ test_that("rereferencing can be chained: average → specific channel", {
 #     (b) still subtract the reference from them (unlike 'exclude', which
 #         leaves channels completely untouched).
 #   A channel requested directly via 'ref' that is also in eeg$bads must be
-#   treated as unavailable, same as an excluded channel.
+#   treated as unavailable, same as an excluded channel - left out of the
+#   reference, with a warning that names it (an error if none is left).
 
 test_that("bad channel is excluded from average reference computation", {
   # Same 3-channel fixture as Suite 4/6. Marking Ch3 bad should make the
@@ -854,16 +856,175 @@ test_that("bad channel still receives the reference subtraction (unlike exclude)
 
 test_that("bad channel within a linked ref is dropped, remaining ref channel(s) used", {
   # Same narrowing behavior as 'exclude': intersect(ref_idx, contrib_idx)
-  # silently drops the unavailable channel rather than erroring, as long as
-  # at least one requested ref channel remains usable.
+  # drops the unavailable channel rather than erroring, as long as at least
+  # one requested ref channel remains usable (and warns about it, see below).
   eeg <- make_eeg(channel_names = c("Cz", "Pz", "M1", "M2"), seed = 30)
   eeg$bads <- "M1"
 
-  result       <- eeg_rereference(eeg, ref = c("M1", "M2"))
+  expect_warning(
+    result <- eeg_rereference(eeg, ref = c("M1", "M2")),
+    "'M1' \\(marked bad in eeg\\$bads\\)"
+  )
   result_m2only <- eeg_rereference(eeg, ref = "M2")
 
   expect_equal(result$reference, "M2")
   expect_equal(result$data, result_m2only$data, tolerance = 1e-10)
+})
+
+# ---- the warning for a named reference channel that cannot be used ---------
+# A named channel that is bad (or excluded) is left out of the reference. The
+# result is a different reference than the one asked for, so the function must
+# say so. Fixture: every sample of Fz/Cz/C3/C4 is 50/20/10/30, so the numbers
+# can be checked by hand (reference C4 alone = 30, Fz then reads 50 - 30 = 20;
+# reference mean(C3, C4) = 20, Fz would read 30).
+make_ref_fixture <- function(bads = character(0)) {
+  new_eeg(
+    data          = matrix(rep(c(50, 20, 10, 30), each = 4),
+                           nrow = 4, ncol = 4, byrow = TRUE),
+    channels      = c("Fz", "Cz", "C3", "C4"),
+    sampling_rate = 256,
+    bads          = bads
+  )
+}
+
+test_that("a bad channel named in ref gives ONE warning with its name, the reason and the real reference", {
+  eeg    <- make_ref_fixture(bads = "C3")
+  before <- eeg$data
+
+  w <- capture_warnings(result <- eeg_rereference(eeg, ref = c("C3", "C4")))
+
+  expect_length(w, 1)
+  expect_match(w, "'C3' (marked bad in eeg$bads)", fixed = TRUE)
+  expect_match(w, "The reference is now C4.", fixed = TRUE)
+  # the numbers are those of the one-channel reference, by hand: 50 - 30
+  expect_equal(result$reference, "C4")
+  expect_equal(result$data[1, ], rep(20, 4))
+  expect_match(result$preprocessing_history[[1]], "Re-referenced to: C4")
+  # the input object is not touched
+  expect_equal(eeg$data, before)
+})
+
+test_that("the warning changes nothing else: same result as asking for the usable channel alone", {
+  eeg <- make_ref_fixture(bads = "C3")
+
+  result <- suppressWarnings(eeg_rereference(eeg, ref = c("C3", "C4")))
+  alone  <- expect_no_warning(eeg_rereference(eeg, ref = "C4"))
+
+  expect_equal(result$data, alone$data)
+  expect_equal(result$reference, alone$reference)
+  expect_equal(result$preprocessing_history, alone$preprocessing_history)
+})
+
+test_that("no warning when every named reference channel can be used", {
+  expect_no_warning(eeg_rereference(make_ref_fixture(), ref = c("C3", "C4")))
+  expect_no_warning(eeg_rereference(make_ref_fixture(), ref = "Cz"))
+  # a bad channel that is NOT named in ref is not mentioned
+  expect_no_warning(eeg_rereference(make_ref_fixture("C3"), ref = c("Cz", "C4")))
+  # the average reference keeps a bad channel out on its own, silently
+  expect_no_warning(eeg_rereference(make_ref_fixture("C3"), ref = "average"))
+  # an excluded channel that is not named in ref is not mentioned either
+  expect_no_warning(eeg_rereference(make_ref_fixture(), ref = "C4", exclude = "Fz"))
+})
+
+test_that("a channel named in ref and in exclude is reported as excluded, and stays untouched", {
+  eeg <- make_ref_fixture()
+
+  w <- capture_warnings(
+    result <- eeg_rereference(eeg, ref = c("C3", "C4"), exclude = "C3")
+  )
+
+  expect_length(w, 1)
+  expect_match(w, "'C3' (listed in 'exclude')", fixed = TRUE)
+  expect_false(grepl("marked bad", w, fixed = TRUE))
+  expect_equal(result$reference, "C4")
+  expect_equal(result$data[3, ], eeg$data[3, ])
+})
+
+test_that("a channel that is both excluded and bad is listed once, as excluded", {
+  eeg <- make_ref_fixture(bads = "C3")
+
+  w <- capture_warnings(
+    eeg_rereference(eeg, ref = c("C3", "C4"), exclude = "C3")
+  )
+
+  expect_length(w, 1)
+  expect_match(w, "'C3' (listed in 'exclude')", fixed = TRUE)
+  expect_false(grepl("marked bad", w, fixed = TRUE))
+})
+
+test_that("several unusable channels give one warning that lists each with its own reason", {
+  eeg <- make_ref_fixture(bads = "C3")
+
+  w <- capture_warnings(
+    result <- eeg_rereference(eeg, ref = c("Fz", "Cz", "C3"), exclude = "Fz")
+  )
+
+  expect_length(w, 1)
+  expect_match(w, "'Fz' (listed in 'exclude')", fixed = TRUE)
+  expect_match(w, "'C3' (marked bad in eeg$bads)", fixed = TRUE)
+  expect_match(w, "The reference is now Cz.", fixed = TRUE)
+  expect_equal(result$reference, "Cz")
+})
+
+test_that("a numeric ref that points at a bad channel warns in the same way", {
+  eeg <- make_ref_fixture(bads = "C3")
+
+  w <- capture_warnings(result <- eeg_rereference(eeg, ref = c(3, 4)))
+
+  expect_length(w, 1)
+  expect_match(w, "'C3' (marked bad in eeg$bads)", fixed = TRUE)
+  expect_equal(result$reference, "C4")
+})
+
+test_that("a channel named twice in ref is reported once", {
+  eeg <- make_ref_fixture(bads = "C3")
+
+  w <- capture_warnings(eeg_rereference(eeg, ref = c("C3", "C3", "C4")))
+
+  expect_length(w, 1)
+  expect_equal(lengths(regmatches(w, gregexpr("'C3'", w))), 1)
+})
+
+test_that("an index past the last channel is not mistaken for a bad channel", {
+  # Old behaviour that this warning leaves alone: a number in ref that is not a
+  # channel is dropped without a word. It must not turn into a made-up
+  # "'NA' (marked bad ...)" warning.
+  eeg <- make_ref_fixture()
+
+  result <- expect_no_warning(eeg_rereference(eeg, ref = c(4, 99)))
+
+  expect_equal(result$reference, "C4")
+})
+
+test_that("when no named reference channel is usable it is an error, with no warning before it", {
+  eeg  <- make_ref_fixture(bads = c("C3", "C4"))
+  seen <- character(0)
+
+  withCallingHandlers(
+    expect_error(
+      eeg_rereference(eeg, ref = c("C3", "C4")),
+      "Reference channels are all excluded by 'exclude' or marked bad in eeg\\$bads"
+    ),
+    warning = function(w) {
+      seen <<- c(seen, conditionMessage(w))
+      invokeRestart("muffleWarning")
+    }
+  )
+  expect_length(seen, 0)
+})
+
+test_that("with drop_ref = TRUE only the channels really used are dropped, and the warning still comes once", {
+  eeg <- make_eeg(channel_names = c("Cz", "Pz", "M1", "M2"), seed = 34)
+  eeg$bads <- "M1"
+
+  w <- capture_warnings(
+    result <- eeg_rereference(eeg, ref = c("M1", "M2"), drop_ref = TRUE)
+  )
+
+  expect_length(w, 1)
+  expect_match(w, "'M1' (marked bad in eeg$bads)", fixed = TRUE)
+  # M2 was the reference and is gone; the bad M1 was never the reference and stays
+  expect_equal(result$channels, c("Cz", "Pz", "M1"))
 })
 
 test_that("requesting ref channels that are ALL bad errors out", {

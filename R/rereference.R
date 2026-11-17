@@ -19,6 +19,8 @@
 #' @param eeg An EEG object as used in this package.
 #' @param ref Character or integer vector specifying the new reference
 #'   channel(s). Use \code{"average"} to apply a common average reference.
+#'   A named channel that is also in \code{exclude} or \code{eeg$bads} is
+#'   left out of the reference, with a warning (see Details).
 #' @param exclude Optional character or integer vector of channels to
 #'   exclude from computing the reference (e.g., EOG, EMG). Excluded
 #'   channels are left untouched entirely - they are not part of the EEG
@@ -57,7 +59,11 @@
 #' bad channels in the same reference frame means they stay consistent with
 #' the rest of the data once they are later fixed (e.g., interpolated). A
 #' channel requested directly via \code{ref} that is also listed in
-#' \code{eeg$bads} is treated as unavailable, the same as an excluded one.
+#' \code{eeg$bads} is treated as unavailable, the same as an excluded one:
+#' it is left out of the reference and a warning names it (if no requested
+#' channel is left, the function stops with an error). To use such a channel
+#' anyway, take it out of \code{eeg$bads} first. MNE-Python differs here: it
+#' uses a bad channel that is named in \code{ref}.
 #'
 #' After re-referencing to specific channels (e.g., linked mastoids), those
 #' channels remain in the data by default, transformed into mirror-image
@@ -155,9 +161,29 @@ eeg_rereference <- function(eeg,
       stop("Some reference channels specified in 'ref' were not found.")
     }
     # also ensure ref channels are part of contributors (not excluded, not bad)
+    requested_idx <- ref_idx
     ref_idx <- intersect(ref_idx, contrib_idx)
     if (length(ref_idx) == 0) {
       stop("Reference channels are all excluded by 'exclude' or marked bad in eeg$bads.")
+    }
+
+    # a named reference channel that cannot be used is left out of the
+    # reference. Say so: without a word the user would get a different
+    # reference than the one asked for (the stored label shows the real one).
+    left_out_idx <- setdiff(requested_idx, ref_idx)
+    left_out_idx <- left_out_idx[left_out_idx %in% c(excl_idx, bads_idx)]
+    if (length(left_out_idx) > 0) {
+      left_out_why <- ifelse(left_out_idx %in% excl_idx,
+                             "listed in 'exclude'",
+                             "marked bad in eeg$bads")
+      warning("Channel(s) named in 'ref' were left out of the reference: ",
+              paste0("'", chan_names[left_out_idx], "' (", left_out_why, ")",
+                     collapse = ", "),
+              ". The reference is now ",
+              paste(chan_names[ref_idx], collapse = "+"),
+              ". To use a left-out channel anyway, take it out of eeg$bads ",
+              "(or 'exclude') first.",
+              call. = FALSE)
     }
   }
 

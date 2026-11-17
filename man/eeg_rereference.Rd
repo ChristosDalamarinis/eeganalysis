@@ -16,7 +16,9 @@ eeg_rereference(
 \item{eeg}{An EEG object as used in this package.}
 
 \item{ref}{Character or integer vector specifying the new reference
-channel(s). Use \code{"average"} to apply a common average reference.}
+channel(s). Use \code{"average"} to apply a common average reference.
+A named channel that is also in \code{exclude} or \code{eeg$bads} is
+left out of the reference, with a warning (see Details).}
 
 \item{exclude}{Optional character or integer vector of channels to
 exclude from computing the reference (e.g., EOG, EMG). Excluded
@@ -72,7 +74,11 @@ which is meant for channels that were never on the EEG reference scheme
 bad channels in the same reference frame means they stay consistent with
 the rest of the data once they are later fixed (e.g., interpolated). A
 channel requested directly via \code{ref} that is also listed in
-\code{eeg$bads} is treated as unavailable, the same as an excluded one.
+\code{eeg$bads} is treated as unavailable, the same as an excluded one:
+it is left out of the reference and a warning names it (if no requested
+channel is left, the function stops with an error). To use such a channel
+anyway, take it out of \code{eeg$bads} first. MNE-Python differs here: it
+uses a bad channel that is named in \code{ref}.
 
 After re-referencing to specific channels (e.g., linked mastoids), those
 channels remain in the data by default, transformed into mirror-image

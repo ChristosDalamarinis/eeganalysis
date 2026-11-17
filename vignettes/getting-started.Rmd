@@ -1,0 +1,263 @@
+---
+title: "Getting started with eeganalysis"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Getting started with eeganalysis}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.width = 6.5,
+  fig.height = 4,
+  dpi = 96
+)
+```
+
+```{r setup}
+library(eeganalysis)
+```
+
+## What this vignette covers
+
+`eeganalysis` reads EEG recordings (BioSemi `.bdf` files today), cleans them, and cuts them into epochs. This vignette walks through one small, complete pipeline from start to finish:
+
+1.  look at a recording,
+2.  filter it,
+3.  find and repair a broken electrode,
+4.  re-reference it,
+5.  cut it into epochs around events and average them,
+6.  draw a scalp map.
+
+Every step takes an `eeg` object and returns a **new** one, so you can keep the earlier versions and compare them.
+
+## The data: a simulated recording
+
+A real recording would be loaded like this (not run here, because the vignette has to work on any computer):
+
+```{r read-real, eval = FALSE}
+eeg <- read_bdf_native("recording.bdf", eog = c("EXG1", "EXG2"))
+```
+
+Instead, the next chunk builds a 60-second, 19-channel recording with the standard 10-20 layout at 256 Hz. It contains four things you would meet in real data: slow background activity, an alpha rhythm (10 Hz) that is strongest at the back of the head, 50 Hz mains hum, and one broken electrode (`T8`). It also contains 34 stimuli, and the rarer ones (code 2) evoke a P3-like response over `Pz`.
+
+You can skip the chunk; what matters is the last three lines, which show how any matrix becomes an `eeg` object.
+
+```{r simulate}
+set.seed(42)
+fs  <- 256
+dur <- 60
+n   <- fs * dur
+chs <- c("Fp1", "Fp2", "F7", "F3", "Fz", "F4", "F8", "T7", "C3", "Cz",
+         "C4", "T8", "P7", "P3", "Pz", "P4", "P8", "O1", "O2")
+
+# electrode positions (x = left/right, y = front/back, z = up)
+mont <- create_montage(channels = chs, template = "standard_1020")
+pos  <- as.matrix(mont$positions[match(chs, mont$positions$channel),
+                                 c("x", "y", "z")])
+rownames(pos) <- chs
+D     <- as.matrix(dist(pos))           # distances between electrodes
+t_sec <- (seq_len(n) - 1) / fs
+
+# slow background activity shared between neighbouring electrodes
+K      <- 10
+latent <- scale(sapply(seq_len(K), function(k) {
+  as.numeric(stats::filter(rnorm(n), 0.95, "recursive"))
+}))
+W      <- exp(-D[, sample(length(chs), K)]^2 / (2 * 60^2))
+data   <- 6 * W %*% t(latent)
+
+# alpha rhythm, strongest at the back of the head (y is negative there)
+alpha_weight <- plogis(-pos[, "y"] / 25)
+envelope     <- 1 + 0.5 * sin(2 * pi * 0.1 * t_sec)
+data <- data + 8 * outer(alpha_weight, envelope * sin(2 * pi * 10 * t_sec))
+
+# 50 Hz mains hum and sensor noise
+data <- data + 4 * outer(runif(length(chs), 0.5, 1.5), sin(2 * pi * 50 * t_sec))
+data <- data + matrix(rnorm(length(chs) * n, sd = 1.5), length(chs), n)
+
+# one broken electrode: pure noise, unrelated to its neighbours
+data["T8", ] <- rnorm(n, sd = 40)
+
+# 34 stimuli; the rare ones (code 2) evoke a P3 at Pz, the others a small N1 at Cz
+ev_times <- seq(4, 54, by = 1.5) + runif(34, -0.1, 0.1)
+ev_code  <- sample(c(1L, 2L), length(ev_times), replace = TRUE,
+                   prob = c(0.7, 0.3))
+tt   <- seq(0, 0.8, by = 1 / fs)
+p3   <- 10 * exp(-(tt - 0.3)^2 / (2 * 0.06^2))
+n1   <- -4 * exp(-(tt - 0.1)^2 / (2 * 0.03^2))
+w_p3 <- exp(-D[, "Pz"]^2 / (2 * 60^2))
+w_n1 <- exp(-D[, "Cz"]^2 / (2 * 60^2))
+for (i in seq_along(ev_times)) {
+  s   <- round(ev_times[i] * fs) + 1
+  idx <- s:(s + length(tt) - 1)
+  data[, idx] <- data[, idx] +
+    if (ev_code[i] == 2L) outer(w_p3, p3) else outer(w_n1, n1)
+}
+
+# the three lines that matter: matrix -> eeg object, add positions, add events
+eeg <- new_eeg(data, chs, fs, metadata = list(subject = "simulated"))
+eeg <- set_montage(eeg, "standard_1020")
+eeg <- add_events(eeg, times = ev_times, code = ev_code)
+```
+
+## Looking at the recording
+
+Printing an `eeg` object gives a short overview: how many channels, how long, the amplitude range, any bad channels, events, and a log of what has been done so far.
+
+```{r print}
+eeg
+```
+
+`eeg_summary()` goes further and checks every channel for problems (flat lines, huge amplitudes, noise far above the other channels):
+
+```{r summary}
+invisible(eeg_summary(eeg))
+```
+
+It already points at `T8`. Here is that channel next to a healthy one:
+
+```{r signal, fig.height = 2.8}
+# tmin and tmax are in milliseconds: here seconds 10 to 14 of the recording
+plot_eeg_signal(eeg, channel = "Pz", tmin = 10000, tmax = 14000)
+plot_eeg_signal(eeg, channel = "T8", tmin = 10000, tmax = 14000)
+```
+
+## Filtering
+
+Two filters are usual first steps. A **notch** filter removes mains hum (50 Hz in Europe, 60 Hz in the Americas), and a **band-pass** filter keeps only the frequencies you care about. All functions that print progress take `verbose = FALSE` to stay quiet.
+
+```{r filter}
+filtered <- eeg_notch(eeg, freqs = 50, verbose = FALSE)
+filtered <- eeg_bandpass(filtered, l_freq = 1, h_freq = 40, verbose = FALSE)
+```
+
+The power spectrum of `Pz` before and after shows what changed. The 50 Hz spike is gone, and above 40 Hz the red line falls out of the bottom of the plot because those frequencies are cut away. The 10 Hz alpha peak is untouched.
+
+```{r spectrum}
+psd_raw  <- eeg_psd_welch(eeg,      fmin = 0.5, fmax = 80, verbose = FALSE)
+psd_filt <- eeg_psd_welch(filtered, fmin = 0.5, fmax = 80, verbose = FALSE)
+
+plot(psd_raw$frequencies, psd_raw$power["Pz", ], type = "l", log = "y",
+     col = "grey50", lwd = 2, xlab = "Frequency (Hz)", ylab = "Power",
+     main = "Pz: before (grey) and after (red) filtering")
+lines(psd_filt$frequencies, psd_filt$power["Pz", ], col = "red", lwd = 2)
+```
+
+## Finding and repairing a broken electrode
+
+`find_bad_channels()` runs four checks (flat signal, extreme amplitude, a correlation check against the neighbouring electrodes, and a global outlier check) and writes the culprits into `eeg$bads`. Later steps read that list, so a channel only has to be marked once.
+
+With `return_details = TRUE` you also get a table that says *why* each channel was flagged:
+
+```{r bads}
+# lof_n_neighbors = 10 because this demo has only 19 channels; the default (20)
+# suits a normal cap with 32 or more
+result <- find_bad_channels(filtered, lof_n_neighbors = 10,
+                            return_details = TRUE)
+result$flags
+
+filtered <- result$eeg_obj
+filtered$bads
+```
+
+`interpolate_bads()` then replaces each bad channel with an estimate computed from its neighbours (a spherical-spline interpolation, which needs the montage we attached earlier):
+
+```{r interpolate}
+repaired <- interpolate_bads(filtered)
+repaired$bads                 # empty again: the channel has been rebuilt
+
+round(c(before = sd(filtered$data["T8", ]),
+        after  = sd(repaired$data["T8", ])), 1)
+```
+
+The standard deviation of `T8` drops to the level of its neighbours.
+
+## Re-referencing
+
+EEG is always measured *relative* to something. The average reference subtracts the mean of all channels from each channel. Do it after repairing bad channels, otherwise a noisy electrode would leak into every other channel through the average.
+
+```{r reference}
+clean <- eeg_rereference(repaired, ref = "average")
+clean$reference
+```
+
+## Epochs and averages
+
+`epoch_eeg()` cuts a window around each event. Here every window runs from 0.2 s before to 0.8 s after the stimulus, and the average of the first 0.2 s is subtracted as a baseline.
+
+```{r events}
+head(clean$events)
+```
+
+```{r epochs}
+epochs <- epoch_eeg(clean, events = c(1, 2), tmin = -0.2, tmax = 0.8,
+                    baseline = c(-0.2, 0), verbose = FALSE)
+table(epochs$events$type)
+```
+
+`average_epochs()` averages the epochs of each event code into one waveform (an evoked response):
+
+```{r average}
+evoked <- average_epochs(epochs, by = "event_type", verbose = FALSE)
+
+plot(evoked$times, evoked$evoked[["2"]]["Pz", ], type = "l", col = "red",
+     lwd = 2, xlab = "Time after stimulus (s)", ylab = "Amplitude (microvolts)",
+     main = "Evoked response at Pz")
+lines(evoked$times, evoked$evoked[["1"]]["Pz", ], col = "grey40", lwd = 2)
+abline(v = 0, h = 0, lty = 3)
+legend("topright", legend = c("rare (code 2)", "frequent (code 1)"),
+       col = c("red", "grey40"), lwd = 2, bty = "n")
+```
+
+The rare stimulus produces the P3 peak around 300 ms that was built into the simulation.
+
+## A scalp map
+
+`eeg_band_power()` summarises each channel's power in the usual EEG bands. Together with the montage, `plot_topography()` turns one band into a map:
+
+```{r topography}
+power <- eeg_band_power(repaired, verbose = FALSE)
+plot_topography(repaired, values = setNames(power$alpha, power$channel),
+                main = "Alpha power (8-13 Hz)")
+```
+
+The alpha power is highest over the back of the head, as simulated.
+
+The map is drawn from `repaired`, the data *before* re-referencing, on purpose. Band power depends on the reference. The average reference subtracts the mean of all channels from each channel, and in this simulation that mean is dominated by the strong alpha at the back, so the front would receive the same alpha with the opposite sign and light up as well. Real alpha is rarely this localised, but it is a good reason to always say which reference a map was made with.
+
+## What happened to the data
+
+Each function that changes a recording adds a line to its history, so you can always see what was done, in order:
+
+```{r history}
+cat(paste0(seq_along(clean$preprocessing_history), ". ",
+           unlist(clean$preprocessing_history)), sep = "\n")
+```
+
+## Where to go next
+
+Independent component analysis (ICA) is the usual way to remove eye blinks and heartbeats. It needs a real recording with an EOG channel, so the code below is shown but not run:
+
+```{r ica, eval = FALSE}
+hp  <- eeg_bandpass(eeg, l_freq = 1, h_freq = 40)  # ICA likes a 1 Hz high-pass
+ica <- new_ica(n_components = 15, random_state = 97)
+ica <- fit_ica(ica, hp)
+
+plot_ica_topography(ica, hp, component = 1)        # look at the components
+ica   <- set_exclude(ica, components = c(1, 4))    # mark the artifacts
+clean <- apply_ica(ica, eeg)                       # remove them
+```
+
+Other things the package can do, each with its own help page:
+
+- **Reading and events:** `read_bdf_native()`, `inspect_triggers()`, `add_events()`, `remove_events()`
+- **Channels:** `set_channel_types()`, `drop_channels()`, `pick_types()`, `set_bipolar_reference()`, `find_bridged_electrodes()`
+- **Artifacts:** `annotate_muscle()`, `annotate_amplitude()`, `fit_eog_regression()`, `find_bads_eog()`, `find_bads_ecg()`
+- **Signal tools:** `downsample()`, `filter_data()`, `plot_filter()`, `apply_hilbert()`, `compute_csd()`
+- **Spectra:** `eeg_fft()`, `eeg_multitaper()`, `eeg_psd_welch()`
+
+Type `help(package = "eeganalysis")` for the full list.

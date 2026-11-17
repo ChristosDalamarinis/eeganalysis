@@ -35,3 +35,6 @@ test_signal_99.csv
 *.rst
 *.theme
 *.bundle.min.js
+inst/doc
+/doc/
+/Meta/

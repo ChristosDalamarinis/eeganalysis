@@ -65,15 +65,21 @@ reference).
 When one or several channels are specified in \code{ref}, the reference
 signal is the mean of those channels at each time point.
 
-\strong{Bad channels (\code{eeg$bads}):} channels marked bad are excluded
-from computing the reference signal (so noisy/broken data does not
+\strong{Bad channels (\code{eeg$bads}):} channels marked bad are left out
+of computing the reference signal (so noisy/broken data does not
 contaminate the average), but the reference is still subtracted from
 them, same as any other EEG channel. This differs from \code{exclude},
 which is meant for channels that were never on the EEG reference scheme
-(EOG/EMG/etc.) and are left untouched by this function entirely. Keeping
-bad channels in the same reference frame means they stay consistent with
-the rest of the data once they are later fixed (e.g., interpolated). A
-channel requested directly via \code{ref} that is also listed in
+(EOG/EMG/etc.) and are left untouched by this function entirely. The
+reason is that the object carries one reference label
+(\code{eeg$reference}) for all its rows: a bad channel that you keep
+should not stay on the old reference while the label says the new one.
+This has no effect on \code{\link{interpolate_bads}}, which overwrites a
+bad channel from the good ones and never reads the bad channel's own
+values. If you would rather leave the bad channels exactly as they are
+(as MNE-Python does), use \code{exclude = eeg$bads}.
+
+A channel requested directly via \code{ref} that is also listed in
 \code{eeg$bads} is treated as unavailable, the same as an excluded one:
 it is left out of the reference and a warning names it (if no requested
 channel is left, the function stops with an error). To use such a channel
@@ -103,6 +109,9 @@ eeg_mastoids <- eeg_rereference(eeg, ref = c("M1", "M2"))
 
 # Re-reference to linked mastoids and drop them afterward
 eeg_mastoids <- eeg_rereference(eeg, ref = c("M1", "M2"), drop_ref = TRUE)
+
+# Leave the bad channels exactly as they are (they are not touched)
+eeg_avg <- eeg_rereference(eeg, ref = "average", exclude = eeg$bads)
 }
 
 }

@@ -6,3 +6,5 @@
 ^\.positai$
 ^\.claude$
 ^notes$
+^doc$
+^Meta$

@@ -964,49 +964,6 @@ detect_electrode_naming_system <- function(data) {
   # DEFINE NAMING PATTERNS
   # ========================================================================
   
-  # Standard 10-20 system electrodes
-  standard_10_20 <- c(
-    # Prefrontal
-    "Fp1", "Fpz", "Fp2",
-    # Frontal
-    "F7", "F3", "Fz", "F4", "F8",
-    # Temporal
-    "T7", "T8",
-    # Central
-    "C3", "Cz", "C4",
-    # Parietal
-    "P7", "P3", "Pz", "P4", "P8",
-    # Occipital
-    "O1", "Oz", "O2",
-    # Additional temporal
-    "P9", "P10",
-    # Inion
-    "Iz"
-  )
-  
-  # Standard 10-10 system electrodes (extended)
-  standard_10_10 <- c(
-    # Anterior Frontal
-    "AF7", "AF3", "AFz", "AF4", "AF8",
-    # Fronto-Temporal
-    "FT7", "FT8",
-    # Fronto-Central
-    "FC5", "FC3", "FC1", "FCz", "FC2", "FC4", "FC6",
-    # Central extended
-    "C5", "C1", "C2", "C6",
-    # Centro-Temporal
-    "TP7", "TP8",
-    # Centro-Parietal
-    "CP5", "CP3", "CP1", "CPz", "CP2", "CP4", "CP6",
-    # Parietal extended
-    "P5", "P1", "P2", "P6",
-    # Parieto-Occipital
-    "PO7", "PO3", "POz", "PO4", "PO8"
-  )
-  
-  # Combine all standard electrodes
-  all_standard <- c(standard_10_20, standard_10_10)
-  
   # BioSemi internal naming patterns
   biosemi_a_pattern <- "^A([0-9]{1,2})$"  # A1 to A32
   biosemi_b_pattern <- "^B([0-9]{1,2})$"  # B1 to B32

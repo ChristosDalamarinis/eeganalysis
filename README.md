@@ -10,7 +10,7 @@ Contact: [dalamarinischristos\@gmail.com](mailto:dalamarinischristos@gmail.com)
 
 <!-- badges: start -->
 
-[![R-CMD-check](https://github.com/ChristosDalamarinis/eeganalysis/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/ChristosDalamarinis/eeganalysis/actions/workflows/R-CMD-check.yaml) [![Lifecycle: experimental](https://img.shields.io/badge/lifecycle-experimental-orange.svg)](https://lifecycle.r-lib.org/articles/stages.html#experimental) ![Version](https://img.shields.io/badge/version-0.0.0.9000-blue) ![License: MIT](https://img.shields.io/badge/License-MIT-green.svg) ![Last Commit](https://img.shields.io/github/last-commit/ChristosDalamarinis/eeganalysis)
+[![R-CMD-check](https://github.com/ChristosDalamarinis/eeganalysis/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/ChristosDalamarinis/eeganalysis/actions/workflows/R-CMD-check.yaml) [![Lifecycle: experimental](https://img.shields.io/badge/lifecycle-experimental-orange.svg)](https://lifecycle.r-lib.org/articles/stages.html#experimental) ![Version](https://img.shields.io/badge/version-0.0.0.9000-blue) ![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg) ![Last Commit](https://img.shields.io/github/last-commit/ChristosDalamarinis/eeganalysis)
 
 <!-- badges: end -->
 
@@ -298,7 +298,7 @@ eeganalysis
 │
 ├── NAMESPACE                                ← Exported functions (auto-generated)
 ├── DESCRIPTION                              ← Package metadata
-├── LICENSE                                  ← License information
+├── LICENSE.md                               ← License text (GPL-3)
 ├── README.md                                ← Package overview
 ├── .gitignore                               ← Git ignore rules
 ├── .Rbuildignore                            ← Build ignore rules

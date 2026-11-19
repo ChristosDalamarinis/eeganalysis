@@ -44,9 +44,10 @@ new_montage <- function(channels, positions, coord_frame = "biosemi64") {
 #'
 #' Builds a \code{montage} object giving scalp positions (Cartesian
 #' x/y/z and spherical theta/phi/radius) for a set of channel names, taken
-#' from one of the package's built-in layouts: the BioSemi caps, or the
-#' standard 10-20, 10-10 or 10-05 electrode system. Pick the layout that
-#' matches the cap the data was recorded with.
+#' from one of the package's built-in layouts: the BioSemi caps, the standard
+#' 10-20, 10-10 or 10-05 electrode system on a sphere, or the 10-10 and 10-05
+#' systems measured on a real head. Pick the layout that matches the cap the
+#' data was recorded with.
 #'
 #' @param channels Character vector of channel names to include. If
 #'   \code{NULL} (default), every electrode of the layout is used.
@@ -56,8 +57,10 @@ new_montage <- function(channels, positions, coord_frame = "biosemi64") {
 #'   \code{"biosemi256"} (the BioSemi caps with that many electrodes),
 #'   \code{"standard_1020"} (the original 10-20 system, 19 electrodes),
 #'   \code{"standard_1010"} (the standard 10-10 electrode system, 72
-#'   electrodes), or \code{"standard_1005"} (the 10-05 system, 335
-#'   electrodes).
+#'   electrodes), \code{"standard_1005"} (the 10-05 system, 335
+#'   electrodes), \code{"colin27_1020"} (the 10-10 system measured on a real
+#'   head, 94 electrodes) or \code{"colin27_1005"} (the 10-05 system measured
+#'   on a real head, 343 electrodes).
 #'
 #' @return An object of class \code{'montage'}. See \code{new_montage}.
 #'
@@ -114,9 +117,36 @@ new_montage <- function(channels, positions, coord_frame = "biosemi64") {
 #' T6. The three standard layouts accept the old names as well: a channel
 #' called \code{"T3"} gets the position of \code{"T7"} and keeps its name.
 #'
-#' Every layout is on a sphere of radius 87.54 mm, with the nasion, the inion
-#' and the preauricular points 115 degrees from the vertex, so all layouts
-#' share one scale.
+#' The \code{"colin27_1020"} and \code{"colin27_1005"} layouts are not worked
+#' out on a sphere: their positions were measured on a real head, the Colin27
+#' template head (one person's head, scanned many times and averaged). They are
+#' the electrode tables that Robert Oostenveld made for the FieldTrip toolbox
+#' (the files \code{standard_1020.elc} and \code{standard_1005.elc} in the
+#' folder \code{template/electrode} of FieldTrip), included here unchanged
+#' under the GNU General Public License, version 3 or later.
+#' \code{"colin27_1020"} has 94 electrodes and \code{"colin27_1005"} has 343;
+#' both keep every electrode of the original file, including the mastoid and
+#' ear electrodes (\code{"M1"}, \code{"M2"}, \code{"A1"}, \code{"A2"}). The old
+#' names \code{"T3"}, \code{"T4"}, \code{"T5"} and \code{"T6"} are electrodes
+#' of their own, with exactly the position of \code{"T7"}, \code{"T8"},
+#' \code{"P7"} and \code{"P8"}, as in the original files (they are not second
+#' names), so a layout that is drawn whole shows these four twice.
+#'
+#' The positions of the two real-head layouts are shifted by one and the same
+#' amount, so that the centre of the sphere that fits the 94 electrodes of
+#' \code{"colin27_1020"} best is at the origin, like the other layouts. Both
+#' layouts get the same shift, so an electrode has the same position in both,
+#' and the shape is exactly the one of the original files. A real head is not
+#' round: the electrodes lie between about 84 and 112 mm from the origin, and
+#' the \code{radius} of a montage holds the distance of each electrode.
+#' \code{\link{interpolate_bads}} and
+#' \code{\link{compute_csd}} only use the directions of the electrodes, but the
+#' check of \code{compute_csd()} that the electrodes lie on a sphere gives a
+#' warning with these layouts.
+#'
+#' Apart from the two \code{"colin27_..."} layouts, every layout is on a sphere
+#' of radius 87.54 mm, with the nasion, the inion and the preauricular points
+#' 115 degrees from the vertex, so these layouts share one scale.
 #'
 #' Requested channels that have no scalp position in the layout - either
 #' because the layout has no electrode of that name, or because they are
@@ -149,6 +179,9 @@ new_montage <- function(channels, positions, coord_frame = "biosemi64") {
 #'   # The denser 10-05 system, here only a few of its electrodes
 #'   m <- create_montage(c("Cz", "C1h", "CCP3h", "FFT7"),
 #'                       template = "standard_1005")
+#'
+#'   # The 10-10 system measured on a real head (FieldTrip's table)
+#'   m <- create_montage(c("Fz", "Cz", "Pz"), template = "colin27_1020")
 #' }
 #'
 #' @seealso \code{\link{set_montage}}, \code{\link{get_electrode_database}}

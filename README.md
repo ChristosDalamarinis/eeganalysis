@@ -53,6 +53,8 @@ Version 0.0.0.9000 — under active development. Currently reads BioSemi `.bdf` 
 | Current source density (reference-free surface Laplacian; continuous and epoched data) | `compute_csd()` | ✅ |
 | ERP averaging | `average_epochs()` | ⚠️ in development |
 
+The real-head layouts `colin27_1020` and `colin27_1005` of `create_montage()` use the electrode position tables of the [FieldTrip](https://www.fieldtriptoolbox.org) toolbox (Robert Oostenveld and the FieldTrip developers), included unchanged under the GNU General Public License, version 3 or later.
+
 ## Dependencies
 
 - **dbscan** — Local Outlier Factor bad-channel detection
@@ -236,7 +238,7 @@ eeganalysis
 │   │
 │   ├── montage.R                            ← Electrode montage handling
 │   │   ├── new_montage()                    ← Create a montage object
-│   │   ├── create_montage()                 ← Build a montage from a BioSemi cap layout (16 to 256 channels) or the standard 10-20 / 10-10 / 10-05 system
+│   │   ├── create_montage()                 ← Build a montage from a BioSemi cap layout (16 to 256 channels), the standard 10-20 / 10-10 / 10-05 system or the same systems measured on a real head (colin27)
 │   │   ├── set_montage()                    ← Attach a montage, or a built-in layout by name (e.g. "standard_1020"), to an eeg object
 │   │   ├── print.montage()                  ← Display montage object nicely
 │   │   └── read_custom_montage()            ← Read a montage from an .elc, .sfp, .csv, .tsv or .txt file
@@ -244,6 +246,8 @@ eeganalysis
 │   ├── montage_templates.R                  ← BioSemi cap layouts (16/32/64/128/160/256) behind create_montage()
 │   │
 │   ├── montage_standard.R                   ← Standard 10-20 (19 electrodes), 10-10 (72) and 10-05 (335) layouts, computed from the rules that define the systems
+│   │
+│   ├── montage_colin27.R                    ← Real-head 10-10 (94 electrodes) and 10-05 (343) layouts, read from FieldTrip's electrode tables
 │   │
 │   ├── topography.R                         ← Scalp topography plotting
 │   │   └── plot_topography()                ← Interpolated scalp-map plot
@@ -286,12 +290,14 @@ eeganalysis
 │   ├── apply_ica.Rd
 │   └── ...Rd                                ← Remaining help files
 │
-├── tests/testthat/                          ← Unit tests (testthat, one file per module, 30 total)
+├── tests/testthat/                          ← Unit tests (testthat, one file per module, 31 total)
 │   ├── test-read_bdf_native.R
 │   ├── test-ica1.R
 │   ├── test-bad_channels.R
 │   ├── test-interpolate.R
 │   └── ...R                                 ← Remaining test files
+│
+├── inst/extdata/fieldtrip/                  ← FieldTrip's electrode tables (standard_1020.elc, standard_1005.elc), unchanged copies behind the colin27 layouts
 │
 ├── vignettes/                               ← Long-form guides (they run on simulated data)
 │   └── getting-started.Rmd                  ← A first full pipeline: filter, clean, epoch, map

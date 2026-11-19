@@ -18,6 +18,7 @@ test_signal_99.csv
 *.csv
 *.md
 *.elc
+!inst/extdata/fieldtrip/*.elc
 *.png
 *.jinja
 *.csd

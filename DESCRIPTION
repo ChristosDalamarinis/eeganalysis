@@ -1,8 +1,11 @@
 Package: eeganalysis
 Title: EEG Package
 Version: 0.0.0.9000
-Authors@R: 
-    person("Christos", "Dalamarinis", , "dalamarinischristos@gmail.com", role = c("aut", "cre", "cph"))
+Authors@R: c(
+    person("Christos", "Dalamarinis", , "dalamarinischristos@gmail.com", role = c("aut", "cre", "cph")),
+    person("Robert", "Oostenveld", role = "cph",
+           comment = "Author of the FieldTrip electrode position tables in inst/extdata/fieldtrip")
+  )
 Description: Tools for reading, preprocessing, and analyzing EEG data from BioSemi recordings. 
     Includes functions for reading .bdf files, filtering, referencing, artifact correction, 
     and feature extraction. Additional EEG-data formats will be added in the future.

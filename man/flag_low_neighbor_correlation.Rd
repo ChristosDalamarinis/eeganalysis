@@ -21,7 +21,7 @@ as \code{channels}.}
 
 \item{neighbor_map}{A data frame as returned by
 \code{\link{find_channel_neighbors}} (columns \code{channel, neighbor,
-  rank, distance}).}
+rank, distance}).}
 
 \item{correlation_threshold}{Numeric, correlation below which a channel
 is flagged. Default: 0.45.}

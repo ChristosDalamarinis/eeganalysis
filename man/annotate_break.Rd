@@ -28,7 +28,7 @@ size of the gap itself, not of the resulting annotation - see
 break annotation is trimmed back from the stretches bounding it on each
 side, so it doesn't start or end right on top of a real event. Both
 default to 5. \code{min_break_duration - t_start_after_previous -
-  t_stop_before_next} must be positive (otherwise every gap found would
+t_stop_before_next} must be positive (otherwise every gap found would
 produce a non-positive-duration annotation).}
 
 \item{ignore}{Character vector of description prefixes to exclude,

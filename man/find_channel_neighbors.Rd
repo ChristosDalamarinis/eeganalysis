@@ -8,9 +8,9 @@ find_channel_neighbors(positions, k = 4)
 }
 \arguments{
 \item{positions}{A data frame with at least columns \code{channel, x, y,
-  z} - typically \code{montage$positions} or a subset of it (see
+z} - typically \code{montage$positions} or a subset of it (see
 \code{\link{create_montage}}). Extra columns (e.g. \code{theta, phi,
-  radius}) are ignored - \code{radius} in particular is a fixed constant
+radius}) are ignored - \code{radius} in particular is a fixed constant
 for every channel in this package's electrode database, so it carries
 no spatial information.}
 

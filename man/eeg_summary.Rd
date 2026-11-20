@@ -78,6 +78,15 @@ Produces a detailed report of an eeg object, split into a clean EEG
 channel stats block, an EXG channel stats block, and a suspicious
 channel flagging section. Stats are never polluted by the Status
 channel, EXG signals, or channels already marked bad (eeg_obj$bads).
+
+Time points at which a checked EEG channel (type \code{"eeg"}, not in
+\code{eeg_obj$bads}) holds a missing value (\code{NA} or \code{NaN}) or an
+infinite value are left out of the statistics and of the flags, in every
+channel, the same way as in \code{\link{find_bad_channels}} (see there for
+the details). A message and a line in the report say how many were left
+out. If more than a tenth of the time points would be left out, the
+function stops with an error that names the channels. \code{eeg_obj} itself
+is not changed.
 }
 
 \examples{

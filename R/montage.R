@@ -150,6 +150,14 @@ new_montage <- function(channels, positions, coord_frame = "biosemi64") {
 #' of radius 87.54 mm, with the nasion, the inion and the preauricular points
 #' 115 degrees from the vertex, so these layouts share one scale.
 #'
+#' Take care with the names. The two tables that the \code{"colin27_..."}
+#' layouts are read from are called \code{"standard_1020"} and
+#' \code{"standard_1005"} in FieldTrip and in MNE-Python (up to version 1.12).
+#' In this package the \code{"standard_..."} layouts are the ones on a sphere,
+#' so an electrode is typically 3 to 4 degrees away from its place in those
+#' tables, and up to 14 degrees for the lowest ones. To get the positions of
+#' the real-head tables, use \code{"colin27_1020"} or \code{"colin27_1005"}.
+#'
 #' Requested channels that have no scalp position in the layout - either
 #' because the layout has no electrode of that name, or because they are
 #' external channels (EOG/ECG/EMG/GSR/etc., which have no coordinates) - are

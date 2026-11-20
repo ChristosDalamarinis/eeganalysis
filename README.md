@@ -58,7 +58,7 @@ The real-head layouts `colin27_1020` and `colin27_1005` of `create_montage()` us
 ## Dependencies
 
 - **dbscan** — Local Outlier Factor bad-channel detection
-- **akima** — spherical-spline interpolation for bad-channel repair and topography maps
+- **akima** — interpolation of the electrode values onto a grid for the topography maps
 - **MASS** — linear algebra support for ICA and interpolation
 - **plotly** — interactive 3D electrode and topography plots
 

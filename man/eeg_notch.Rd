@@ -41,7 +41,7 @@ centred at each freq. NULL uses:
 freq / 200. Give one number for all frequencies or
 one per frequency; each must be 0 or more (anything
 else is an error). With \code{method =
-                        "spectrum_fit"} it is the width of the zone that is
+"spectrum_fit"} it is the width of the zone that is
 removed, and it is used only when \code{freqs} is
 given and \code{search_width} is not.
 Default: NULL.}
@@ -85,7 +85,7 @@ Any other word is an error.}
 \item{pad}{Character. Padding mode. Default: "reflect_limited".}
 
 \item{mt_bandwidth}{Numeric or NULL. Only for \code{method =
-                        "spectrum_fit"}. The bandwidth in Hz of the smooth
+"spectrum_fit"}. The bandwidth in Hz of the smooth
 windows: how wide a blur one steady wave is seen
 with. The number of windows is this bandwidth times
 the piece length in seconds (at least 3 are

@@ -129,6 +129,17 @@
 #' attached (see \code{\link{set_montage}}); if not, it is skipped with a
 #' message and the other three checks still run.
 #'
+#' Missing values (\code{NA} or \code{NaN}) and infinite values cannot be
+#' compared with a threshold, so a time point at which any of the checked EEG
+#' channels holds one is left out of all four checks, in every channel, and a
+#' message says how many time points were left out. Channels already in
+#' \code{eeg_obj$bads} and channels of other types are not looked at, and
+#' \code{eeg_obj$data} itself is not changed. If more than a tenth of the time
+#' points would be left out, the function stops with an error that names the
+#' channels: a channel that is mostly missing is better put in
+#' \code{eeg_obj$bads}, or its gaps located with \code{\link{annotate_nan}}
+#' first.
+#'
 #' The global LOF check mirrors MNE-Python's
 #' \code{mne.preprocessing.find_bad_channels_lof()}: every eligible
 #' channel's raw signal is compared directly against every other's
@@ -216,10 +227,21 @@ find_bad_channels <- function(eeg_obj,
 
   eeg_channels <- eeg_obj$channels[eeg_idx]
 
+  # ========== LEAVE OUT TIME POINTS WITH MISSING VALUES ==========
+
+  # A missing or infinite sample makes the std, the range and the correlations
+  # of its channel unknown, and the checks below could not compare them with
+  # their thresholds. The time points at which a checked channel holds one are
+  # left out of all four checks (see .leave_out_missing_timepoints()). The
+  # checks read check_obj; eeg_obj keeps its full data and is what comes back.
+
+  check_obj  <- .leave_out_missing_timepoints(eeg_obj, "find_bad_channels()")
+  n_left_out <- ncol(eeg_obj$data) - ncol(check_obj$data)
+
   # ========== CHECK 1: FLAT / AMPLITUDE / OUTLIER ==========
 
   quality_flags <- flag_channel_quality(
-    eeg_obj,
+    check_obj,
     flag_flat_threshold        = flag_flat_threshold,
     flag_amplitude_threshold   = flag_amplitude_threshold,
     amplitude_window           = amplitude_window,
@@ -270,7 +292,7 @@ find_bad_channels <- function(eeg_obj,
       # channel's own level and straight-line trend are removed in every
       # stretch (see .centre_by_stretch()). eeg_obj$data itself is not changed.
       neighbor_data <- .centre_by_stretch(
-        eeg_obj$data[data_idx, , drop = FALSE],
+        check_obj$data[data_idx, , drop = FALSE],
         neighbor_window_samples,
         remove_slope = TRUE)
 
@@ -292,7 +314,7 @@ find_bad_channels <- function(eeg_obj,
     lof_flags <- .empty_flags()
   } else {
     lof_flags <- flag_lof_outlier_channels(
-      data        = eeg_obj$data[eeg_idx, , drop = FALSE],
+      data        = check_obj$data[eeg_idx, , drop = FALSE],
       channels    = eeg_channels,
       n_neighbors = lof_n_neighbors,
       threshold   = lof_threshold)
@@ -312,7 +334,13 @@ find_bad_channels <- function(eeg_obj,
     } else {
       ""
     },
-    " - ", length(eeg_obj$bads), " total in bads.")
+    " - ", length(eeg_obj$bads), " total in bads.",
+    if (n_left_out > 0) {
+      paste0(" (", n_left_out, " of ", ncol(eeg_obj$data),
+             " time points with missing values left out of the checks)")
+    } else {
+      ""
+    })
 
   eeg_obj$preprocessing_history <- c(eeg_obj$preprocessing_history,
                                       list(history_entry))
@@ -450,6 +478,95 @@ flag_channel_quality <- function(eeg_obj,
   }
 
   flags
+}
+
+# ----------------------------------------------------------------------------
+# .leave_out_missing_timepoints() - the time points the checks cannot use
+# ----------------------------------------------------------------------------
+# A missing (NA, NaN) or infinite sample makes the std, the range and the
+# correlations of its channel unknown, and an unknown number cannot be
+# compared with a threshold. Without this step the first comparison stops with
+# "missing value where TRUE/FALSE needed", and the checks that do not stop
+# give wrong answers (one missing sample made 9 of 13 channels look
+# uncorrelated). So every time point at which a CHECKED channel (type "eeg",
+# not in bads - the rows the four checks use) holds such a sample is left out,
+# in all channels, and the checks run on the other time points. Channels that
+# are not checked (bads, EOG, status, ...) are not looked at.
+#
+# The object that comes back is a copy with fewer columns, for the checks
+# only; the caller keeps its own object and its full data. When nothing is
+# missing the very same object comes back (no copy of the data). A message
+# says what was left out. When more than max_share of the time points would
+# go, the function stops instead: a channel that is mostly missing is the
+# problem, and the stretches of the checks would cover much more real time
+# than intended.
+#
+# eeg_obj   - an object of class 'eeg'
+# caller    - name for the messages, e.g. "find_bad_channels()"
+# max_share - largest share of the time points that may be left out
+.leave_out_missing_timepoints <- function(eeg_obj, caller, max_share = 0.10) {
+
+  eeg_idx <- which(eeg_obj$channel_types == "eeg" &
+                      !(eeg_obj$channels %in% eeg_obj$bads))
+  n_tp    <- ncol(eeg_obj$data)
+
+  # Quick first look: when the smallest and the largest value of all the data
+  # are finite, nothing is missing anywhere and the same object comes back.
+  # (One pass over the matrix; going channel by channel takes about four
+  # times as long on a long recording.)
+  if (length(eeg_obj$data) > 0 && all(is.finite(range(eeg_obj$data)))) {
+    return(eeg_obj)
+  }
+
+  leave_out <- rep(FALSE, n_tp)           # time points to leave out
+  n_hits    <- integer(length(eeg_idx))   # missing samples per checked channel
+
+  for (i in seq_along(eeg_idx)) {
+    hit       <- !is.finite(eeg_obj$data[eeg_idx[i], ])
+    n_hits[i] <- sum(hit)
+    if (n_hits[i] > 0) {
+      leave_out <- leave_out | hit
+    }
+  }
+
+  if (!any(leave_out)) {
+    return(eeg_obj)
+  }
+
+  n_out <- sum(leave_out)
+  share <- n_out / n_tp
+
+  # The channels with missing samples, the worst first; at most 6 are named
+  with_hits <- which(n_hits > 0)
+  with_hits <- with_hits[order(n_hits[with_hits], decreasing = TRUE)]
+  named     <- with_hits[seq_len(min(6L, length(with_hits)))]
+  named_txt <- paste0(
+    paste0(eeg_obj$channels[eeg_idx[named]], " (", n_hits[named], " sample",
+           ifelse(n_hits[named] == 1, "", "s"), ")", collapse = ", "),
+    if (length(with_hits) > length(named)) {
+      paste0(", and ", length(with_hits) - length(named), " more")
+    } else {
+      ""
+    })
+
+  if (share > max_share) {
+    stop("ERROR: ", caller, " cannot run: ", n_out, " of ", n_tp,
+         " time points (", sprintf("%.1f", 100 * share), " %) hold a missing ",
+         "or infinite value in at least one checked EEG channel, more than ",
+         "the ", format(100 * max_share), " % that can be left out. Channels ",
+         "with such values: ", named_txt, ". Put a channel that is mostly ",
+         "missing in eeg_obj$bads, or use annotate_nan() to locate the gaps ",
+         "first.", call. = FALSE)
+  }
+
+  message(caller, ": left out ", n_out, " of ", n_tp, " time points (",
+          format(signif(100 * share, 2), scientific = FALSE), " %) at which a ",
+          "checked EEG channel holds a missing or infinite value: ", named_txt,
+          ". The other time points are used; the data itself is not changed.")
+
+  out      <- eeg_obj
+  out$data <- eeg_obj$data[, !leave_out, drop = FALSE]
+  out
 }
 
 #' Subtract Each Channel's Own Level, Stretch by Stretch (internal)

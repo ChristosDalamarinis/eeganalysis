@@ -16,9 +16,10 @@
 #' Create a New Montage Object (low-level constructor)
 #'
 #' Low-level constructor for the 'montage' S3 class. Most users should call
-#' \code{\link{create_montage}} instead, which builds a montage from the
-#' package's built-in BioSemi electrode template. Use \code{new_montage()}
-#' directly only when supplying custom channel positions of your own.
+#' \code{\link{create_montage}} instead, which builds a montage from one of
+#' the package's built-in layouts (the 64-channel BioSemi cap by default). Use
+#' \code{new_montage()} directly only when supplying custom channel positions
+#' of your own.
 #'
 #' @param channels Character vector of channel names.
 #' @param positions Data frame with one row per channel (in the same order as

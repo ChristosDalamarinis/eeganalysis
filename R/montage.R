@@ -133,6 +133,11 @@ new_montage <- function(channels, positions, coord_frame = "biosemi64") {
 #' of their own, with exactly the position of \code{"T7"}, \code{"T8"},
 #' \code{"P7"} and \code{"P8"}, as in the original files (they are not second
 #' names), so a layout that is drawn whole shows these four twice.
+#' Each file also lists three head landmarks, the left and right ear points
+#' and the nose point (\code{"LPA"}, \code{"RPA"} and \code{"Nz"}). They are
+#' not electrodes and are left out, so the file of \code{"colin27_1020"} has
+#' 97 rows and the layout 94 electrodes, and the file of \code{"colin27_1005"}
+#' has 346 rows and the layout 343.
 #'
 #' The positions of the two real-head layouts are shifted by one and the same
 #' amount, so that the centre of the sphere that fits the 94 electrodes of

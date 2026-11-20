@@ -87,41 +87,51 @@ export(validate_bdf_events)
 importFrom(MASS,ginv)
 importFrom(akima,interp)
 importFrom(dbscan,lof)
-importFrom(grDevices,adjustcolor)
-importFrom(grDevices,colorRampPalette)
-importFrom(grDevices,rainbow)
-importFrom(graphics,abline)
-importFrom(graphics,axis)
-importFrom(graphics,barplot)
-importFrom(graphics,contour)
-importFrom(graphics,grid)
-importFrom(graphics,hist)
-importFrom(graphics,image)
-importFrom(graphics,legend)
-importFrom(graphics,lines)
-importFrom(graphics,mtext)
-importFrom(graphics,par)
-importFrom(graphics,plot)
-importFrom(graphics,points)
-importFrom(graphics,polygon)
-importFrom(graphics,text)
-importFrom(graphics,title)
-importFrom(plotly,add_trace)
-importFrom(plotly,layout)
-importFrom(plotly,plot_ly)
-importFrom(stats,cor)
-importFrom(stats,cov)
-importFrom(stats,dist)
-importFrom(stats,fft)
-importFrom(stats,lm)
-importFrom(stats,median)
-importFrom(stats,prcomp)
-importFrom(stats,rnorm)
-importFrom(stats,sd)
-importFrom(stats,setNames)
-importFrom(stats,var)
-importFrom(utils,head)
-importFrom(utils,modifyList)
-importFrom(utils,setTxtProgressBar)
-importFrom(utils,txtProgressBar)
-importFrom(utils,write.csv)
+importFrom(grDevices,
+  adjustcolor,
+  colorRampPalette,
+  rainbow
+)
+importFrom(graphics,
+  abline,
+  axis,
+  barplot,
+  contour,
+  grid,
+  hist,
+  image,
+  legend,
+  lines,
+  mtext,
+  par,
+  plot,
+  points,
+  polygon,
+  text,
+  title
+)
+importFrom(plotly,
+  add_trace,
+  layout,
+  plot_ly
+)
+importFrom(stats,
+  cor,
+  cov,
+  dist,
+  fft,
+  lm,
+  median,
+  prcomp,
+  rnorm,
+  sd,
+  setNames,
+  var
+)
+importFrom(utils,
+  head,
+  modifyList,
+  setTxtProgressBar,
+  txtProgressBar,
+  write.csv
+)

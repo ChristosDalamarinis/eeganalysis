@@ -4,7 +4,7 @@
 # ============================================================================
 #
 # This test file covers the two interactive 3D electrode plots in
-# channel_info2.R. They draw the 64 BioSemi electrodes by default, and any
+# plot_electrode_3d.R. They draw the 64 BioSemi electrodes by default, and any
 # built-in layout or montage object when the argument `layout` is given.
 #
 # Functions tested:

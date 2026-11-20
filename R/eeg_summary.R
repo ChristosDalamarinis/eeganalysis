@@ -57,6 +57,16 @@
 #'   stats block. Set to FALSE to suppress it when EXG channels are not
 #'   of interest.
 #'
+#' @details
+#' Time points at which a checked EEG channel (type \code{"eeg"}, not in
+#' \code{eeg_obj$bads}) holds a missing value (\code{NA} or \code{NaN}) or an
+#' infinite value are left out of the statistics and of the flags, in every
+#' channel, the same way as in \code{\link{find_bad_channels}} (see there for
+#' the details). A message and a line in the report say how many were left
+#' out. If more than a tenth of the time points would be left out, the
+#' function stops with an error that names the channels. \code{eeg_obj} itself
+#' is not changed.
+#'
 #' @return Invisibly returns a list with three elements:
 #'   \item{eeg_stats}{Data frame of per-channel stats for EEG channels}
 #'   \item{exg_stats}{Data frame of per-channel stats for EXG channels
@@ -123,6 +133,17 @@ eeg_summary <- function(eeg_obj,
          "Check that channel names follow standard 10-20/10-10 conventions.")
   }
   
+  # ========== LEAVE OUT TIME POINTS WITH MISSING VALUES ==========
+
+  # Same rule as in find_bad_channels(): the time points at which a checked
+  # EEG channel holds a missing or infinite sample are left out of the
+  # statistics and of the flags (see .leave_out_missing_timepoints() in
+  # R/bad_channels.R). used_obj is the copy the numbers are worked out on; the
+  # recording information printed below still describes the whole recording.
+
+  used_obj   <- .leave_out_missing_timepoints(eeg_obj, "eeg_summary()")
+  n_left_out <- ncol(eeg_obj$data) - ncol(used_obj$data)
+
   # ========== COMPUTE PER-CHANNEL STATS HELPER ==========
   
   .channel_stats <- function(data_matrix, idx, channel_names) {
@@ -148,12 +169,12 @@ eeg_summary <- function(eeg_obj,
     return(result)
   }
   
-  eeg_stats <- .channel_stats(eeg_obj$data, eeg_idx, all_channels)
-  exg_stats <- .channel_stats(eeg_obj$data, exg_idx, all_channels)
+  eeg_stats <- .channel_stats(used_obj$data, eeg_idx, all_channels)
+  exg_stats <- .channel_stats(used_obj$data, exg_idx, all_channels)
   
   # Global std - all EEG channels and all timepoints treated as one pool
   # This matches how MNE computes its "Std deviation" figure
-  global_std <- round(sd(as.vector(eeg_obj$data[eeg_idx, ])), 2)
+  global_std <- round(sd(as.vector(used_obj$data[eeg_idx, ])), 2)
   
   # ========== FLAG SUSPICIOUS EEG CHANNELS ==========
 
@@ -166,7 +187,7 @@ eeg_summary <- function(eeg_obj,
   median_std <- median(eeg_stats$std_uv, na.rm = TRUE)
 
   flags <- flag_channel_quality(
-    eeg_obj,
+    used_obj,
     flag_flat_threshold        = flag_flat_threshold,
     flag_amplitude_threshold   = flag_amplitude_threshold,
     amplitude_window           = amplitude_window,
@@ -186,6 +207,10 @@ eeg_summary <- function(eeg_obj,
   cat("  Sampling rate  : ", eeg_obj$sampling_rate, " Hz\n", sep = "")
   cat("  Duration       : ", sprintf("%.2f", ncol(eeg_obj$data) /
                                        eeg_obj$sampling_rate), " seconds\n", sep = "")
+  if (n_left_out > 0) {
+    cat("  Left out       : ", n_left_out, " time point(s) with a missing ",
+        "value (not in the statistics below)\n", sep = "")
+  }
   cat("  Total channels : ", length(all_channels), "\n", sep = "")
   cat("    EEG channels : ", length(eeg_idx), "\n", sep = "")
   cat("    EXG channels : ", length(exg_idx), "\n", sep = "")

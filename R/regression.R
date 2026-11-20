@@ -467,6 +467,11 @@ print.eeg_eog_regression <- function(x, ...) {
 #' warning is issued when this happens, since a zeroed-out trial contributes
 #' nothing useful to the fit.
 #'
+#' The EOG channels are treated like every other channel: their own average
+#' response is subtracted too. This is on purpose. If an EOG channel kept its
+#' time-locked part while the EEG channels lost theirs, the weights fitted by
+#' \code{\link{fit_eog_regression}} would come out too small.
+#'
 #' @examples
 #' \dontrun{
 #'   epochs   <- epoch_eeg(eeg, events = "all", tmin = -0.2, tmax = 0.8)

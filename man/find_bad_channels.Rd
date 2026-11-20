@@ -149,6 +149,17 @@ The neighbor-correlation check only runs if \code{eeg_obj$montage} is
 attached (see \code{\link{set_montage}}); if not, it is skipped with a
 message and the other three checks still run.
 
+Missing values (\code{NA} or \code{NaN}) and infinite values cannot be
+compared with a threshold, so a time point at which any of the checked EEG
+channels holds one is left out of all four checks, in every channel, and a
+message says how many time points were left out. Channels already in
+\code{eeg_obj$bads} and channels of other types are not looked at, and
+\code{eeg_obj$data} itself is not changed. If more than a tenth of the time
+points would be left out, the function stops with an error that names the
+channels: a channel that is mostly missing is better put in
+\code{eeg_obj$bads}, or its gaps located with \code{\link{annotate_nan}}
+first.
+
 The global LOF check mirrors MNE-Python's
 \code{mne.preprocessing.find_bad_channels_lof()}: every eligible
 channel's raw signal is compared directly against every other's

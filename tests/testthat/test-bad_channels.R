@@ -11,6 +11,8 @@
 #   6. .column_medians()               - Internal: middle value of every column at once
 #   7. .centre_by_stretch()            - Internal: subtract each channel's own level
 #                                        (and, on request, its straight-line trend)
+#   8. .leave_out_missing_timepoints() - Internal: leaves out the time points
+#                                        that hold a missing or infinite value
 #
 # Test suites:
 #   1. flag_channel_quality()
@@ -27,6 +29,7 @@
 #  12. The amplitude check measures from each channel's own level
 #  13. Raw BioSemi-style data, end to end
 #  14. The neighbor check on raw data: offsets and slow drift
+#  15. Missing and infinite values
 #
 # Author: Christos Dalamarinis
 # Date: Sep 2026
@@ -1349,6 +1352,286 @@ test_that("through find_bad_channels() the neighbor check flags the same channel
 
 
 # ============================================================================
+# TEST SUITE 15: missing and infinite values
+# ============================================================================
+#
+# A missing (NA, NaN) or infinite sample used to stop find_bad_channels() and
+# eeg_summary() with "missing value where TRUE/FALSE needed": the std of the
+# channel is unknown, and `if (NA < 0.5)` has no answer. The checks that did
+# not stop gave wrong answers (one missing sample made 9 of 13 channels look
+# uncorrelated). Now the time points at which a checked channel (type "eeg",
+# not in bads) holds such a sample are left out of all four checks, in every
+# channel, and a message says how many. More than a tenth of the time points
+# is an error that names the channels.
+
+# Runs an expression and keeps its value and the messages it gave. Warnings
+# are muffled: the 13-channel fixtures always cap the LOF neighbors.
+.run_with_messages <- function(expr) {
+  msgs  <- character()
+  value <- withCallingHandlers(
+    suppressWarnings(expr),
+    message = function(m) {
+      msgs <<- c(msgs, conditionMessage(m))
+      invokeRestart("muffleMessage")
+    })
+  list(value = value, messages = msgs)
+}
+
+# The same recording with some time points (columns) physically removed
+.without_timepoints <- function(eeg, cols) {
+  eeg$data <- eeg$data[, -cols, drop = FALSE]
+  eeg
+}
+
+# The pairs "channel:reason" that were flagged
+.flag_pairs <- function(flags) {
+  sort(unique(paste(flags$channel, flags$reason, sep = ":")))
+}
+
+# ----------------------------------------------------------------------------
+# Test 15.1: nothing missing - the very same object comes back
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Without a missing sample the helper returns its input as it
+# is (so the data is not copied) and says nothing.
+test_that(".leave_out_missing_timepoints() hands back the same object when nothing is missing", {
+  eeg <- .make_problem_eeg_with_montage()
+  r <- .run_with_messages(.leave_out_missing_timepoints(eeg, "find_bad_channels()"))
+  expect_identical(r$value, eeg)
+  expect_length(r$messages, 0)
+})
+
+# ----------------------------------------------------------------------------
+# Test 15.2: one missing or infinite sample leaves out its time point
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: NA, NaN, Inf and -Inf in one sample of channel 3 (F3): that
+# time point (column 100) goes in every channel, the other 399 stay, and the
+# message names the caller, the numbers and the channel.
+test_that(".leave_out_missing_timepoints() leaves out the time point of one NA, NaN, Inf or -Inf sample", {
+  for (bad_value in c(NA_real_, NaN, Inf, -Inf)) {
+    eeg <- .make_problem_eeg_with_montage()
+    eeg$data[3, 100] <- bad_value
+    r <- .run_with_messages(.leave_out_missing_timepoints(eeg, "find_bad_channels()"))
+    expect_identical(r$value$data, eeg$data[, -100])
+    expect_length(r$messages, 1)
+    expect_match(r$messages, "^find_bad_channels\\(\\): left out 1 of 400 time points \\(0.25 %\\)")
+    expect_match(r$messages, "F3 \\(1 sample\\)")
+  }
+})
+
+# ----------------------------------------------------------------------------
+# Test 15.3: a gap in all channels counts once per time point
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: 20 missing samples in all 13 channels (an amplifier
+# dropout) are 20 time points, not 260.
+test_that("a gap in all channels is counted once per time point", {
+  eeg <- .make_problem_eeg_with_montage()
+  eeg$data[, 200:219] <- NA
+  r <- .run_with_messages(.leave_out_missing_timepoints(eeg, "find_bad_channels()"))
+  expect_equal(dim(r$value$data), c(13, 380))
+  expect_identical(r$value$data, eeg$data[, -(200:219)])
+  expect_match(r$messages, "left out 20 of 400 time points \\(5 %\\)")
+})
+
+# ----------------------------------------------------------------------------
+# Test 15.4: only the checked channels count
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: A missing sample in a channel that is already in bads, or in
+# a channel of another type (EOG), is not looked at: the object comes back as
+# it is and nothing is said. These are the rows the four checks do not use.
+test_that("a missing sample in a bad channel or in an EOG channel is ignored", {
+  base <- .make_problem_eeg_with_montage()
+
+  in_bads <- base
+  in_bads$data[3, 100] <- NA
+  in_bads$bads <- "F3"
+  r <- .run_with_messages(.leave_out_missing_timepoints(in_bads, "find_bad_channels()"))
+  expect_identical(r$value, in_bads)
+  expect_length(r$messages, 0)
+
+  as_eog <- set_channel_types(base, c(F3 = "eog"))
+  as_eog$data[3, 100] <- NA
+  r <- .run_with_messages(.leave_out_missing_timepoints(as_eog, "find_bad_channels()"))
+  expect_identical(r$value, as_eog)
+  expect_length(r$messages, 0)
+})
+
+# ----------------------------------------------------------------------------
+# Test 15.5: a tenth can go, more than that is an error
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Exactly a tenth of the time points (40 of 400) is left out;
+# one more is an error that names the caller, the numbers, the channel and
+# what to do. 15 percent is shown with its number.
+test_that("a tenth of the time points can be left out, more than that is an error", {
+  eeg <- .make_problem_eeg_with_montage()
+
+  at_limit <- eeg
+  at_limit$data[3, 1:40] <- NA
+  r <- .run_with_messages(.leave_out_missing_timepoints(at_limit, "find_bad_channels()"))
+  expect_equal(ncol(r$value$data), 360)
+
+  over <- eeg
+  over$data[3, 1:41] <- NA
+  expect_error(.leave_out_missing_timepoints(over, "find_bad_channels()"),
+               "find_bad_channels\\(\\) cannot run: 41 of 400 time points")
+
+  fifteen <- eeg
+  fifteen$data[3, 1:60] <- NA
+  expect_error(.leave_out_missing_timepoints(fifteen, "eeg_summary()"),
+               paste0("ERROR: eeg_summary\\(\\) cannot run: 60 of 400 time points ",
+                      "\\(15.0 %\\).*more than the 10 % that can be left out.*",
+                      "F3 \\(60 samples\\).*eeg_obj\\$bads.*annotate_nan\\(\\)"))
+})
+
+# ----------------------------------------------------------------------------
+# Test 15.6: a channel that is missing all the way
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: A channel with no usable sample leaves nothing to check: an
+# error that names it (400 of 400 time points).
+test_that("a channel that is missing from start to end is an error that names it", {
+  eeg <- .make_problem_eeg_with_montage()
+  eeg$data[3, ] <- NA
+  expect_error(.leave_out_missing_timepoints(eeg, "find_bad_channels()"),
+               "cannot run: 400 of 400 time points \\(100.0 %\\).*F3 \\(400 samples\\)")
+})
+
+# ----------------------------------------------------------------------------
+# Test 15.7: at most 6 channels are named, the worst first
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: 8 channels with a missing sample (Fp2 has two): the message
+# names the 6 with the most, in that order (ties by channel order), and counts
+# the rest.
+test_that("the message names at most 6 channels, the worst first", {
+  eeg <- .make_problem_eeg_with_montage()
+  for (i in 1:8) eeg$data[i, 10 * i] <- NA
+  eeg$data[2, 90] <- NA
+  r <- .run_with_messages(.leave_out_missing_timepoints(eeg, "find_bad_channels()"))
+  expect_match(r$messages, "left out 9 of 400 time points")
+  expect_match(r$messages, paste0("Fp2 \\(2 samples\\), Fp1 \\(1 sample\\), F3 \\(1 sample\\), ",
+                                  "F4 \\(1 sample\\), Fz \\(1 sample\\), C3 \\(1 sample\\), and 2 more"))
+})
+
+# ----------------------------------------------------------------------------
+# Test 15.8: find_bad_channels() runs on the other time points
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: With a missing sample find_bad_channels() no longer stops,
+# and gives exactly the table it gives for the same recording with those time
+# points removed (all four checks use the other time points), which also holds
+# the same channel/reason pairs as the recording without any missing sample.
+# The neighbor check used to flag 9 of 13 channels for one missing sample.
+test_that("find_bad_channels() runs on the other time points and flags the same as without them", {
+  eeg     <- .make_problem_eeg_with_montage()
+  control <- .run_with_messages(find_bad_channels(eeg, return_details = TRUE))$value$flags
+
+  cases <- list(
+    "one NA"              = list(rows = 8,    cols = 100,                     value = NA_real_),
+    "one NaN"             = list(rows = 8,    cols = 100,                     value = NaN),
+    "one Inf"             = list(rows = 8,    cols = 100,                     value = Inf),
+    "scattered samples"   = list(rows = 8,    cols = c(5, 50, 120, 300, 399), value = NA_real_),
+    "gap in all channels" = list(rows = 1:13, cols = 200:219,                 value = NA_real_))
+
+  for (nm in names(cases)) {
+    cs <- cases[[nm]]
+    na_eeg <- eeg
+    na_eeg$data[cs$rows, cs$cols] <- cs$value
+
+    run  <- .run_with_messages(find_bad_channels(na_eeg, return_details = TRUE))
+    kept <- .run_with_messages(find_bad_channels(.without_timepoints(eeg, cs$cols),
+                                                 return_details = TRUE))
+    expect_equal(run$value$flags, kept$value$flags, info = nm)
+    expect_equal(.flag_pairs(run$value$flags), .flag_pairs(control), info = nm)
+    expect_true(any(grepl("find_bad_channels\\(\\): left out", run$messages)), info = nm)
+  }
+})
+
+# ----------------------------------------------------------------------------
+# Test 15.9: the returned object keeps its full data
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Only the checks use the shorter copy. The object that comes
+# back has all its time points (the missing sample is still there), the same
+# bads as for the recording without it, and a note in the history; without a
+# missing sample the history has no such note.
+test_that("find_bad_channels() hands back the full data and notes what was left out", {
+  eeg    <- .make_problem_eeg_with_montage()
+  na_eeg <- eeg
+  na_eeg$data[8, 100] <- NA
+
+  out <- .run_with_messages(find_bad_channels(na_eeg))$value
+  expect_identical(out$data, na_eeg$data)
+  expect_setequal(out$bads, suppressWarnings(find_bad_channels(eeg))$bads)
+  last_note <- out$preprocessing_history[[length(out$preprocessing_history)]]
+  expect_match(last_note, "1 of 400 time points with missing values left out of the checks")
+
+  clean <- .run_with_messages(find_bad_channels(eeg))$value
+  clean_note <- clean$preprocessing_history[[length(clean$preprocessing_history)]]
+  expect_false(grepl("left out", clean_note))
+})
+
+# ----------------------------------------------------------------------------
+# Test 15.10: without a montage, and with whole-recording windows
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: The same holds when no montage is attached (the neighbor
+# check is skipped, the message about it still comes) and when
+# amplitude_window and neighbor_window are Inf (one stretch for the whole
+# recording, which is shorter after leaving time points out).
+test_that("find_bad_channels() with missing samples also works without a montage and with Inf windows", {
+  eeg <- .make_problem_eeg()
+  eeg$data[8, 100] <- NA
+  r <- .run_with_messages(find_bad_channels(eeg, return_details = TRUE))
+  expect_true(any(grepl("no montage attached", r$messages)))
+  expect_true(any(grepl("left out 1 of 400", r$messages)))
+  expect_equal(r$value$flags,
+               .run_with_messages(find_bad_channels(.without_timepoints(.make_problem_eeg(), 100),
+                                                    return_details = TRUE))$value$flags)
+
+  eeg <- .make_problem_eeg_with_montage()
+  eeg$data[8, 100] <- NA
+  inf_run <- .run_with_messages(find_bad_channels(eeg, amplitude_window = Inf,
+                                                  neighbor_window = Inf,
+                                                  return_details = TRUE))$value
+  inf_ref <- .run_with_messages(find_bad_channels(.without_timepoints(.make_problem_eeg_with_montage(), 100),
+                                                  amplitude_window = Inf, neighbor_window = Inf,
+                                                  return_details = TRUE))$value
+  expect_equal(inf_run$flags, inf_ref$flags)
+})
+
+# ----------------------------------------------------------------------------
+# Test 15.11: the error through find_bad_channels()
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: A quarter of one channel missing is an error that names
+# find_bad_channels() and the channel; the same recording with that channel
+# already in bads runs.
+test_that("find_bad_channels() stops when a channel is mostly missing, unless it is already in bads", {
+  eeg <- .make_problem_eeg_with_montage()
+  eeg$data[8, 1:100] <- NA
+  expect_error(find_bad_channels(eeg),
+               "find_bad_channels\\(\\) cannot run: 100 of 400 time points \\(25.0 %\\).*Cz \\(100 samples\\)")
+
+  eeg$bads <- "Cz"
+  r <- .run_with_messages(find_bad_channels(eeg))
+  expect_false(any(grepl("left out", r$messages)))
+  expect_true("Cz" %in% r$value$bads)
+})
+
+# ----------------------------------------------------------------------------
+# Test 15.12: raw BioSemi-style data
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: 64 electrodes with offsets of tens of mV and one broken
+# channel (T8): a 21-sample gap in every channel leaves the flagged
+# channel/reason pairs as they were, and T8 is still flagged.
+test_that("raw BioSemi-style data with a gap in all channels is flagged as without the gap", {
+  eeg     <- .make_biosemi_eeg()
+  control <- find_bad_channels(eeg, return_details = TRUE)$flags
+
+  gap <- eeg
+  gap$data[, 1000:1020] <- NA
+  run <- .run_with_messages(find_bad_channels(gap, return_details = TRUE))
+  expect_equal(.flag_pairs(run$value$flags), .flag_pairs(control))
+  expect_true("T8" %in% run$value$flags$channel)
+  expect_true(any(grepl("left out 21 of 2560", run$messages)))
+})
+
+
+# ============================================================================
 #                     SUMMARY OF TEST COVERAGE
 # ============================================================================
 # - flag_channel_quality(): flat/amplitude/outlier flagging, 0-row contract,
@@ -1375,4 +1658,10 @@ test_that("through find_bad_channels() the neighbor check flags the same channel
 #   next to a broken neighbor at another level, 64 BioSemi electrodes with
 #   offsets and with slow drift, neighbor_window default/validation/effect,
 #   data and the other checks untouched, numbers through find_bad_channels()
+# - missing and infinite values: the time points at which a checked channel
+#   (type "eeg", not in bads) holds one are left out, counted once per time
+#   point; the limit of a tenth; at most 6 channels named; find_bad_channels()
+#   runs on the other time points with the same flags as without them, with and
+#   without a montage, with Inf windows and on raw BioSemi-style data; the
+#   returned object keeps its full data
 # ============================================================================

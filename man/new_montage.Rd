@@ -22,8 +22,9 @@ An object of class \code{'montage'}: a list with \code{channels},
 \description{
 A montage stores the spatial layout of a set of channels on the scalp
 (Cartesian x/y/z and spherical theta/phi/radius coordinates), built from
-the built-in BioSemi 64-channel electrode database (see
-get_electrode_database(), R/channel_info2.R) and attached to an eeg object
+one of the package's built-in layouts (the BioSemi caps, the standard
+10-20 / 10-10 / 10-05 systems or the real-head layouts, see
+R/montage_templates.R) and attached to an eeg object
 via set_montage() - mirroring MNE-Python's raw.set_montage() workflow.
 }
 \section{Author: Christos Dalamarinis

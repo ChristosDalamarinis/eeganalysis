@@ -243,7 +243,9 @@ eeganalysis
 │   │   ├── print.montage()                  ← Display montage object nicely
 │   │   └── read_custom_montage()            ← Read a montage from an .elc, .sfp, .csv, .tsv or .txt file
 │   │
-│   ├── montage_templates.R                  ← BioSemi cap layouts (16/32/64/128/160/256) behind create_montage()
+│   ├── montage_templates.R                  ← The front door to the layouts behind create_montage(): the names of the layouts and the table of each
+│   │
+│   ├── montage_biosemi.R                    ← BioSemi cap layouts (16/32/64/128/160/256) and the BioSemi channels that are not on the scalp (EXG1-8, GSR, Erg, Resp, Plet, Temp, Status)
 │   │
 │   ├── montage_standard.R                   ← Standard 10-20 (19 electrodes), 10-10 (72) and 10-05 (335) layouts, computed from the rules that define the systems
 │   │
@@ -290,7 +292,7 @@ eeganalysis
 │   ├── apply_ica.Rd
 │   └── ...Rd                                ← Remaining help files
 │
-├── tests/testthat/                          ← Unit tests (testthat, one file per module, 31 total)
+├── tests/testthat/                          ← Unit tests (testthat, one file per module, 32 total)
 │   ├── test-read_bdf_native.R
 │   ├── test-ica1.R
 │   ├── test-bad_channels.R

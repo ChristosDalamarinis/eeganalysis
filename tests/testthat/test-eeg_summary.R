@@ -15,6 +15,7 @@
 #   7. Integration tests
 #   8. Bad channel handling
 #   9. Raw offsets and amplitude_window
+#  10. Missing and infinite values
 #
 # Author: Christos Dalamarinis
 # Date: May 2026
@@ -866,6 +867,124 @@ test_that("eeg_summary refuses a wrong amplitude_window", {
                "shorter than 2 samples")
 })
 
+
+
+# ============================================================================
+# TEST SUITE 10: Missing and infinite values
+# ============================================================================
+#
+# A missing (NA, NaN) or infinite sample in a checked EEG channel (type "eeg",
+# not in bads) used to stop eeg_summary() with "missing value where TRUE/FALSE
+# needed". Now the time points that hold one are left out of the statistics and
+# the flags (the same rule as in find_bad_channels()), a message and a line of
+# the report say how many, and more than a tenth of the time points is an error.
+
+# Runs an expression and keeps its value and the messages it gave
+.run_with_messages <- function(expr) {
+  msgs  <- character()
+  value <- withCallingHandlers(
+    expr,
+    message = function(m) {
+      msgs <<- c(msgs, conditionMessage(m))
+      invokeRestart("muffleMessage")
+    })
+  list(value = value, messages = msgs)
+}
+
+# The same recording with some time points (columns) physically removed
+.without_timepoints <- function(eeg, cols) {
+  eeg$data <- eeg$data[, -cols, drop = FALSE]
+  eeg
+}
+
+# ----------------------------------------------------------------------------
+# Test 10.1: one missing or infinite sample
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: NA, NaN, Inf and -Inf in one sample of Pz (row 2): the
+# report runs, its numbers (the table, the flags and the printed totals) are
+# those of the recording with that time point removed, and a message and a
+# line of the report say what was left out.
+test_that("eeg_summary() leaves out the time point of one NA, NaN, Inf or -Inf sample", {
+  clean <- .make_mixed_eeg()
+  ref_printed <- capture.output(reference <- eeg_summary(.without_timepoints(clean, 50)))
+  total_lines <- function(x) {
+    x[grepl("Amplitude range|Mean amplitude|Global std|Median std|Std range", x)]
+  }
+  expect_length(total_lines(ref_printed), 5)
+
+  for (bad_value in c(NA_real_, NaN, Inf, -Inf)) {
+    eeg <- clean
+    eeg$data[2, 50] <- bad_value
+    printed <- character()
+    r <- .run_with_messages({
+      printed <- capture.output(res <- eeg_summary(eeg))
+      res
+    })
+    expect_equal(res$eeg_stats, reference$eeg_stats)
+    expect_equal(res$flags, reference$flags)
+    expect_equal(total_lines(printed), total_lines(ref_printed))
+    expect_true(all(is.finite(as.matrix(res$eeg_stats[, -1]))))
+    expect_length(r$messages, 1)
+    expect_match(r$messages, "^eeg_summary\\(\\): left out 1 of 200 time points \\(0.5 %\\)")
+    expect_match(r$messages, "Pz \\(1 sample\\)")
+    expect_true(any(grepl("Left out       : 1 time point\\(s\\) with a missing value", printed)))
+  }
+})
+
+# ----------------------------------------------------------------------------
+# Test 10.2: a gap in all rows, and the recording information
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: 20 samples missing in every row, EXG and Status included:
+# exactly a tenth of the 200 time points, so the report runs on the other 180.
+# The recording information still describes the whole recording (0.78 s, not
+# 180 / 256 = 0.70 s), and the report says 20 time points were left out.
+test_that("eeg_summary() with a gap in all rows reports the whole recording and what was left out", {
+  eeg <- .make_mixed_eeg()
+  eeg$data[, 11:30] <- NA
+  printed <- character()
+  r <- .run_with_messages({
+    printed <- capture.output(res <- eeg_summary(eeg))
+    res
+  })
+  expect_true(any(grepl("Duration       : 0.78 seconds", printed)))
+  expect_true(any(grepl("Left out       : 20 time point\\(s\\)", printed)))
+  expect_match(r$messages, "left out 20 of 200 time points \\(10 %\\)")
+  expect_true(all(is.finite(as.matrix(res$eeg_stats[, -1]))))
+})
+
+# ----------------------------------------------------------------------------
+# Test 10.3: only the checked channels count
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: A missing sample in the EXG row, or in a channel that is
+# already in bads, leaves nothing out and says nothing; the EEG numbers stay
+# finite (the EXG numbers show NA, as before).
+test_that("eeg_summary() ignores a missing sample in an EXG channel or in a bad channel", {
+  exg <- .make_mixed_eeg()
+  exg$data[5, 50] <- NA
+  r <- .run_with_messages({ capture.output(res <- eeg_summary(exg)); res })
+  expect_length(r$messages, 0)
+  expect_true(is.na(res$exg_stats$mean_uv))
+  expect_true(all(is.finite(as.matrix(res$eeg_stats[, -1]))))
+
+  bad <- .make_mixed_eeg()
+  bad$data[2, 50] <- NA
+  bad$bads <- "Pz"
+  r <- .run_with_messages({ capture.output(res <- eeg_summary(bad)); res })
+  expect_length(r$messages, 0)
+  expect_false("Pz" %in% res$eeg_stats$channel)
+})
+
+# ----------------------------------------------------------------------------
+# Test 10.4: more than a tenth is an error
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: 21 of 200 time points missing in Pz is more than a tenth:
+# an error that names eeg_summary(), the numbers and the channel.
+test_that("eeg_summary() stops when more than a tenth of the time points are missing", {
+  eeg <- .make_mixed_eeg()
+  eeg$data[2, 1:21] <- NA
+  expect_error(eeg_summary(eeg),
+               "eeg_summary\\(\\) cannot run: 21 of 200 time points \\(10.5 %\\).*Pz \\(21 samples\\)")
+})
 
 
 # ============================================================================

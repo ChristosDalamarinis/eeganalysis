@@ -66,30 +66,20 @@
 get_electrode_database <- function() {
   
   # ========================================================================
-  # BIOSEMI 64-CHANNEL: COMPLETE ELECTRODE SPECIFICATIONS
+  # BIOSEMI 64-CHANNEL: LAYOUT FROM montage_biosemi.R + DESCRIPTIONS
   # ========================================================================
-  # From official BioSemi Cap_coords_all.xls
-  # Head circumference = 55 centimeters is radius = 87.54 milimeters 
+  # The names (standard and BioSemi) and the positions of the 64 electrodes are
+  # written down once, in .biosemi64_table() (R/montage_biosemi.R): BioSemi's
+  # Cap_coords_all.xls, head circumference = 55 centimeters is radius = 87.54
+  # milimeters. They are read from there, so this database and the montage
+  # tools can never disagree about where an electrode is. What a layout table
+  # does not hold is added here: for every electrode a name for its position,
+  # its type, its region and the system (10-20 or 10-10) it belongs to. The
+  # descriptions are listed in the same order as the rows of the layout.
   
-  electrode_specs <- data.frame(
-    standard_name = c(
-      "Fp1", "AF7", "AF3", "F1", "F3", "F5", "F7", "FT7", "FC5", "FC3",
-      "FC1", "C1", "C3", "C5", "T7", "TP7", "CP5", "CP3", "CP1", "P1",
-      "P3", "P5", "P7", "P9", "PO7", "PO3", "O1", "Iz", "Oz", "POz",
-      "Pz", "CPz", "Fpz", "Fp2", "AF8", "AF4", "AFz", "Fz", "F2", "F4",
-      "F6", "F8", "FT8", "FC6", "FC4", "FC2", "FCz", "Cz", "C2", "C4",
-      "C6", "T8", "TP8", "CP6", "CP4", "CP2", "P2", "P4", "P6", "P8",
-      "P10", "PO8", "PO4", "O2"
-    ),
-    biosemi_name = c(
-      "A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9", "A10",
-      "A11", "A12", "A13", "A14", "A15", "A16", "A17", "A18", "A19", "A20",
-      "A21", "A22", "A23", "A24", "A25", "A26", "A27", "A28", "A29", "A30",
-      "A31", "A32", "B1", "B2", "B3", "B4", "B5", "B6", "B7", "B8",
-      "B9", "B10", "B11", "B12", "B13", "B14", "B15", "B16", "B17", "B18",
-      "B19", "B20", "B21", "B22", "B23", "B24", "B25", "B26", "B27", "B28",
-      "B29", "B30", "B31", "B32"
-    ),
+  layout <- .biosemi64_table()
+  
+  descriptions <- data.frame(
     position_name = c(
       "Prefrontal left", "Anterior frontal left", "Anterior frontal left-center", 
       "Frontal left-midline", "Frontal left", "Frontal left-center", 
@@ -151,53 +141,20 @@ get_electrode_database <- function() {
       "10-10", "10-20", "10-10", "10-20", "10-10", "10-10", "10-10", "10-10", 
       "10-10", "10-20", "10-10", "10-20", "10-10", "10-10", "10-10", "10-20"
     ),
-    # Cartesian coordinates (x, y, z) in mm
-    x = c(
-      -27, -51, -36, -25, -48, -64, -71, -83, -78, -59,
-      -33, -34, -63, -82, -87, -83, -78, -59, -33, -25,
-      -48, -64, -71, -64, -51, -36, -27, 0, 0, 0,
-      0, 0, 0, 27, 51, 36, 0, 0, 25, 48,
-      64, 71, 83, 78, 59, 33, 0, 0, 34, 63,
-      82, 87, 83, 78, 59, 33, 25, 48, 64, 71,
-      64, 51, 36, 27
-    ),
-    y = c(
-      83, 71, 76, 62, 59, 55, 51, 27, 30, 31,
-      33, 0, 0, 0, 0, -27, -30, -31, -33, -62,
-      -59, -55, -51, -47, -71, -76, -83, -79, -87, -82,
-      -63, -34, 87, 83, 71, 76, 82, 63, 62, 59,
-      55, 51, 27, 30, 31, 33, 34, 0, 0, 0,
-      0, 0, -27, -30, -31, -33, -62, -59, -55, -51,
-      -47, -71, -76, -83
-    ),
-    z = c(
-      -3, -3, 24, 56, 44, 23, -3, -3, 27, 56,
-      74, 81, 61, 31, -3, -3, 27, 56, 74, 56,
-      44, 23, -3, -37, -3, 24, -3, -37, -3, 31,
-      61, 81, -3, -3, -3, 24, 31, 61, 56, 44,
-      23, -3, -3, 27, 56, 74, 81, 88, 81, 61,
-      31, -3, -3, 27, 56, 74, 56, 44, 23, -3,
-      -37, -3, 24, -3
-    ),
-    # Spherical coordinates (theta, phi) in degrees
-    theta = c(
-      -92, -92, -74, -50, -60, -75, -92, -92, -72, -50,
-      -32, -23, -46, -69, -92, -92, -72, -50, -32, -50,
-      -60, -75, -92, -115, -92, -74, -92, 115, 92, 69,
-      46, 23, 92, 92, 92, 74, 69, 46, 50, 60,
-      75, 92, 92, 72, 50, 32, 23, 0, 23, 46,
-      69, 92, 92, 72, 50, 32, 50, 60, 75, 92,
-      115, 92, 74, 92
-    ),
-    phi = c(
-      -72, -54, -65, -68, -51, -41, -36, -18, -21, -28,
-      -45, 0, 0, 0, 0, 18, 21, 28, 45, 68,
-      51, 41, 36, 36, 54, 65, 72, -90, -90, -90,
-      -90, -90, 90, 72, 54, 65, 90, 90, 68, 51,
-      41, 36, 18, 21, 28, 45, 90, 0, 0, 0,
-      0, 0, -18, -21, -28, -45, -68, -51, -41, -36,
-      -36, -54, -65, -72
-    ),
+    stringsAsFactors = FALSE
+  )
+  stopifnot(nrow(descriptions) == nrow(layout))
+  
+  electrode_specs <- data.frame(
+    standard_name = layout$name,
+    biosemi_name = layout$alias,
+    descriptions,
+    x = layout$x,
+    y = layout$y,
+    z = layout$z,
+    theta = layout$theta,
+    phi = layout$phi,
+    radius = layout$radius,
     stringsAsFactors = FALSE
   )
   
@@ -224,7 +181,7 @@ get_electrode_database <- function() {
       spherical_coords = list(
         theta = electrode_specs$theta[i],
         phi = electrode_specs$phi[i],
-        radius = 87.54
+        radius = electrode_specs$radius[i]
       )
     )
     
@@ -244,175 +201,9 @@ get_electrode_database <- function() {
   # ADD EXTERNAL CHANNELS (CAN BE USED AS EOG, ECG, EMG, GSR, etc. IN THE INTERACTIVE CODE)
   # ========================================================================
   
-  external_channels <- list(
-    # ===== EXG1-EXG8 - External Electrodes =====
-    "EXG1" = list(
-      position_name = "External electrode 1 (EOG/ECG/EMG/GSR)",
-      position_type = "External",
-      region = "External",
-      standard_system = "BioSemi",
-      biosemi_name = NA,
-      standard_name = "EXG1",
-      cartesian_coords = list(x = NA, y = NA, z = NA),
-      spherical_coords = list(theta = NA, phi = NA, radius = NA)
-    ),
-    "EXG2" = list(
-      position_name = "External electrode 2 (EOG/ECG/EMG/GSR)",
-      position_type = "External",
-      region = "External",
-      standard_system = "BioSemi",
-      biosemi_name = NA,
-      standard_name = "EXG2",
-      cartesian_coords = list(x = NA, y = NA, z = NA),
-      spherical_coords = list(theta = NA, phi = NA, radius = NA)
-    ),
-    "EXG3" = list(
-      position_name = "External electrode 3 (EOG/ECG/EMG/GSR)",
-      position_type = "External",
-      region = "External",
-      standard_system = "BioSemi",
-      biosemi_name = NA,
-      standard_name = "EXG3",
-      cartesian_coords = list(x = NA, y = NA, z = NA),
-      spherical_coords = list(theta = NA, phi = NA, radius = NA)
-    ),
-    "EXG4" = list(
-      position_name = "External electrode 4 (EOG/ECG/EMG/GSR)",
-      position_type = "External",
-      region = "External",
-      standard_system = "BioSemi",
-      biosemi_name = NA,
-      standard_name = "EXG4",
-      cartesian_coords = list(x = NA, y = NA, z = NA),
-      spherical_coords = list(theta = NA, phi = NA, radius = NA)
-    ),
-    "EXG5" = list(
-      position_name = "External electrode 5 (EOG/ECG/EMG/GSR)",
-      position_type = "External",
-      region = "External",
-      standard_system = "BioSemi",
-      biosemi_name = NA,
-      standard_name = "EXG5",
-      cartesian_coords = list(x = NA, y = NA, z = NA),
-      spherical_coords = list(theta = NA, phi = NA, radius = NA)
-    ),
-    "EXG6" = list(
-      position_name = "External electrode 6 (EOG/ECG/EMG/GSR)",
-      position_type = "External",
-      region = "External",
-      standard_system = "BioSemi",
-      biosemi_name = NA,
-      standard_name = "EXG6",
-      cartesian_coords = list(x = NA, y = NA, z = NA),
-      spherical_coords = list(theta = NA, phi = NA, radius = NA)
-    ),
-    "EXG7" = list(
-      position_name = "External electrode 7 (EOG/ECG/EMG/GSR)",
-      position_type = "External",
-      region = "External",
-      standard_system = "BioSemi",
-      biosemi_name = NA,
-      standard_name = "EXG7",
-      cartesian_coords = list(x = NA, y = NA, z = NA),
-      spherical_coords = list(theta = NA, phi = NA, radius = NA)
-    ),
-    "EXG8" = list(
-      position_name = "External electrode 8 (EOG/ECG/EMG/GSR)",
-      position_type = "External",
-      region = "External",
-      standard_system = "BioSemi",
-      biosemi_name = NA,
-      standard_name = "EXG8",
-      cartesian_coords = list(x = NA, y = NA, z = NA),
-      spherical_coords = list(theta = NA, phi = NA, radius = NA)
-    ),
-    # ===== BIOSEMI ACCESSORIES - GSR1/GSR2 =====
-    "GSR1" = list(
-      position_name = "Galvanic skin response channel 1 (electrodermal activity/arousal)",
-      position_type = "GSR",
-      region = "External",
-      standard_system = "BioSemi",
-      biosemi_name = NA,
-      standard_name = "GSR1",
-      cartesian_coords = list(x = NA, y = NA, z = NA),
-      spherical_coords = list(theta = NA, phi = NA, radius = NA)
-    ),
-    "GSR2" = list(
-      position_name = "Galvanic skin response channel 2 (electrodermal activity/arousal)",
-      position_type = "GSR",
-      region = "External",
-      standard_system = "BioSemi",
-      biosemi_name = NA,
-      standard_name = "GSR2",
-      cartesian_coords = list(x = NA, y = NA, z = NA),
-      spherical_coords = list(theta = NA, phi = NA, radius = NA)
-    ),
-    # ===== BIOSEMI ACCESSORIES - Erg1/Erg2 (Ergo/AUX Input) =====
-    "Erg1" = list(
-      position_name = "Ergo/AUX input 1 (Response Switch/Photocell/Microphone)",
-      position_type = "Ergo/AUX",
-      region = "External",
-      standard_system = "BioSemi",
-      biosemi_name = NA,
-      standard_name = "Erg1",
-      cartesian_coords = list(x = NA, y = NA, z = NA),
-      spherical_coords = list(theta = NA, phi = NA, radius = NA)
-    ),
-    "Erg2" = list(
-      position_name = "Ergo/AUX input 2 (Response Switch/Photocell/Microphone)",
-      position_type = "Ergo/AUX",
-      region = "External",
-      standard_system = "BioSemi",
-      biosemi_name = NA,
-      standard_name = "Erg2",
-      cartesian_coords = list(x = NA, y = NA, z = NA),
-      spherical_coords = list(theta = NA, phi = NA, radius = NA)
-    ),
-    # ===== BIOSEMI ACCESSORIES - Resp (Respiration Belt) =====
-    "Resp" = list(
-      position_name = "Respiration belt (breathing rate/pattern measurement)",
-      position_type = "Respiration",
-      region = "External",
-      standard_system = "BioSemi",
-      biosemi_name = NA,
-      standard_name = "Resp",
-      cartesian_coords = list(x = NA, y = NA, z = NA),
-      spherical_coords = list(theta = NA, phi = NA, radius = NA)
-    ),
-    # ===== BIOSEMI ACCESSORIES - Plet (Plethysmograph) =====
-    "Plet" = list(
-      position_name = "Plethysmograph (blood volume/pulse measurement)",
-      position_type = "Plethysmograph",
-      region = "External",
-      standard_system = "BioSemi",
-      biosemi_name = NA,
-      standard_name = "Plet",
-      cartesian_coords = list(x = NA, y = NA, z = NA),
-      spherical_coords = list(theta = NA, phi = NA, radius = NA)
-    ),
-    # ===== BIOSEMI ACCESSORIES - Temp (Temperature) =====
-    "Temp" = list(
-      position_name = "Temperature sensor (body temperature measurement)",
-      position_type = "Temperature",
-      region = "External",
-      standard_system = "BioSemi",
-      biosemi_name = NA,
-      standard_name = "Temp",
-      cartesian_coords = list(x = NA, y = NA, z = NA),
-      spherical_coords = list(theta = NA, phi = NA, radius = NA)
-    ),
-    # ===== Status =====
-    "Status" = list(
-      position_name = "Status channel (event markers/triggers)",
-      position_type = "Status",
-      region = "Metadata",
-      standard_system = "BioSemi",
-      biosemi_name = NA,
-      standard_name = "Status",
-      cartesian_coords = list(x = NA, y = NA, z = NA),
-      spherical_coords = list(theta = NA, phi = NA, radius = NA)
-    )
-  )
+  # The BioSemi channels that are not on the scalp (no positions) are listed in
+  # .biosemi_external_channels() (R/montage_biosemi.R)
+  external_channels <- .biosemi_external_channels()
   
   # Merge external channels into main database
   electrode_db <- c(electrode_db, external_channels)
@@ -1351,7 +1142,8 @@ plot_electrode_3d <- function(channels = NULL,
   # ========================================================================
   # The electrodes and their positions come from a layout. With no layout they
   # are the 64 BioSemi electrodes: the "biosemi64" layout, the one montages use,
-  # so these numbers are kept in one place (get_electrode_database()).
+  # so these numbers are kept in one place (.biosemi64_table(), in
+  # R/montage_biosemi.R).
   
   layout_table     <- .plot_layout_table(if (is.null(layout)) "biosemi64" else layout)
   layout_label     <- if (is.character(layout)) layout else "Custom montage"
@@ -1719,7 +1511,8 @@ plot_electrode_3d_spherical <- function(channels = NULL,
   # ========================================================================
   # The electrodes and their angles come from a layout. With no layout they are
   # the 64 BioSemi electrodes: the "biosemi64" layout, the one montages use, so
-  # these numbers are kept in one place (get_electrode_database()).
+  # these numbers are kept in one place (.biosemi64_table(), in
+  # R/montage_biosemi.R).
   
   layout_table <- .plot_layout_table(if (is.null(layout)) "biosemi64" else layout)
   layout_label <- if (is.character(layout)) layout else "Custom montage"

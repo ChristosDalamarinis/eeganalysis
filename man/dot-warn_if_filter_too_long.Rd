@@ -28,4 +28,10 @@ IIR filter has no length of this kind, and the spectrum-fit notch cuts its
 pieces down to the signal by itself, so neither gives the warning there.
 A filter that is exactly as long as the signal is allowed.
 }
+\details{
+The warning has its own class, \code{"eeganalysis_filter_longer_than_signal"}
+(besides \code{"warning"} and \code{"condition"}), so that a function which
+filters a signal of its own making, such as \code{plot_filter()}, can mute
+exactly this warning with a calling handler and nothing else.
+}
 \keyword{internal}

@@ -49,6 +49,11 @@ A condition with only a single trial has that trial's own data as its
 "average", so subtracting it leaves that trial at exactly zero - a
 warning is issued when this happens, since a zeroed-out trial contributes
 nothing useful to the fit.
+
+The EOG channels are treated like every other channel: their own average
+response is subtracted too. This is on purpose. If an EOG channel kept its
+time-locked part while the EEG channels lost theirs, the weights fitted by
+\code{\link{fit_eog_regression}} would come out too small.
 }
 \examples{
 \dontrun{

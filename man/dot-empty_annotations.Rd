@@ -48,12 +48,12 @@ description - reason, e.g. "BAD_muscle", "BAD_flat", "BAD_peak",
 channel     - channel name, if the row is channel-specific (only
 annotate_nan() produces these); NA otherwise
 
-R/eeg_class.R does not define this field yet, so every exported function
-below initializes eeg_obj$annotations to a zero-row frame the first time
-it is touched (.ensure_annotations()) - this file works standalone. When
-eeg_class.R is next updated, giving new_eeg() the same empty-data-frame
-default it already gives \code{bads} would make that initialization redundant
-(harmless either way - it only fires when the field is NULL).
+new_eeg() (R/eeg_class.R) already gives every new object an empty
+annotations table, so eeg_obj$annotations normally exists. Every exported
+function below still calls .ensure_annotations() first, as a safety net
+for objects without the field - for example one saved before new_eeg()
+had it, or one built by hand. It only acts when the field is NULL, so it
+does nothing otherwise.
 }
 \section{Author: Christos Dalamarinis
 Date: Sep - 2026

@@ -1,5 +1,5 @@
 Package: eeganalysis
-Title: EEG Package
+Title: Preprocessing and Analysis of EEG Data
 Version: 0.0.0.9000
 Authors@R: c(
     person("Christos", "Dalamarinis", , "dalamarinischristos@gmail.com", role = c("aut", "cre", "cph")),

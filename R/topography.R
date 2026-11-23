@@ -18,7 +18,12 @@
 #' position is projected to 2D with the standard EEG azimuthal-equidistant
 #' topomap projection (distance from the plot center is proportional to the
 #' angular distance from the vertex, Cz), then the scattered per-channel
-#' values are interpolated onto a regular grid with \code{akima::interp()}.
+#' values are interpolated onto a regular grid. The interpolation lays a smooth
+#' cubic surface over a mesh of triangles between the electrodes (the
+#' Clough-Tocher method, written in R for this package, so no other package is
+#' needed). A ring of extra points just outside the head, each holding the mean
+#' value of the electrodes next to it, makes the colours fade out towards the
+#' edge of the head instead of running away beyond the outer electrodes.
 #'
 #' @param eeg_obj An object of class \code{'eeg'}. Used to read
 #'   \code{eeg_obj$montage} when \code{montage} is not supplied directly, and
@@ -52,11 +57,12 @@
 #'   palette would go unused.
 #' @param extrapolate Logical, whether to colour the area outside the outer
 #'   boundary of the electrodes. There is no data there, so the colours are
-#'   extrapolated from the electrodes, and on sharp maps such as the output
-#'   of \code{\link{compute_csd}} that guess can show values larger than any
-#'   electrode measured. Default \code{TRUE} colours the whole head disc, as
-#'   before. With \code{FALSE} that area is left empty (\code{NA} in
-#'   \code{grid_z}).
+#'   a guess: they fade out towards the average of the outer electrodes, and
+#'   on sharp maps such as the output of \code{\link{compute_csd}} even that
+#'   guess can show values larger than any electrode measured. Default
+#'   \code{TRUE} colours the whole head disc, as before. With \code{FALSE}
+#'   that area is left empty (\code{NA} in \code{grid_z}); the colours inside
+#'   the electrodes stay exactly as they are with \code{TRUE}.
 #' @param ... Additional arguments (currently unused).
 #'
 #' @return Invisibly returns a list with:
@@ -89,7 +95,9 @@
 #' The surface is always interpolated from the electrodes in the same
 #' order (by position), so the map does not depend on the order of
 #' \code{values}. The returned \code{channel_positions} keeps the order of
-#' \code{values}.
+#' \code{values}. Channels that sit at the same position in the montage count
+#' as one electrode in the interpolation, with the mean of their values;
+#' \code{channel_positions} still lists every channel.
 #'
 #' Maps of signed quantities, such as current source density from
 #' \code{\link{compute_csd}} (positive and negative values mean different
@@ -117,7 +125,6 @@
 #'
 #' @importFrom graphics image contour polygon points text lines par
 #' @importFrom grDevices colorRampPalette
-#' @importFrom akima interp
 #'
 #' @export
 plot_topography <- function(eeg_obj,
@@ -216,28 +223,20 @@ plot_topography <- function(eeg_obj,
 
   # ========== INTERPOLATE ONTO A REGULAR GRID ==========
   # Outside the outer boundary of the electrodes there is no data to
-  # interpolate from. With extrapolate = TRUE the surface is extended over
-  # that area anyway, and it can show values larger than any electrode
-  # measured; with extrapolate = FALSE the area is left empty (NA) instead.
-
-  # akima::interp() builds its triangulation from the order the points arrive
-  # in. For some orders of a dense layout it warns about collinear points and
-  # nudges them, and for a few it hangs or crashes R. Handing it the points
-  # sorted by position (left to right, then front to back; rounded so that a
-  # tiny numerical difference is not taken as a real one) avoided all of that
-  # on every order tried, and gives the same map whatever the order of
-  # `values`. Only this call sees the sorted order: the plot and the returned
-  # table keep the order of `values`.
-  by_position <- order(round(x2d, 8), round(y2d, 8))
-
-  fit <- akima::interp(x2d[by_position], y2d[by_position], vals[by_position],
-                        xo = seq(-head_r, head_r, length.out = interpolate_res),
-                        yo = seq(-head_r, head_r, length.out = interpolate_res),
-                        linear = FALSE, extrap = isTRUE(extrapolate),
-                        duplicate = "mean")
-
-  grid_dist   <- sqrt(outer(fit$x^2, fit$y^2, "+"))
-  fit$z[grid_dist > head_r] <- NA
+  # interpolate from. With extrapolate = TRUE the surface is carried on over
+  # that area anyway (it fades out towards the average of the outer
+  # electrodes, but on sharp maps it can still show values larger than any
+  # electrode measured); with extrapolate = FALSE the area is left empty (NA)
+  # instead. The cells outside the head disc are always NA.
+  #
+  # .topomap_grid() (R/topomap_interpolation.R) takes the electrodes in the
+  # order of their positions, and averages the values of electrodes that share
+  # a position, so the map is the same whatever the order of `values`. Only
+  # that function sees the sorted order: the plot and the returned table keep
+  # the order of `values`.
+  fit <- .topomap_grid(x2d, y2d, vals, head_r,
+                       n_grid = interpolate_res,
+                       extrapolate = isTRUE(extrapolate))
 
   # ========== RENDER ==========
 

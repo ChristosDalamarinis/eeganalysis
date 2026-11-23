@@ -31,10 +31,7 @@ make_topo_fixture <- function() {
 # Helper: a smooth, non-random map on the full 64-channel layout - a broad
 # bump that is 1 at Cz and falls towards 0 at the edge of the head - with an
 # eeg object that carries the montage. Unlike make_topo_fixture() it has no
-# random values, so tests can rely on its exact shape, and it has enough
-# electrodes for a real interpolation: akima::interp() returns a flat
-# all-zero surface when given fewer than 10 points, so the 6-channel fixture
-# above cannot show anything about colours or extrapolation.
+# random values, so tests can rely on its exact shape.
 make_blob_fixture <- function() {
   montage   <- create_montage()
   positions <- montage$positions
@@ -43,6 +40,27 @@ make_blob_fixture <- function() {
   cosang    <- as.vector(xyz %*% xyz[positions$channel == "Cz", ])
   angle     <- acos(pmin(pmax(cosang, -1), 1))
   values    <- setNames(exp(-(angle / 0.6)^2), positions$channel)
+  eeg <- new_eeg(data = matrix(0, nrow = nrow(positions), ncol = 4),
+                 channels = positions$channel, sampling_rate = 100,
+                 montage = montage)
+  list(eeg = eeg, values = values)
+}
+
+# Helper: a sharp, signed map on the full 64-channel layout - a ripple of
+# positive and negative patches, like current source density - with an eeg
+# object that carries the montage. A surface through values like these swings
+# well past the electrode values in the area outside the electrodes, which is
+# what extrapolate = FALSE is for. The bump of make_blob_fixture() is too
+# gentle to show that.
+make_ripple_fixture <- function() {
+  montage   <- create_montage()
+  positions <- montage$positions
+  r         <- sqrt(positions$x^2 + positions$y^2 + positions$z^2)
+  elevation <- acos(positions$z / r)
+  azimuth   <- atan2(positions$y, positions$x)
+  values    <- setNames(sin(7 * elevation * cos(azimuth)) *
+                          cos(6 * elevation * sin(azimuth)),
+                        positions$channel)
   eeg <- new_eeg(data = matrix(0, nrow = nrow(positions), ncol = 4),
                  channels = positions$channel, sampling_rate = 100,
                  montage = montage)
@@ -215,8 +233,8 @@ test_that("plot_topography accepts an explicit montage argument", {
 # Test 2.4: Collinear channels are rejected with a clear error
 # ----------------------------------------------------------------------------
 # WHAT THIS TESTS: Verifies plot_topography() gives a clear error (rather
-# than a cryptic akima::interp failure) when the selected channels have no
-# spread in one spatial dimension, e.g. a purely midline selection.
+# than a cryptic failure from the interpolation) when the selected channels
+# have no spread in one spatial dimension, e.g. a purely midline selection.
 test_that("plot_topography errors clearly on collinear channels", {
   chans <- c("Cz", "Fz", "Pz", "Oz")
   mat <- matrix(rnorm(length(chans) * 100), nrow = length(chans))
@@ -360,23 +378,25 @@ test_that("extrapolate = FALSE empties the area outside the electrodes only", {
 # ----------------------------------------------------------------------------
 # Test 4.4: Painting outside the electrodes can invent values
 # ----------------------------------------------------------------------------
-# WHAT THIS TESTS: Verifies why extrapolate = FALSE exists. On a smooth bump
-# centred on Cz (1 at Cz, falling to about 0 at the edge) the default map
-# extrapolates beyond the electrodes to well over the largest value any
-# electrode has (the test asks for more than 1.5 times it), while with
-# extrapolate = FALSE the largest plotted value stays at the electrodes' own
-# maximum.
+# WHAT THIS TESTS: Verifies why extrapolate = FALSE exists. On a sharp signed
+# map (a ripple of positive and negative patches, about twice as strong at its
+# peak in the area outside the electrodes) the default map extrapolates beyond
+# the electrodes to well over the largest value any electrode has (the test
+# asks for more than 1.5 times it), while with extrapolate = FALSE the largest
+# plotted value stays within 1.3 times the electrodes' own maximum: a smooth
+# surface can swing a little past the electrode values between the outer
+# electrodes, but not out into the area that has none.
 test_that("extrapolate = FALSE removes values invented beyond the electrodes", {
-  fx <- make_blob_fixture()
-  electrode_max <- max(fx$values)
+  fx <- make_ripple_fixture()
+  electrode_max <- max(abs(fx$values))
 
   default_map <- with_null_device(plot_topography(fx$eeg, fx$values))
   inside_map  <- with_null_device(
     plot_topography(fx$eeg, fx$values, extrapolate = FALSE)
   )
 
-  expect_gt(max(default_map$grid_z, na.rm = TRUE), 1.5 * electrode_max)
-  expect_lte(max(inside_map$grid_z, na.rm = TRUE), 1.05 * electrode_max)
+  expect_gt(max(abs(default_map$grid_z), na.rm = TRUE), 1.5 * electrode_max)
+  expect_lte(max(abs(inside_map$grid_z), na.rm = TRUE), 1.3 * electrode_max)
 })
 
 # ----------------------------------------------------------------------------
@@ -385,17 +405,16 @@ test_that("extrapolate = FALSE removes values invented beyond the electrodes", {
 # WHAT THIS TESTS: Verifies that with zero_centered = TRUE and
 # extrapolate = FALSE together the colour limits are symmetric around zero AND
 # come from the map painted only inside the electrodes, so the values invented
-# outside them no longer stretch the colour scale. The map is the bump from
-# Test 4.4 shifted down by 0.5 so that it has both signs.
+# outside them no longer stretch the colour scale. The map is the ripple from
+# Test 4.4, which has both signs.
 test_that("zero_centered and extrapolate = FALSE work together", {
-  fx <- make_blob_fixture()
-  signed <- fx$values - 0.5
+  fx <- make_ripple_fixture()
 
   centered_only <- with_null_device(
-    plot_topography(fx$eeg, signed, zero_centered = TRUE)
+    plot_topography(fx$eeg, fx$values, zero_centered = TRUE)
   )
   both <- with_null_device(
-    plot_topography(fx$eeg, signed,
+    plot_topography(fx$eeg, fx$values,
                     zero_centered = TRUE, extrapolate = FALSE)
   )
 
@@ -532,13 +551,11 @@ test_that("a dense layout with bad channels gives only the bad-channel warning",
 # Test 5.4: An order that used to hang R
 # ----------------------------------------------------------------------------
 # WHAT THIS TESTS: This particular order of the 128 channel layout made the
-# interpolation package hang or crash R before the points were sorted. It must
-# now draw normally, and draw the same map as the layout's own order.
-# Without the sorting in plot_topography() this call hangs or crashes R, so it
-# is skipped on CI, where a hang would hold the job for hours; run it locally.
+# interpolation package that was used before hang or crash R. The interpolation
+# that is used now cannot do that, because it puts the electrodes in the order
+# of their positions first. The order must draw normally, without warnings, and
+# draw the same map as the layout's own order.
 test_that("an order of the 128 channel layout that used to hang R now plots", {
-  skip_on_ci()
-
   hang_order <- c(
     112, 82, 39, 3, 33, 108, 81, 121, 128, 89, 9, 40, 87,
     51, 127, 28, 113, 104, 36, 118, 57, 125, 56, 86, 45, 31,
@@ -643,6 +660,88 @@ test_that("plot_topography works after set_montage() with a layout name", {
 })
 
 # ============================================================================
+#         TEST SUITE 7: The Interpolation Seen Through plot_topography()
+# ============================================================================
+
+# ----------------------------------------------------------------------------
+# Test 7.1: The 64 electrode layout gives the numbers of the reference program
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies the whole chain (projection to 2D, head radius,
+# interpolation, grid) on the 64 electrode BioSemi layout with a sharp pattern,
+# one different value per electrode (sin of 1, 2, ..., 64), at 8 cells of the
+# default 100 x 100 grid: the numbers were made once by the interpolator that
+# MNE-Python uses for its topographic maps, on the same positions and values,
+# and agree to 1e-6. The positions come from the layout of the package, so
+# these numbers have to be made again if that layout ever changes.
+test_that("the 64 electrode layout gives the numbers of the reference program", {
+  fx <- make_layout_fixture("biosemi64")
+  values <- setNames(sin(seq_along(fx$channels)), fx$channels)
+  cells <- cbind(c(50, 30, 50, 70, 25, 80, 12, 50),
+                 c(50, 50, 30, 60, 25, 75, 50, 90))
+  reference <- c(-0.723771352, 0.5892800083, -0.6365026789, 0.7404822589,
+                 -0.5610299627, -0.9173957127, 0.5524138743, 1.525637583)
+
+  res <- with_null_device(plot_topography(fx$eeg, values))
+  got <- vapply(seq_len(nrow(cells)),
+                function(k) res$grid_z[cells[k, 1], cells[k, 2]], numeric(1))
+
+  expect_lt(max(abs(got - reference)), 1e-6)
+})
+
+# ----------------------------------------------------------------------------
+# Test 7.2: A layout with channels that share a position
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies the real-head layout colin27_1020, in which 4 of
+# the 94 channels sit at the same position as another one, draws without any
+# warning, lists all 94 channels in channel_positions, and fills every cell of
+# the head disc (the channels at one position count as one electrode with the
+# mean of their values).
+test_that("a layout with channels at the same position plots and lists every channel", {
+  fx <- make_layout_fixture("colin27_1020")
+  values <- setNames(sin(seq_along(fx$channels)), fx$channels)
+
+  expect_no_warning(res <- with_null_device(plot_topography(fx$eeg, values)))
+
+  expect_equal(nrow(res$channel_positions), 94)
+  expect_equal(res$channel_positions$channel, fx$channels)
+  inside_disc <- sqrt(outer(res$grid_x^2, res$grid_y^2, "+")) <= max(res$grid_x)
+  expect_true(all(is.finite(res$grid_z[inside_disc])))
+})
+
+# ----------------------------------------------------------------------------
+# Test 7.3: Few channels still give a real map
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies a recording with only 6 channels gives a real map
+# with many different values across the head. (The interpolation package that
+# was used before drew a flat, all-zero map for fewer than 10 channels.)
+test_that("a recording with only 6 channels still gives a real map", {
+  chans <- c("Cz", "Fz", "Pz", "Oz", "T7", "T8")
+  eeg <- new_eeg(data = matrix(0, nrow = 6, ncol = 10), channels = chans,
+                 sampling_rate = 100)
+  eeg <- set_montage(eeg, create_montage(chans))
+  values <- setNames(c(1, 0.2, -0.5, 0.8, -1, 0.4), chans)
+
+  res <- with_null_device(plot_topography(eeg, values))
+
+  painted <- res$grid_z[is.finite(res$grid_z)]
+  expect_gt(length(unique(round(painted, 8))), 500)
+  expect_gt(diff(range(painted)), 1)
+})
+
+# ----------------------------------------------------------------------------
+# Test 7.4: A value that is not a number
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies a value that is NA gives a clear error that says
+# the values must be finite, instead of a map with holes in it.
+test_that("an NA value is an error", {
+  fx <- make_blob_fixture()
+  values <- fx$values
+  values[5] <- NA
+
+  expect_error(with_null_device(plot_topography(fx$eeg, values)), "finite")
+})
+
+# ============================================================================
 #                     SUMMARY OF TEST COVERAGE
 # ============================================================================
 # - Input validation: non-'eeg' object, missing montage, unnamed values
@@ -657,13 +756,13 @@ test_that("plot_topography works after set_montage() with a layout name", {
 #   (picture and zlim unchanged), zero_centered makes the colour limits
 #   symmetric around zero, extrapolate = FALSE leaves the area outside the
 #   electrodes empty without changing the rest, painting outside the
-#   electrodes can invent values that extrapolate = FALSE removes, the two
-#   arguments work together, and zero_centered changes the drawn picture
-#   (not just the returned zlim)
+#   electrodes can invent values (on a sharp signed map) that
+#   extrapolate = FALSE removes, the two arguments work together, and
+#   zero_centered changes the drawn picture (not just the returned zlim)
 # - Order of the values: the same map whatever the order (the returned table
 #   keeps the input order), no warnings on the 128 and 160 layouts, only the
 #   bad-channel warning when channels are marked bad, and a channel order
-#   that used to hang R
+#   that used to hang R (now a normal test that also runs on CI)
 # - The standard 10-10 layout: 72 electrodes, no warnings, same map in
 #   reverse order
 # - The standard 10-05 layout: 335 electrodes, no warnings, same map in
@@ -672,4 +771,8 @@ test_that("plot_topography works after set_montage() with a layout name", {
 #   reverse order
 # - A montage attached with set_montage() by layout name draws the same map
 #   as one built by hand
+# - The interpolation seen through plot_topography(): the 64 electrode layout
+#   gives the numbers of the reference program, a layout with channels at one
+#   position plots and lists every channel, 6 channels give a real map, an NA
+#   value is a clear error
 # ============================================================================

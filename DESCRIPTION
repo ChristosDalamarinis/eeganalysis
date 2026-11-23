@@ -17,7 +17,6 @@ Depends:
 Imports:
     plotly,
     MASS,
-    akima,
     dbscan
 Suggests:
     knitr,

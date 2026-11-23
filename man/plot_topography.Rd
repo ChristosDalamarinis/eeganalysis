@@ -60,11 +60,12 @@ palette would go unused.}
 
 \item{extrapolate}{Logical, whether to colour the area outside the outer
 boundary of the electrodes. There is no data there, so the colours are
-extrapolated from the electrodes, and on sharp maps such as the output
-of \code{\link{compute_csd}} that guess can show values larger than any
-electrode measured. Default \code{TRUE} colours the whole head disc, as
-before. With \code{FALSE} that area is left empty (\code{NA} in
-\code{grid_z}).}
+a guess: they fade out towards the average of the outer electrodes, and
+on sharp maps such as the output of \code{\link{compute_csd}} even that
+guess can show values larger than any electrode measured. Default
+\code{TRUE} colours the whole head disc, as before. With \code{FALSE}
+that area is left empty (\code{NA} in \code{grid_z}); the colours inside
+the electrodes stay exactly as they are with \code{TRUE}.}
 
 \item{...}{Additional arguments (currently unused).}
 }
@@ -98,7 +99,12 @@ over the scalp, using electrode positions from an attached
 position is projected to 2D with the standard EEG azimuthal-equidistant
 topomap projection (distance from the plot center is proportional to the
 angular distance from the vertex, Cz), then the scattered per-channel
-values are interpolated onto a regular grid with \code{akima::interp()}.
+values are interpolated onto a regular grid. The interpolation lays a smooth
+cubic surface over a mesh of triangles between the electrodes (the
+Clough-Tocher method, written in R for this package, so no other package is
+needed). A ring of extra points just outside the head, each holding the mean
+value of the electrodes next to it, makes the colours fade out towards the
+edge of the head instead of running away beyond the outer electrodes.
 
 This function requires an attached montage: build one with
 \code{\link{create_montage}} and attach it with \code{\link{set_montage}},
@@ -115,7 +121,9 @@ interpolate a surface.
 The surface is always interpolated from the electrodes in the same
 order (by position), so the map does not depend on the order of
 \code{values}. The returned \code{channel_positions} keeps the order of
-\code{values}.
+\code{values}. Channels that sit at the same position in the montage count
+as one electrode in the interpolation, with the mean of their values;
+\code{channel_positions} still lists every channel.
 
 Maps of signed quantities, such as current source density from
 \code{\link{compute_csd}} (positive and negative values mean different

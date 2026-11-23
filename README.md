@@ -58,7 +58,6 @@ The real-head layouts `colin27_1020` and `colin27_1005` of `create_montage()` us
 ## Dependencies
 
 - **dbscan** — Local Outlier Factor bad-channel detection
-- **akima** — interpolation of the electrode values onto a grid for the topography maps
 - **MASS** — matrix inverse for bad-channel interpolation
 - **plotly** — interactive 3D electrode plots
 
@@ -255,6 +254,8 @@ eeganalysis
 │   │
 │   ├── topography.R                         ← Scalp topography plotting
 │   │   └── plot_topography()                ← Interpolated scalp-map plot
+│   │
+│   ├── topomap_interpolation.R              ← The smooth surface behind the scalp maps: a mesh of triangles between the electrodes with a cubic surface over it, written in R
 │   │
 │   ├── csd.R                                ← Current source density (surface Laplacian)
 │   │   └── compute_csd()                    ← Reference-free spherical-spline Laplacian (continuous or epoched)

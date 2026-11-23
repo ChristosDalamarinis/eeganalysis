@@ -85,7 +85,6 @@ export(subtract_evoked)
 export(summary_bdf_events)
 export(validate_bdf_events)
 importFrom(MASS,ginv)
-importFrom(akima,interp)
 importFrom(dbscan,lof)
 importFrom(grDevices,
   adjustcolor,

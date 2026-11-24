@@ -17,7 +17,8 @@ Depends:
 Imports:
     plotly,
     MASS,
-    dbscan
+    dbscan,
+    geometry
 Suggests:
     knitr,
     rmarkdown,

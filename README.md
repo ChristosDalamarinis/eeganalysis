@@ -58,6 +58,7 @@ The real-head layouts `colin27_1020` and `colin27_1005` of `create_montage()` us
 ## Dependencies
 
 - **dbscan** — Local Outlier Factor bad-channel detection
+- **geometry** — the typical distance between electrodes, which sets the ring of extra points of the scalp maps
 - **MASS** — matrix inverse for bad-channel interpolation
 - **plotly** — interactive 3D electrode plots
 

@@ -5,6 +5,9 @@
 #   testthat::test_file("test_filter1.R")
 #
 # Requires: testthat, mne_reference/ reference CSVs
+#
+# Author: Christos Dalamarinis
+# Date: Apr 2026
 
 library(testthat)
 

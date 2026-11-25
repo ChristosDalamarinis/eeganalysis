@@ -290,7 +290,10 @@
   
   for (j in seq_len(k)) {
     X   <- fft(x * tapers[, j])[seq_len(n_half)]
-    p   <- (Mod(X)^2) * 2 / (n * sr)
+    # Each taper has unit energy (sum(taper^2) = 1), so the 1/n of the
+    # length normalisation is already inside it: divide by sr only. Dividing
+    # by n * sr here made the PSD n times too small (1024x for 2 s at 512 Hz).
+    p   <- (Mod(X)^2) * 2 / sr
     # DC and Nyquist bins must not be doubled
     p[c(1L, n_half)] <- p[c(1L, n_half)] / 2
     acc <- acc + p

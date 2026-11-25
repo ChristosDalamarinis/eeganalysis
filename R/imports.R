@@ -1,3 +1,6 @@
+# Author: Christos Dalamarinis
+# Date: Feb - 2026
+
 #' @importFrom MASS ginv
 #' @importFrom stats prcomp cov cor dist
 #' @importFrom graphics plot abline lines legend par

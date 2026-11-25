@@ -91,6 +91,9 @@
 # electrodes that lie exactly on a line (such as the midline of a cap) or
 # exactly on a circle (such as a regular lattice) give a proper mesh without
 # any special treatment.
+#
+# Author: Christos Dalamarinis
+# Date: Nov - 2026
 
 
 # ============================================================================

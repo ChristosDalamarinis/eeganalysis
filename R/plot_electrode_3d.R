@@ -12,6 +12,9 @@
 # all layouts.
 #
 # The two small helpers under the banner below are used by both plots.
+#
+# Author: Christos Dalamarinis
+# Date: Nov - 2026
 # ============================================================================
 
 # ----------------------------------------------------------------------------

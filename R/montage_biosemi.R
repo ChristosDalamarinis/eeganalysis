@@ -67,6 +67,9 @@
 #                        sockets per letter). The sheets also print the
 #                        nearest 10-20 name next to some of them; those are
 #                        only approximate, so they are not used.
+#
+# Author: Christos Dalamarinis
+# Date: Nov - 2026
 
 # Names of the layouts built here.
 .biosemi_templates <- function() {

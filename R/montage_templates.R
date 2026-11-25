@@ -22,6 +22,9 @@
 # second name that is accepted, NA if none), x, y, z (mm), theta, phi (degrees)
 # and radius (mm). Positions are x towards the right ear, y towards the nose
 # and z towards the top of the head, with the origin at the middle of the head.
+#
+# Author: Christos Dalamarinis
+# Date: Oct - 2026
 
 # The head radius of the layouts that are built on a sphere, 87.54 mm (a 55 cm
 # head circumference divided by 2*pi). The BioSemi caps and the standard

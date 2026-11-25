@@ -40,14 +40,3 @@ test_signal_99.csv
 inst/doc
 /doc/
 /Meta/
-# Source files of SciPy and Qhull, in the project folder only to read them (not part of the package)
-/scipy/
-/_qhull.pyx
-/_qhull.pxd
-/qhull_misc*
-/qhull_ra.h
-/*_r.c
-/*_r.h
-/poly2rc.patch
-/Announce.txt
-/meson.build

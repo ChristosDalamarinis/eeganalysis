@@ -99,6 +99,9 @@
 # 10-20 system. All three layouts accept the old names as well: the table
 # gives them as the alias of the electrode, and create_montage() looks a name
 # up by its alias when it has no electrode of that name.
+#
+# Author: Christos Dalamarinis
+# Date: Oct - 2026
 
 # Names of the layouts built here.
 .standard_templates <- function() {

@@ -37,6 +37,9 @@
 # A real head is not round, so the radius column holds the distance of each
 # electrode from the origin (the other layouts have one head radius for all of
 # them).
+#
+# Author: Christos Dalamarinis
+# Date: Nov - 2026
 
 # The file of each layout, in inst/extdata/fieldtrip/ of the package.
 .colin27_files <- function() {

@@ -24,7 +24,7 @@
 #
 # with w = 2 pi f / sampling rate.
 #
-# Autor: Christos Dalamarinis
+# Author: Christos Dalamarinis
 # Date: Oct - 2026
 
 # ----------------------------------------------------------------------------

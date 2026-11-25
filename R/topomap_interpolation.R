@@ -9,11 +9,8 @@
 # calls .topomap_grid(), and the other functions are its parts.
 #
 # The method is the one used for topographic maps in MNE-Python (mne/viz/
-# topomap.py), written here in plain R. One number is not worked out in R: the
-# typical distance between electrodes, which sets the number of points of the
-# ring (step 2). It is measured on the triangles of the Qhull library, through
-# the R package geometry, because the way MNE-Python measures it depends on the
-# inner order of Qhull (see .topo_qhull_spacing()):
+# topomap.py), written here in plain R except for one number (see Job A
+# below):
 #
 #   1. The electrodes are joined into a mesh of triangles (a Delaunay
 #      triangulation: the circle through the corners of any triangle holds no
@@ -30,6 +27,25 @@
 #   4. The surface is read at the points of the grid that lie inside the head.
 #      With extrapolate = FALSE the cells outside the outer boundary of the
 #      electrodes are then left empty; the surface itself does not change.
+#
+# The triangles do two separate jobs, and only the first one leans on another
+# package:
+#
+#   Job A, place the ring (step 2). One number, the typical distance between
+#      neighbouring electrodes, decides how many ring points there are and how
+#      far out the ring sits. It is measured on the triangles of the Qhull
+#      library, through the R package geometry, because the way MNE-Python
+#      measures it depends on the inner order of Qhull, which cannot be worked
+#      out from outside (see .topo_qhull_spacing()). If Qhull cannot join the
+#      electrodes, the number is taken from our own mesh instead
+#      (.topo_edge_median()).
+#   Job B, colour the map (steps 1, 3 and 4). The mesh that the colours are
+#      painted on is our own (.topo_delaunay()), not Qhull's. Qhull's mesh was
+#      tried for this job too and matched MNE-Python less well on the BioSemi
+#      128 layout (1.2 instead of 0.54 percent of the colour range at the worst
+#      cell): where four electrodes lie on one circle, either diagonal is
+#      correct, and which one is chosen comes down to the last digit of the
+#      numbers.
 #
 # Credits and licence: the cubic fitting (step 3, with its estimate of the
 # slopes and the way a point is found in the mesh and read off) is a port of
@@ -69,7 +85,7 @@
 #   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 #   OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
-# The mesh itself is built here with a small triangulation routine of our own
+# The mesh of Job B is built here with a small triangulation routine of our own
 # (.topo_delaunay()) instead of the library routine of the models. It uses a
 # test for "inside the circle" that stays accurate for thin triangles, so that
 # electrodes that lie exactly on a line (such as the midline of a cap) or
@@ -196,17 +212,19 @@
   scaled_electrodes <- electrodes / unit
   scaled_values     <- (values - centre) / spread
 
-  # The mesh of the electrodes alone. It is used, with extrapolate = FALSE, to
-  # find the cells that lie outside the electrodes, and to find the spacing for
-  # the ring when Qhull cannot measure it (see .topo_qhull_spacing()).
+  # Our own mesh of the electrodes alone. It is used, with extrapolate = FALSE,
+  # to find the cells that lie outside the electrodes, and in Job A to find the
+  # spacing for the ring when Qhull cannot measure it.
   electrode_mesh <- .topo_delaunay(scaled_electrodes)
 
-  # The ring is spaced like the electrodes, and the mesh is built again with
-  # the ring points in it. The ring is there whatever `extrapolate` is: it
-  # decides the slope of the surface at the outer electrodes, and the surface
-  # is closer to the truth inside the electrodes with it than without it.
-  # The spacing is measured on the electrodes in their own unit, which is what
-  # the reference program does, and then scaled like everything else.
+  # Job A, place the ring: the ring is spaced like the electrodes. The spacing
+  # is measured by Qhull (.topo_qhull_spacing()) on the electrodes in their own
+  # unit, which is what the reference program does, and then scaled like
+  # everything else. Our own mesh is the way out when Qhull cannot join the
+  # electrodes, and a spacing given in `ring_spacing` wins over both. The ring
+  # is there whatever `extrapolate` is: it decides the slope of the surface at
+  # the outer electrodes, and the surface is closer to the truth inside the
+  # electrodes with it than without it.
   spacing <- if (!is.null(ring_spacing)) {
     ring_spacing / unit
   } else {
@@ -218,6 +236,9 @@
     }
   }
   ring   <- .topo_ring(1, spacing)
+
+  # Job B, colour the map: our own mesh is built again, over the electrodes and
+  # the ring points, and the colours are painted on its triangles.
   points <- rbind(scaled_electrodes, ring)
   mesh   <- .topo_delaunay(points)
 
@@ -268,15 +289,16 @@
 
 
 # ============================================================================
-#                       THE RING OF EXTRA POINTS
+#                  JOB A: THE RING OF EXTRA POINTS
 # ============================================================================
 
-# The typical distance between neighbouring electrodes, measured the way the
-# program this follows (MNE-Python) measures it: the electrodes are joined into
-# triangles by Qhull (the library inside scipy; the R package geometry carries
-# the same library), with the same options, and the spacing is the median of
-# the lengths of two of the three edges of every triangle, the edge from the
-# first to the second corner and the edge from the second to the third corner.
+# Job A, place the ring. The typical distance between neighbouring electrodes,
+# measured the way the program this follows (MNE-Python) measures it: the
+# electrodes are joined into triangles by Qhull (the library inside scipy; the
+# R package geometry carries the same library), with the same options, and the
+# spacing is the median of the lengths of two of the three edges of every
+# triangle, the edge from the first to the second corner and the edge from the
+# second to the third corner.
 #
 # Which edge is left out depends on the order in which Qhull lists the corners
 # of a triangle. That order comes from the inner working of Qhull (the order
@@ -353,13 +375,14 @@
 
 
 # ============================================================================
-#                        THE MESH OF TRIANGLES
+#                    JOB B: THE MESH OF TRIANGLES
 # ============================================================================
 
-# Delaunay triangulation of a set of 2D points (Bowyer-Watson: the points are
-# added one at a time; every triangle whose circle holds the new point is cut
-# away, and the hole is filled with triangles that join the new point to the
-# edge of the hole).
+# Job B, colour the map: our own Delaunay triangulation of a set of 2D points,
+# used instead of Qhull's (see Job B at the top of the file). Bowyer-Watson:
+# the points are added one at a time; every triangle whose circle holds the
+# new point is cut away, and the hole is filled with triangles that join the
+# new point to the edge of the hole.
 #
 # Returns a matrix with one row per triangle and the numbers of its three
 # corners (rows of `points`).
@@ -493,7 +516,7 @@
 
 
 # ============================================================================
-#            THE CUBIC SURFACE (CLOUGH-TOCHER, PORTED FROM SCIPY)
+#        JOB B: THE CUBIC SURFACE (CLOUGH-TOCHER, PORTED FROM SCIPY)
 # ============================================================================
 
 # The slope (the change of the value per unit of x and of y) of the surface at

@@ -20,10 +20,12 @@
 #' angular distance from the vertex, Cz), then the scattered per-channel
 #' values are interpolated onto a regular grid. The interpolation lays a smooth
 #' cubic surface over a mesh of triangles between the electrodes (the
-#' Clough-Tocher method, written in R for this package, so no other package is
-#' needed). A ring of extra points just outside the head, each holding the mean
-#' value of the electrodes next to it, makes the colours fade out towards the
-#' edge of the head instead of running away beyond the outer electrodes.
+#' Clough-Tocher method, written in R for this package). A ring of extra points
+#' just outside the head, each holding the mean value of the electrodes next to
+#' it, makes the colours fade out towards the edge of the head instead of
+#' running away beyond the outer electrodes. The number of ring points follows
+#' the typical distance between neighbouring electrodes, which is measured on
+#' the triangles of the Qhull library (through the \pkg{geometry} package).
 #'
 #' @param eeg_obj An object of class \code{'eeg'}. Used to read
 #'   \code{eeg_obj$montage} when \code{montage} is not supplied directly, and

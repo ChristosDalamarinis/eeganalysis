@@ -11,7 +11,8 @@
 #   1. .topomap_grid()                - the surface read on a regular grid
 #   2. .topo_surface(), .topo_read()  - the surface and a read-out at any point
 #   3. .topo_ring()                   - the ring of extra points
-#   4. .topo_edge_median()            - the electrode spacing the ring follows
+#   4. .topo_qhull_spacing(), .topo_edge_median()
+#                                     - the electrode spacing the ring follows
 #   5. .topo_delaunay()               - the mesh of triangles
 #   6. .topo_triangle_neighbours(), .topo_slopes(), .topo_locate()
 #
@@ -526,10 +527,11 @@ test_that("the ring has the right size, number of points and place", {
 })
 
 # ----------------------------------------------------------------------------
-# Test 4.2: The electrode spacing: every edge counted once
+# Test 4.2: The fallback spacing: every edge counted once
 # ----------------------------------------------------------------------------
-# WHAT THIS TESTS: Verifies the spacing is the median of the lengths of the
-# edges of the mesh with every edge counted ONCE. For a unit square the mesh
+# WHAT THIS TESTS: Verifies the spacing worked out from our own mesh, which is
+# used when Qhull cannot join the electrodes (Test 4.7), is the median of the
+# lengths of the edges of the mesh with every edge counted ONCE. For a unit square the mesh
 # has 4 sides of length 1 and one diagonal of length sqrt(2): counted once the
 # median is 1, whereas counting the shared diagonal twice would give 1.207.
 # Also checks a 4 x 4 lattice (spacing 1), where the sides outnumber the
@@ -561,6 +563,100 @@ test_that("the 64 electrode layout gets the spacing and ring of the reference pr
 
   expect_equal(spacing, 0.45305192797089022, tolerance = 1e-9)
   expect_equal(nrow(surface$points) - nrow(surface$electrodes), 30)
+})
+
+# ----------------------------------------------------------------------------
+# Test 4.4: The spacing measured by Qhull is the spacing of the reference program
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies that .topo_qhull_spacing() works out the same
+# spacing as the reference program. The numbers were made once by the
+# reference program on the electrodes of each layout. They are the layouts where
+# the number does not move when the positions are nudged in their last digit
+# (checked by nudging them by 1e-16 and 1e-14, 40 times each), so the test
+# cannot fail on another computer by the way a tie is settled: the 16 and 64
+# electrode BioSemi layouts, the 10-20 layout (where counting every edge once,
+# as in Test 4.2, gives a ring with one point too few) and colin27_1020. The
+# electrodes are given in the order of their positions, as .topo_surface() gives
+# them.
+test_that("the spacing measured by Qhull is the spacing of the reference program", {
+  reference <- c(biosemi16     = 0.82643716454132354,
+                 biosemi64     = 0.45305192797089022,
+                 standard_1020 = 0.84040499302832883,
+                 colin27_1020  = 0.42598863618569416)
+
+  for (layout in names(reference)) {
+    p <- layout_2d(layout)
+    surface <- eeganalysis:::.topo_surface(p$x, p$y, smooth_pattern(p$x, p$y),
+                                           p$head_r)
+    expect_equal(eeganalysis:::.topo_qhull_spacing(surface$electrodes),
+                 reference[[layout]], tolerance = 1e-9, label = layout)
+  }
+})
+
+# ----------------------------------------------------------------------------
+# Test 4.5: Every layout gets the ring of the reference program
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies that on 8 layouts of the package the ring of extra
+# points has as many points as the reference program puts around the same
+# electrodes (the numbers were made once by the reference program). The 10-20
+# layout (13 points) and the 160 electrode BioSemi layout (50 points) are the
+# two where the simple rule of Test 4.2 gives one or two points too few. Left
+# out are the three layouts whose ring moves by a point when the positions are
+# nudged in their last digit (the 256 electrode BioSemi layout, 10-10 and
+# 10-05: 61, 30 and 66 points here), because a test on them could fail on
+# another computer without anything being wrong.
+test_that("the layouts with a steady ring get the ring of the reference program", {
+  ring_points <- c(biosemi16 = 13, biosemi32 = 17, biosemi64 = 30,
+                   biosemi128 = 42, biosemi160 = 50,
+                   standard_1020 = 13,
+                   colin27_1020 = 36, colin27_1005 = 73)
+
+  for (layout in names(ring_points)) {
+    p <- layout_2d(layout)
+    surface <- eeganalysis:::.topo_surface(p$x, p$y, smooth_pattern(p$x, p$y),
+                                           p$head_r)
+    expect_equal(nrow(surface$points) - nrow(surface$electrodes),
+                 ring_points[[layout]], label = layout)
+  }
+})
+
+# ----------------------------------------------------------------------------
+# Test 4.6: The spacing follows the unit of the positions
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies that the spacing measured by Qhull grows and
+# shrinks with the positions (the 64 electrode layout in thousand times larger
+# and smaller units, such as millimetres and kilometres instead of metres), so
+# the ring does not depend on the unit the positions are given in.
+test_that("the spacing measured by Qhull follows the unit of the positions", {
+  p <- layout_2d("biosemi64")
+  electrodes <- cbind(p$x, p$y)
+  spacing <- eeganalysis:::.topo_qhull_spacing(electrodes)
+
+  expect_true(is.finite(spacing) && spacing > 0)
+  expect_equal(eeganalysis:::.topo_qhull_spacing(electrodes * 1000), spacing * 1000)
+  expect_equal(eeganalysis:::.topo_qhull_spacing(electrodes / 1000), spacing / 1000)
+})
+
+# ----------------------------------------------------------------------------
+# Test 4.7: Electrodes that Qhull cannot join fall back on our own spacing
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Qhull refuses to join electrodes that lie exactly on one
+# circle (the 4 corners of a square). Verifies that .topo_qhull_spacing() then
+# gives NA instead of an error, and that the map is still drawn, with the
+# spacing of Test 4.2 (1 for a unit square), so the result is the same as when
+# that spacing is given.
+test_that("electrodes that Qhull cannot join fall back on the edge median", {
+  square <- cbind(c(0, 1, 0, 1), c(0, 0, 1, 1))
+  values <- c(1, -1, 2, 0.5)
+
+  expect_true(is.na(eeganalysis:::.topo_qhull_spacing(square)))
+
+  by_default <- eeganalysis:::.topomap_grid(square[, 1], square[, 2], values,
+                                            head_r = 2)$z
+  pinned <- eeganalysis:::.topomap_grid(square[, 1], square[, 2], values,
+                                        head_r = 2, ring_spacing = 1)$z
+  expect_equal(by_default, pinned)
+  expect_true(any(is.finite(by_default)))
 })
 
 # ============================================================================
@@ -741,7 +837,7 @@ test_that("the slopes of a plane are the plane's slope, and a warning says when 
 })
 
 # ============================================================================
-#          TEST SUITE 6: The Package No Longer Needs akima
+#     TEST SUITE 6: What the Package Does and Does Not Depend On
 # ============================================================================
 
 # ----------------------------------------------------------------------------
@@ -759,6 +855,20 @@ test_that("the package does not depend on akima", {
   expect_false(any(grepl("akima", fields, fixed = TRUE)))
 })
 
+# ----------------------------------------------------------------------------
+# Test 6.2: geometry is declared, because the ring spacing needs it
+# ----------------------------------------------------------------------------
+# WHAT THIS TESTS: Verifies the package lists geometry (the package that
+# carries Qhull) as an import in DESCRIPTION, and that it can be used, since
+# .topo_qhull_spacing() calls it.
+test_that("the package declares geometry, which the ring spacing uses", {
+  description <- system.file("DESCRIPTION", package = "eeganalysis")
+  skip_if(!nzchar(description), "DESCRIPTION is not available here")
+  fields <- read.dcf(description, fields = "Imports")
+  expect_true(grepl("geometry", fields, fixed = TRUE))
+  expect_true(requireNamespace("geometry", quietly = TRUE))
+})
+
 # ============================================================================
 #                     SUMMARY OF TEST COVERAGE
 # ============================================================================
@@ -773,7 +883,10 @@ test_that("the package does not depend on akima", {
 #   electrodes, the grid layout
 # - Errors: fewer than 3 positions, electrodes on one line, values or positions
 #   that are not finite
-# - The ring: size, number of points, limits; the spacing as the median edge
+# - The ring: size, number of points, limits; the spacing measured by Qhull
+#   (the reference numbers of 4 layouts, the number of ring points of the 8
+#   layouts whose ring is steady, the unit of the positions, the way out when
+#   Qhull cannot join the electrodes); the fallback spacing as the median edge
 #   length with every edge counted once; the spacing and ring of the 64
 #   electrode layout
 # - The mesh: a square, validity on awkward point sets, neighbouring triangles,

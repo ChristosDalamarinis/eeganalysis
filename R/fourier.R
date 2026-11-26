@@ -152,6 +152,29 @@
 }
 
 
+# One-sided spectrum helpers (plain comments, no help page).
+#
+# The FFT of n_fft points spaces its bins sr / n_fft apart, and the one-sided
+# spectrum keeps bins 0 .. floor(n_fft / 2). The last kept bin is exactly
+# sr / 2 (the Nyquist bin) only when n_fft is even; when n_fft is odd it sits
+# just below sr / 2 (255.5 Hz for 513 points at 512 Hz).
+#
+# .rfft_freqs(): the frequency of each kept bin, k * sr / n_fft.
+.rfft_freqs <- function(n_fft, sr) {
+  (seq_len(floor(n_fft / 2) + 1) - 1) * sr / n_fft
+}
+
+# .mirror_bins(): the kept bins that have a mirror twin in the dropped half,
+# so their power (or amplitude) must be doubled to put the twin's share back.
+# Bin 0 (DC) never has a twin. The last kept bin has none only when n_fft is
+# even (the Nyquist bin is its own twin); when n_fft is odd it has one too.
+.mirror_bins <- function(n_fft) {
+  n_half <- floor(n_fft / 2) + 1
+  last   <- if (n_fft %% 2 == 0) n_half - 1 else n_half
+  seq_len(last)[-1L]
+}
+
+
 #' Compute one-sided FFT amplitude, power, and phase for a single channel
 #'
 #' The amplitude spectrum is corrected for the one-sided representation
@@ -179,11 +202,13 @@
   n_half <- floor(n_fft / 2L) + 1L
   X_os   <- X[seq_len(n_half)]
   
-  # Amplitude: normalise by n_fft, then double interior bins (one-sided correction)
+  # Amplitude: normalise by n_fft, then double every bin that has a mirror
+  # twin in the dropped half (one-sided correction)
   amp      <- Mod(X_os) / n_fft
-  amp[seq(2L, n_half - 1L)] <- 2.0 * amp[seq(2L, n_half - 1L)]
+  dbl      <- .mirror_bins(n_fft)
+  amp[dbl] <- 2.0 * amp[dbl]
   
-  freqs <- seq(0, sr / 2, length.out = n_half)
+  freqs <- .rfft_freqs(n_fft, sr)
   
   list(
     power     = amp^2,
@@ -291,6 +316,7 @@
   n      <- length(x)
   k      <- ncol(tapers)
   n_half <- floor(n / 2L) + 1L
+  dbl    <- .mirror_bins(n)
   acc    <- numeric(n_half)
   
   for (j in seq_len(k)) {
@@ -298,9 +324,10 @@
     # Each taper has unit energy (sum(taper^2) = 1), so the 1/n of the
     # length normalisation is already inside it: divide by sr only. Dividing
     # by n * sr here made the PSD n times too small (1024x for 2 s at 512 Hz).
-    p   <- (Mod(X)^2) * 2 / sr
-    # DC and Nyquist bins must not be doubled
-    p[c(1L, n_half)] <- p[c(1L, n_half)] / 2
+    p   <- (Mod(X)^2) / sr
+    # Double every bin that has a mirror twin: not DC, and not the last bin
+    # when n is even (the Nyquist bin); when n is odd the last bin is doubled
+    p[dbl] <- 2 * p[dbl]
     acc <- acc + p
   }
   
@@ -428,7 +455,7 @@ eeg_fft <- function(input_obj,
     n_tp       <- ncol(data_mat)
     n_fft_use  <- if (is.null(n_fft)) n_tp else as.integer(n_fft)
     n_half     <- floor(n_fft_use / 2L) + 1L
-    freqs      <- seq(0, sr / 2, length.out = n_half)
+    freqs      <- .rfft_freqs(n_fft_use, sr)
     win_vec <- .make_window(n_tp, window)
     bad_ch  <- .find_bad_channels(data_mat, chan_names)
     if (length(bad_ch) > 0L) data_mat[bad_ch, ] <- 0.0
@@ -509,7 +536,7 @@ eeg_fft <- function(input_obj,
     n_ep       <- dim(data_arr)[3L]
     n_fft_use  <- if (is.null(n_fft)) n_samp else as.integer(n_fft)
     n_half     <- floor(n_fft_use / 2L) + 1L
-    freqs      <- seq(0, sr / 2, length.out = n_half)
+    freqs      <- .rfft_freqs(n_fft_use, sr)
     win_vec <- .make_window(n_samp, window)
     bad_ch  <- .find_bad_channels(data_arr, chan_names)
     if (length(bad_ch) > 0L) data_arr[bad_ch, , ] <- 0.0
@@ -624,7 +651,7 @@ eeg_fft <- function(input_obj,
     n_samp     <- ncol(input_obj$evoked[[1L]])
     n_fft_use  <- if (is.null(n_fft)) n_samp else as.integer(n_fft)
     n_half     <- floor(n_fft_use / 2L) + 1L
-    freqs      <- seq(0, sr / 2, length.out = n_half)
+    freqs      <- .rfft_freqs(n_fft_use, sr)
     win_vec    <- .make_window(n_samp, window)
     
     if (verbose) {
@@ -809,6 +836,7 @@ eeg_psd_welch <- function(input_obj,
   .welch_channel <- function(x, sr, win_samp, step, win_vec, n_fft_w) {
     n        <- length(x)
     n_half   <- floor(n_fft_w / 2L) + 1L
+    dbl      <- .mirror_bins(n_fft_w)
     win_norm <- sum(win_vec^2) * sr   # = Fs * sum(w^2), normalises to uV^2/Hz
 
     starts <- seq(1L, n - win_samp + 1L, by = step)
@@ -828,8 +856,9 @@ eeg_psd_welch <- function(input_obj,
 
       X   <- fft(seg)[seq_len(n_half)]
       p   <- (Mod(X)^2) / win_norm
-      # Double one-sided bins; leave DC and Nyquist as-is
-      p[seq(2L, n_half - 1L)] <- 2.0 * p[seq(2L, n_half - 1L)]
+      # Double every bin that has a mirror twin: not DC, and not the last
+      # bin when n_fft_w is even (the Nyquist bin); when odd it is doubled
+      p[dbl] <- 2.0 * p[dbl]
       seg_mat[, j] <- p
     }
 
@@ -855,7 +884,7 @@ eeg_psd_welch <- function(input_obj,
     n_fft_w  <- if (is.null(n_fft)) win_samp else max(as.integer(n_fft), win_samp)
     win_vec  <- .make_window(win_samp, window)
     n_half   <- floor(n_fft_w / 2L) + 1L
-    freqs    <- seq(0, sr / 2, length.out = n_half)
+    freqs    <- .rfft_freqs(n_fft_w, sr)
     list(win_samp = win_samp, step = step, n_fft_w = n_fft_w,
          win_vec = win_vec, n_half = n_half, freqs = freqs)
   }
@@ -1227,7 +1256,7 @@ eeg_multitaper <- function(input_obj,
     step     <- max(1L, round(win_samp * (1 - overlap)))
     starts   <- seq(1L, n_tp - win_samp + 1L, by = step)
     n_half   <- floor(win_samp / 2L) + 1L
-    freqs    <- seq(0, sr / 2, length.out = n_half)
+    freqs    <- .rfft_freqs(win_samp, sr)
     dpss         <- .compute_dpss(win_samp, time_bandwidth, n_tapers)
     tapers       <- dpss$tapers
     eigvals      <- dpss$eigenvalues
@@ -1323,7 +1352,7 @@ eeg_multitaper <- function(input_obj,
     n_samp     <- dim(data_arr)[2L]
     n_ep       <- dim(data_arr)[3L]
     n_half     <- floor(n_samp / 2L) + 1L
-    freqs      <- seq(0, sr / 2, length.out = n_half)
+    freqs      <- .rfft_freqs(n_samp, sr)
     dpss         <- .compute_dpss(n_samp, time_bandwidth, n_tapers)
     tapers       <- dpss$tapers
     eigvals      <- dpss$eigenvalues
@@ -1427,7 +1456,7 @@ eeg_multitaper <- function(input_obj,
     n_ch       <- length(chan_names)
     n_samp     <- ncol(input_obj$evoked[[1L]])
     n_half     <- floor(n_samp / 2L) + 1L
-    freqs      <- seq(0, sr / 2, length.out = n_half)
+    freqs      <- .rfft_freqs(n_samp, sr)
     dpss         <- .compute_dpss(n_samp, time_bandwidth, n_tapers)
     tapers       <- dpss$tapers
     eigvals      <- dpss$eigenvalues

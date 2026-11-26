@@ -396,7 +396,7 @@
 #'   \code{\link{eeg_band_power}}
 #' @export
 eeg_fft <- function(input_obj,
-                    n_fft     = NULL,
+                    n_fft     = NULL,    #NOTE -> decides how many labels there are and how far apart they should be.
                     window    = c("hann", "hamming", "blackman", "none"),
                     per_epoch = FALSE,
                     fmin      = 0,

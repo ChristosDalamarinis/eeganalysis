@@ -85,15 +85,20 @@
 .make_window <- function(n, type = c("hann", "hamming", "blackman", "none")) {
   type <- match.arg(type)
   idx  <- 0:(n - 1)
+  # Periodic windows: divide by n, not n - 1. The FFT treats each piece as if
+  # it repeats forever, so the window must be exactly one cosine cycle over
+  # the n samples; two copies side by side then join into one smooth wave.
+  # This is the symmetric window of n + 1 samples with its last zero dropped.
+  # (Dividing by n - 1 gives the symmetric window used for filter design.)
   switch(type,
          hann     = {
-           w <- 0.5 * (1 - cos(2 * pi * idx / (n - 1)))
+           w <- 0.5 * (1 - cos(2 * pi * idx / n))
            w / max(w)                          # normalise to unit peak
          },
-         hamming  = 0.54 - 0.46 * cos(2 * pi * idx / (n - 1)),
+         hamming  = 0.54 - 0.46 * cos(2 * pi * idx / n),
          blackman = {
-           w <- 0.42 - 0.50 * cos(2 * pi * idx / (n - 1)) +
-             0.08 * cos(4 * pi * idx / (n - 1))
+           w <- 0.42 - 0.50 * cos(2 * pi * idx / n) +
+             0.08 * cos(4 * pi * idx / n)
            pmax(w, 0)
          },
          none     = rep(1.0, n)

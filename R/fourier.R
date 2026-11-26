@@ -68,7 +68,7 @@
 #'
 #  Author: Christos Dalamarinis
 #  Date: March 2026
-#  Status: In development
+#  Status: In development, many upcoming changes.
 #' ============================================================================
 #'
 #'

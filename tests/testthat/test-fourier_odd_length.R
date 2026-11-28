@@ -81,7 +81,8 @@ test_that("odd segments and odd n_fft of continuous data are labelled right", {
   set.seed(4L)
   eeg <- odd_eeg(rnorm(10 * SR_O))
   # eeg_psd_welch(): 2 s segments (1024 samples) with an odd 1025-point FFT
-  expect_equal(eeg_psd_welch(eeg, n_fft = 1025, verbose = FALSE)$frequencies,
+  expect_equal(eeg_psd_welch(eeg, window_length = 2, n_fft = 1025,
+                             verbose = FALSE)$frequencies,
                true_freqs(1025, SR_O), tolerance = 1e-12)
   # eeg_multitaper(): 513-sample segments
   expect_equal(eeg_multitaper(eeg, segment_length = 513 / SR_O,

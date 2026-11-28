@@ -84,6 +84,9 @@
 #' @keywords internal
 .make_window <- function(n, type = c("hann", "hamming", "blackman", "none")) {
   type <- match.arg(type)
+  # A one-sample window is just 1 (the cosine formulas would give 0, or 0 / 0
+  # for hann). Welch meets this on a clean stretch of a single sample.
+  if (n == 1L) return(1.0)
   idx  <- 0:(n - 1)
   # Periodic windows: divide by n, not n - 1. The FFT treats each piece as if
   # it repeats forever, so the window must be exactly one cosine cycle over
@@ -356,6 +359,41 @@
     biases[4L:(n + 1L)] <- sums[k_seq %/% 2L]              # map counts -> correction
   }
   biases
+}
+
+
+# .welch_spans(): the clean stretches of a continuous recording and how the
+# Welch estimate uses each one (plain comments, no help page).
+#
+# bad_mask is TRUE for every sample inside a "bad" annotation; win_samp and
+# step are the segment length and the samples between segment starts. Returns
+# one row per run of clean samples:
+#   start, end - first and last sample of the stretch
+#   win_samp   - segment length used there: the normal one, or the whole
+#                stretch when the stretch is shorter than one segment
+#   step       - samples between segment starts in that stretch
+#   n_seg      - number of segments that fit
+#   weight     - samples the segments cover; a tail that does not fill a
+#                whole step is not used. The stretches are averaged with
+#                these weights.
+# Example: 5120 samples, bad 1537..2048, win_samp 1024, step 1024 ->
+#   stretch 1..1536    : 1 segment,  weight 1024 (the last 512 are not used)
+#   stretch 2049..5120 : 3 segments, weight 3072
+.welch_spans <- function(bad_mask, win_samp, step) {
+  runs  <- rle(!bad_mask)
+  end   <- cumsum(runs$lengths)
+  start <- end - runs$lengths + 1L
+  start <- start[runs$values]
+  end   <- end[runs$values]
+  len   <- end - start + 1L
+  short <- len < win_samp
+  n_seg <- ifelse(short, 1L, (len - win_samp) %/% step + 1L)
+  data.frame(start    = start,
+             end      = end,
+             win_samp = ifelse(short, len, win_samp),
+             step     = ifelse(short, len, step),
+             n_seg    = n_seg,
+             weight   = ifelse(short, len, win_samp + step * (n_seg - 1L)))
 }
 
 
@@ -738,10 +776,11 @@ eeg_fft <- function(input_obj,
 #' Compute Welch Power Spectral Density of EEG Data
 #'
 #' Estimates the Power Spectral Density (PSD) using the Welch averaged
-#' periodogram method. The signal is divided into overlapping segments;
-#' each segment is windowed and FFT'd, and the resulting power spectra are
-#' averaged. This substantially reduces spectral variance compared to a
-#' single FFT, making it the recommended method for resting-state EEG.
+#' periodogram method. The signal is divided into segments (side by side by
+#' default); each segment is windowed and FFT'd, and the resulting power
+#' spectra are averaged. This substantially reduces spectral variance
+#' compared to a single FFT, making it the recommended method for
+#' resting-state EEG.
 #'
 #' Output is in uV^2/Hz, calibrated by the window power and sampling rate.
 #'
@@ -749,15 +788,24 @@ eeg_fft <- function(input_obj,
 #' Welch PSD is computed independently for each epoch (TRUE) or on the
 #' trial-averaged waveform (FALSE, default).
 #'
+#' For continuous 'eeg' input, stretches marked with a "bad" annotation are
+#' left out by default (see \code{reject_by_annotation}).
+#'
 #' @param input_obj     An object of class 'eeg', 'eeg_epochs', or 'eeg_evoked'.
-#' @param window_length Numeric. Segment length in seconds (default: 2.0).
-#'   Determines frequency resolution: delta_f = 1 / window_length.
-#'   Longer windows give finer resolution but fewer segments (more variance).
-#'   If window_length exceeds epoch length, the whole epoch is used as one
-#'   segment and a warning is issued.
+#' @param window_length Numeric or NULL. Segment length in seconds. NULL
+#'   (default) uses segments of 2048 samples, or the whole signal (the whole
+#'   epoch for 'eeg_epochs') when it is shorter. 2048 samples is a sample
+#'   count, so the length in seconds depends on the sampling rate: 8 s at
+#'   256 Hz, 4 s at 512 Hz, 2 s at 1024 Hz, 1 s at 2048 Hz.
+#'   The segment length sets the frequency resolution:
+#'   delta_f = 1 / segment length in seconds. Longer segments give finer
+#'   resolution but fewer segments (more variance). If a given window_length
+#'   exceeds the signal length, the whole signal is used as one segment and a
+#'   warning is issued.
 #' @param overlap  Numeric in [0, 1). Fractional overlap between consecutive
-#'   segments (default: 0.5 = 50%). Higher overlap smooths the PSD estimate
-#'   but does not increase effective degrees of freedom proportionally.
+#'   segments (default: 0 = segments side by side, no sample used twice).
+#'   Higher overlap smooths the PSD estimate but does not increase effective
+#'   degrees of freedom proportionally.
 #' @param window   Character. Spectral window: "hann" (default), "hamming",
 #'   "blackman", or "none". The window is applied per-segment before FFT.
 #' @param n_fft    Integer or NULL. FFT length per segment. NULL (default) uses
@@ -779,6 +827,21 @@ eeg_fft <- function(input_obj,
 #'   robust to artefact-contaminated segments but is a slightly biased
 #'   estimator; a bias correction factor is applied automatically so the
 #'   result remains unbiased.
+#' @param reject_by_annotation Logical. Only used for continuous 'eeg' input.
+#'   If TRUE (default), every sample covered by an annotation whose
+#'   description starts with "bad" (any case, e.g. "BAD_peak" from
+#'   \code{\link{annotate_amplitude}}) is left out. The recording is split
+#'   into the clean stretches between those annotations, each clean stretch
+#'   gets its own Welch estimate, and the stretches are then averaged,
+#'   weighted by the number of samples each one used (samples at the end of a
+#'   stretch that do not fill a whole segment step are not used). A clean
+#'   stretch shorter than one segment is analysed as a single shorter segment
+#'   (zero-padded to the same FFT length, so the frequencies stay the same).
+#'   The annotation's channel column is ignored: a bad stretch is left out
+#'   for every channel, the same rule \code{\link{fit_ica}} and
+#'   \code{\link{epoch_eeg}} use. FALSE uses every sample. 'eeg_epochs' and
+#'   'eeg_evoked' input are not affected (\code{\link{epoch_eeg}} already
+#'   drops epochs that touch a bad stretch).
 #' @param verbose   Logical. Print processing summary. Default: TRUE.
 #'
 #' @return An object of class 'eeg_spectrum'. \code{$power} contains the PSD
@@ -786,11 +849,15 @@ eeg_fft <- function(input_obj,
 #'
 #' @examples
 #' \dontrun{
-#'   # Default: 2 s windows, 50% overlap, Hann window
+#'   # Default: 2048-sample segments, no overlap, Hann window, bad
+#'   # annotations left out
 #'   psd <- eeg_psd_welch(eeg)
 #'
-#'   # Finer resolution with 4 s windows
-#'   psd <- eeg_psd_welch(eeg, window_length = 4, overlap = 0.75)
+#'   # 2 s segments with 50% overlap
+#'   psd <- eeg_psd_welch(eeg, window_length = 2, overlap = 0.5)
+#'
+#'   # Use every sample, even inside "bad" annotations
+#'   psd <- eeg_psd_welch(eeg, reject_by_annotation = FALSE)
 #'
 #'   # Per-epoch PSD (induced oscillations)
 #'   psd <- eeg_psd_welch(epochs, per_epoch = TRUE)
@@ -800,8 +867,8 @@ eeg_fft <- function(input_obj,
 #'   \code{\link{eeg_band_power}}
 #' @export
 eeg_psd_welch <- function(input_obj,
-                          window_length = 2.0,
-                          overlap       = 0.5,
+                          window_length = NULL,
+                          overlap       = 0,
                           window        = c("hann", "hamming", "blackman", "none"),
                           n_fft         = NULL,
                           per_epoch     = FALSE,
@@ -809,6 +876,7 @@ eeg_psd_welch <- function(input_obj,
                           fmax          = NULL,
                           remove_dc     = TRUE,
                           average       = c("mean", "median"),
+                          reject_by_annotation = TRUE,
                           verbose       = TRUE) {
 
   window      <- match.arg(window)
@@ -822,12 +890,19 @@ eeg_psd_welch <- function(input_obj,
          ". Got: '", input_class, "'.", call. = FALSE)
   }
   
-  if (!is.numeric(window_length) || length(window_length) != 1 || window_length <= 0) {
-    stop("window_length must be a single positive number (seconds).", call. = FALSE)
+  if (!is.null(window_length) &&
+      (!is.numeric(window_length) || length(window_length) != 1 || window_length <= 0)) {
+    stop("window_length must be NULL or a single positive number (seconds).",
+         call. = FALSE)
   }
   
   if (!is.numeric(overlap) || length(overlap) != 1 || overlap < 0 || overlap >= 1) {
     stop("overlap must be a single number in [0, 1).", call. = FALSE)
+  }
+
+  if (!is.logical(reject_by_annotation) || length(reject_by_annotation) != 1 ||
+      is.na(reject_by_annotation)) {
+    stop("reject_by_annotation must be TRUE or FALSE.", call. = FALSE)
   }
   
   # ========== INTERNAL WELCH WORKER ==========
@@ -873,12 +948,17 @@ eeg_psd_welch <- function(input_obj,
   
   # ========== SHARED SETUP HELPER ==========
   .welch_setup <- function(sr, n_samp) {
-    win_samp <- round(window_length * sr)
-    if (win_samp > n_samp) {
-      warning("window_length (", window_length, " s = ", win_samp, " samples) ",
-              "exceeds signal length (", n_samp, " samples). ",
-              "Using full signal as a single segment.", call. = FALSE)
-      win_samp <- n_samp
+    if (is.null(window_length)) {
+      # Default segment: 2048 samples, or the whole signal when it is shorter
+      win_samp <- min(2048L, n_samp)
+    } else {
+      win_samp <- round(window_length * sr)
+      if (win_samp > n_samp) {
+        warning("window_length (", window_length, " s = ", win_samp, " samples) ",
+                "exceeds signal length (", n_samp, " samples). ",
+                "Using full signal as a single segment.", call. = FALSE)
+        win_samp <- n_samp
+      }
     }
     step     <- max(1L, round(win_samp * (1 - overlap)))
     n_fft_w  <- if (is.null(n_fft)) win_samp else max(as.integer(n_fft), win_samp)
@@ -898,8 +978,22 @@ eeg_psd_welch <- function(input_obj,
     n_ch       <- nrow(data_mat)
     n_tp       <- ncol(data_mat)
     s      <- .welch_setup(sr, n_tp)
-    n_seg  <- floor((n_tp - s$win_samp) / s$step) + 1L
-    bad_ch <- .find_bad_channels(data_mat, chan_names)
+
+    # Samples inside a "bad..." annotation are left out (all FALSE when
+    # reject_by_annotation = FALSE or there is no such annotation)
+    bad_mask <- rep(FALSE, n_tp)
+    if (reject_by_annotation) {
+      if (is.null(input_obj$times)) input_obj$times <- (seq_len(n_tp) - 1L) / sr
+      bad_mask <- .annotation_bad_mask(input_obj)
+    }
+    if (all(bad_mask)) {
+      stop("Every sample lies inside a 'bad' annotation, so nothing is left ",
+           "to analyse. Use reject_by_annotation = FALSE to keep all samples.",
+           call. = FALSE)
+    }
+    spans  <- .welch_spans(bad_mask, s$win_samp, s$step)
+    n_seg  <- sum(spans$n_seg)
+    bad_ch <- .find_bad_channels(data_mat[, !bad_mask, drop = FALSE], chan_names)
     if (length(bad_ch) > 0L) data_mat[bad_ch, ] <- 0.0
 
     if (verbose) {
@@ -908,8 +1002,17 @@ eeg_psd_welch <- function(input_obj,
       cat(strrep("=", 60), "\n")
       cat("  Channels:          ", n_ch, "\n")
       cat("  Signal length:     ", n_tp, "samples (", round(n_tp / sr, 2), "s)\n")
-      cat("  Window length:     ", window_length, "s (", s$win_samp, "samples)\n")
+      cat("  Window length:     ", round(s$win_samp / sr, 4), "s (", s$win_samp, "samples)\n")
       cat("  Overlap:           ", overlap * 100, "%\n")
+      if (any(bad_mask)) {
+        cat("  Bad annotations:   ", sum(bad_mask), "of", n_tp, "samples left out (",
+            round(100 * mean(bad_mask), 1), "%),", nrow(spans), "clean stretch(es)\n")
+        n_short <- sum(spans$win_samp < s$win_samp)
+        if (n_short > 0L) {
+          cat("  Short stretches:   ", n_short, "shorter than one segment,",
+              "each analysed as one shorter segment\n")
+        }
+      }
       cat("  Segments:          ", n_seg, "\n")
       cat("  FFT length:        ", s$n_fft_w, "\n")
       cat("  Freq. resolution:  ", round(sr / s$n_fft_w, 4), "Hz\n")
@@ -918,11 +1021,21 @@ eeg_psd_welch <- function(input_obj,
       cat(strrep("=", 60), "\n\n")
     }
 
+    # One Welch estimate per clean stretch, averaged with weights = samples
+    # used. With no bad annotation there is one stretch and its share is
+    # exactly 1, so the result is the plain Welch estimate.
+    share   <- spans$weight / sum(spans$weight)
     psd_mat <- matrix(0, nrow = n_ch, ncol = s$n_half,
                       dimnames = list(chan_names, NULL))
-    for (i in seq_len(n_ch)) {
-      psd_mat[i, ] <- .welch_channel(data_mat[i, ], sr,
-                                     s$win_samp, s$step, s$win_vec, s$n_fft_w)
+    for (k in seq_len(nrow(spans))) {
+      idx   <- spans$start[k]:spans$end[k]
+      win_k <- if (spans$win_samp[k] == s$win_samp) s$win_vec else
+        .make_window(spans$win_samp[k], window)
+      for (i in seq_len(n_ch)) {
+        psd_mat[i, ] <- psd_mat[i, ] + share[k] *
+          .welch_channel(data_mat[i, idx], sr, spans$win_samp[k],
+                         spans$step[k], win_k, s$n_fft_w)
+      }
     }
 
     if (length(bad_ch) > 0L) psd_mat[bad_ch, ] <- NA_real_
@@ -945,7 +1058,7 @@ eeg_psd_welch <- function(input_obj,
         input_class   = input_class,
         n_fft         = s$n_fft_w,
         window_type   = window,
-        window_length = window_length,
+        window_length = s$win_samp / sr,
         overlap       = overlap,
         n_segments    = n_seg,
         average       = average,
@@ -981,7 +1094,7 @@ eeg_psd_welch <- function(input_obj,
       cat("  Channels:          ", n_ch, "\n")
       cat("  Epochs:            ", n_ep, "\n")
       cat("  Samples per epoch: ", n_samp, "\n")
-      cat("  Window length:     ", window_length, "s (", s$win_samp, "samples)\n")
+      cat("  Window length:     ", round(s$win_samp / sr, 4), "s (", s$win_samp, "samples)\n")
       cat("  Overlap:           ", overlap * 100, "%\n")
       cat("  Averaging:         ", average, "\n")
       cat("  Per epoch:         ", per_epoch, "\n")
@@ -1038,7 +1151,7 @@ eeg_psd_welch <- function(input_obj,
         input_class   = input_class,
         n_fft         = s$n_fft_w,
         window_type   = window,
-        window_length = window_length,
+        window_length = s$win_samp / sr,
         overlap       = overlap,
         n_segments    = floor((n_samp - s$win_samp) / s$step) + 1L,
         average       = average,
@@ -1067,7 +1180,7 @@ eeg_psd_welch <- function(input_obj,
       cat(strrep("=", 60), "\n")
       cat("  Channels:    ", n_ch, "\n")
       cat("  Conditions:  ", paste(conditions, collapse = ", "), "\n")
-      cat("  Window:      ", window_length, "s, overlap", overlap * 100, "%\n")
+      cat("  Window:      ", round(s$win_samp / sr, 4), "s, overlap", overlap * 100, "%\n")
       cat("  Averaging:   ", average, "\n")
       cat(strrep("=", 60), "\n\n")
     }
@@ -1107,7 +1220,7 @@ eeg_psd_welch <- function(input_obj,
         input_class   = input_class,
         n_fft         = s$n_fft_w,
         window_type   = window,
-        window_length = window_length,
+        window_length = s$win_samp / sr,
         overlap       = overlap,
         n_segments    = floor((n_samp - s$win_samp) / s$step) + 1L,
         average       = average,

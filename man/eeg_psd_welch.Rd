@@ -6,8 +6,8 @@
 \usage{
 eeg_psd_welch(
   input_obj,
-  window_length = 2,
-  overlap = 0.5,
+  window_length = NULL,
+  overlap = 0,
   window = c("hann", "hamming", "blackman", "none"),
   n_fft = NULL,
   per_epoch = FALSE,
@@ -15,21 +15,28 @@ eeg_psd_welch(
   fmax = NULL,
   remove_dc = TRUE,
   average = c("mean", "median"),
+  reject_by_annotation = TRUE,
   verbose = TRUE
 )
 }
 \arguments{
 \item{input_obj}{An object of class 'eeg', 'eeg_epochs', or 'eeg_evoked'.}
 
-\item{window_length}{Numeric. Segment length in seconds (default: 2.0).
-Determines frequency resolution: delta_f = 1 / window_length.
-Longer windows give finer resolution but fewer segments (more variance).
-If window_length exceeds epoch length, the whole epoch is used as one
-segment and a warning is issued.}
+\item{window_length}{Numeric or NULL. Segment length in seconds. NULL
+(default) uses segments of 2048 samples, or the whole signal (the whole
+epoch for 'eeg_epochs') when it is shorter. 2048 samples is a sample
+count, so the length in seconds depends on the sampling rate: 8 s at
+256 Hz, 4 s at 512 Hz, 2 s at 1024 Hz, 1 s at 2048 Hz.
+The segment length sets the frequency resolution:
+delta_f = 1 / segment length in seconds. Longer segments give finer
+resolution but fewer segments (more variance). If a given window_length
+exceeds the signal length, the whole signal is used as one segment and a
+warning is issued.}
 
 \item{overlap}{Numeric in [0, 1). Fractional overlap between consecutive
-segments (default: 0.5 = 50\%). Higher overlap smooths the PSD estimate
-but does not increase effective degrees of freedom proportionally.}
+segments (default: 0 = segments side by side, no sample used twice).
+Higher overlap smooths the PSD estimate but does not increase effective
+degrees of freedom proportionally.}
 
 \item{window}{Character. Spectral window: "hann" (default), "hamming",
 "blackman", or "none". The window is applied per-segment before FFT.}
@@ -59,6 +66,22 @@ robust to artefact-contaminated segments but is a slightly biased
 estimator; a bias correction factor is applied automatically so the
 result remains unbiased.}
 
+\item{reject_by_annotation}{Logical. Only used for continuous 'eeg' input.
+If TRUE (default), every sample covered by an annotation whose
+description starts with "bad" (any case, e.g. "BAD_peak" from
+\code{\link{annotate_amplitude}}) is left out. The recording is split
+into the clean stretches between those annotations, each clean stretch
+gets its own Welch estimate, and the stretches are then averaged,
+weighted by the number of samples each one used (samples at the end of a
+stretch that do not fill a whole segment step are not used). A clean
+stretch shorter than one segment is analysed as a single shorter segment
+(zero-padded to the same FFT length, so the frequencies stay the same).
+The annotation's channel column is ignored: a bad stretch is left out
+for every channel, the same rule \code{\link{fit_ica}} and
+\code{\link{epoch_eeg}} use. FALSE uses every sample. 'eeg_epochs' and
+'eeg_evoked' input are not affected (\code{\link{epoch_eeg}} already
+drops epochs that touch a bad stretch).}
+
 \item{verbose}{Logical. Print processing summary. Default: TRUE.}
 }
 \value{
@@ -67,10 +90,11 @@ in uV^2/Hz. The \code{$phase} field is NULL (not meaningful for Welch).
 }
 \description{
 Estimates the Power Spectral Density (PSD) using the Welch averaged
-periodogram method. The signal is divided into overlapping segments;
-each segment is windowed and FFT'd, and the resulting power spectra are
-averaged. This substantially reduces spectral variance compared to a
-single FFT, making it the recommended method for resting-state EEG.
+periodogram method. The signal is divided into segments (side by side by
+default); each segment is windowed and FFT'd, and the resulting power
+spectra are averaged. This substantially reduces spectral variance
+compared to a single FFT, making it the recommended method for
+resting-state EEG.
 }
 \details{
 Output is in uV^2/Hz, calibrated by the window power and sampling rate.
@@ -78,14 +102,21 @@ Output is in uV^2/Hz, calibrated by the window power and sampling rate.
 For 'eeg_epochs' input the \code{per_epoch} flag controls whether the
 Welch PSD is computed independently for each epoch (TRUE) or on the
 trial-averaged waveform (FALSE, default).
+
+For continuous 'eeg' input, stretches marked with a "bad" annotation are
+left out by default (see \code{reject_by_annotation}).
 }
 \examples{
 \dontrun{
-  # Default: 2 s windows, 50\% overlap, Hann window
+  # Default: 2048-sample segments, no overlap, Hann window, bad
+  # annotations left out
   psd <- eeg_psd_welch(eeg)
 
-  # Finer resolution with 4 s windows
-  psd <- eeg_psd_welch(eeg, window_length = 4, overlap = 0.75)
+  # 2 s segments with 50\% overlap
+  psd <- eeg_psd_welch(eeg, window_length = 2, overlap = 0.5)
+
+  # Use every sample, even inside "bad" annotations
+  psd <- eeg_psd_welch(eeg, reject_by_annotation = FALSE)
 
   # Per-epoch PSD (induced oscillations)
   psd <- eeg_psd_welch(epochs, per_epoch = TRUE)
